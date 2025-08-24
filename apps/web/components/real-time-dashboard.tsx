@@ -73,7 +73,7 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
       changeType: 'positive' as const,
       icon: Network,
       subtitle: "Conexiones activas",
-      trend: 'stable' as const
+      trend: 'up' as const
     },
     {
       title: "Volumen 24h", 
@@ -91,7 +91,7 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
       changeType: 'positive' as const,
       icon: Timer,
       subtitle: "Promedio de trades",
-      trend: 'stable' as const
+      trend: 'up' as const
     },
     {
       title: "Arbitrajes Exitosos",
@@ -109,7 +109,6 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
       {metricsData.map((metric, index) => {
         const getTrendIcon = () => {
           if (metric.trend === 'up') return ArrowUpRight
-          if (metric.trend === 'down') return ArrowDownRight
           return null
         }
 
@@ -121,18 +120,8 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-slate-600">{metric.title}</CardTitle>
-                <div className={cn(
-                  "p-2 rounded-lg",
-                  metric.changeType === 'positive' && "bg-emerald-100",
-                  metric.changeType === 'negative' && "bg-red-100",
-                  metric.changeType === 'neutral' && "bg-slate-100"
-                )}>
-                  <Icon className={cn(
-                    "w-4 h-4",
-                    metric.changeType === 'positive' && "text-emerald-600",
-                    metric.changeType === 'negative' && "text-red-600",
-                    metric.changeType === 'neutral' && "text-slate-600"
-                  )} />
+                <div className="p-2 rounded-lg bg-emerald-100">
+                  <Icon className="w-4 h-4 text-emerald-600" />
                 </div>
               </div>
             </CardHeader>
@@ -141,12 +130,7 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
                 <div className="flex items-baseline space-x-2">
                   <span className="text-2xl font-bold text-slate-900">{metric.value}</span>
                   {TrendIcon && (
-                    <div className={cn(
-                      "flex items-center space-x-1 text-sm",
-                      metric.changeType === 'positive' && "text-emerald-600",
-                      metric.changeType === 'negative' && "text-red-600",
-                      metric.changeType === 'neutral' && "text-slate-600"
-                    )}>
+                    <div className="flex items-center space-x-1 text-sm text-emerald-600">
                       <TrendIcon className="w-3 h-3" />
                     </div>
                   )}
@@ -157,12 +141,7 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
               </div>
             </CardContent>
             
-            <div className={cn(
-              "absolute inset-x-0 bottom-0 h-1",
-              metric.changeType === 'positive' && "bg-gradient-to-r from-emerald-500 to-emerald-400",
-              metric.changeType === 'negative' && "bg-gradient-to-r from-red-500 to-red-400",
-              metric.changeType === 'neutral' && "bg-gradient-to-r from-slate-500 to-slate-400"
-            )} />
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-emerald-500 to-emerald-400" />
           </Card>
         )
       })}

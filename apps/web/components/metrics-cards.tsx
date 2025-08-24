@@ -118,60 +118,60 @@ interface MetricsCardsProps {
 }
 
 export function MetricsCards({ data }: MetricsCardsProps) {
-  const metrics = [
+  const metrics: MetricCardProps[] = [
     {
       title: "Ganancia Total",
       value: formatCurrency(data.totalProfit),
       change: data.totalProfitChange,
-      changeType: data.totalProfitChange >= 0 ? 'positive' : 'negative' as const,
+      changeType: data.totalProfitChange >= 0 ? 'positive' : 'negative',
       icon: DollarSign,
       subtitle: "Últimas 24h",
-      trend: data.totalProfitChange >= 0 ? 'up' : 'down' as const
+      trend: data.totalProfitChange >= 0 ? 'up' : 'down'
     },
     {
       title: "Volumen Diario",
       value: formatCurrency(data.dailyVolume),
       change: data.dailyVolumeChange,
-      changeType: data.dailyVolumeChange >= 0 ? 'positive' : 'negative' as const,
+      changeType: data.dailyVolumeChange >= 0 ? 'positive' : 'negative',
       icon: BarChart3,
       subtitle: "Volumen procesado",
-      trend: data.dailyVolumeChange >= 0 ? 'up' : 'down' as const
+      trend: data.dailyVolumeChange >= 0 ? 'up' : 'down'
     },
     {
       title: "Oportunidades Activas",
       value: data.activeOpportunities.toString(),
       change: data.activeOpportunitiesChange,
-      changeType: data.activeOpportunitiesChange >= 0 ? 'positive' : 'negative' as const,
+      changeType: data.activeOpportunitiesChange >= 0 ? 'positive' : 'negative',
       icon: Target,
       subtitle: "En tiempo real",
-      trend: data.activeOpportunitiesChange >= 0 ? 'up' : 'down' as const
+      trend: data.activeOpportunitiesChange >= 0 ? 'up' : 'down'
     },
     {
       title: "Tasa de Éxito",
       value: formatPercentage(data.successRate),
       change: data.successRateChange,
-      changeType: data.successRateChange >= 0 ? 'positive' : 'negative' as const,
+      changeType: data.successRateChange >= 0 ? 'positive' : 'negative',
       icon: TrendingUp,
       subtitle: "Promedio 7 días",
-      trend: data.successRateChange >= 0 ? 'up' : 'down' as const
+      trend: data.successRateChange >= 0 ? 'up' : 'down'
     },
     {
       title: "Tiempo Promedio",
       value: `${data.avgExecutionTime}ms`,
       change: data.avgExecutionTimeChange,
-      changeType: data.avgExecutionTimeChange <= 0 ? 'positive' : 'negative' as const,
+      changeType: data.avgExecutionTimeChange <= 0 ? 'positive' : 'negative',
       icon: Timer,
       subtitle: "Ejecución de trades",
-      trend: data.avgExecutionTimeChange <= 0 ? 'up' : 'down' as const
+      trend: data.avgExecutionTimeChange <= 0 ? 'up' : 'down'
     },
     {
       title: "Redes Online",
       value: `${data.networksOnline}/12`,
       change: data.networksOnlineChange,
-      changeType: data.networksOnlineChange >= 0 ? 'positive' : 'negative' as const,
+      changeType: data.networksOnlineChange >= 0 ? 'positive' : 'negative',
       icon: Activity,
       subtitle: "Estado de conexión",
-      trend: data.networksOnlineChange >= 0 ? 'up' : 'down' as const
+      trend: data.networksOnlineChange >= 0 ? 'up' : 'down'
     }
   ]
 

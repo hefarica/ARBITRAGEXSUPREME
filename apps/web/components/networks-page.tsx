@@ -10,6 +10,7 @@ import {
   Activity,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   XCircle,
   ExternalLink,
   RefreshCw,
@@ -316,7 +317,7 @@ export function NetworksPage() {
         <div>
           <h2 className="text-xl font-semibold text-slate-900 mb-4">Estado de Redes</h2>
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {networks.map((network) => (
+            {networks.map((network: NetworkStatus) => (
               <NetworkCard key={network.id} network={network} />
             ))}
           </div>
