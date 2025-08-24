@@ -39,12 +39,12 @@ export function DashboardHeader({
       {/* Left Section - Title and Subtitle */}
       <div className="flex items-center space-x-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-          <div className="text-sm text-slate-600 flex items-center space-x-2">
+          <h1 className="ios-dashboard-title text-slate-900">{title.toUpperCase()}</h1>
+          <div className="ios-body text-slate-600 flex items-center space-x-2">
             <Activity className="w-4 h-4 text-emerald-500" />
-            <span>{subtitle}</span>
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 border-emerald-200">
-              Live
+            <span className="ios-caption">{subtitle.toUpperCase()}</span>
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 border-emerald-200 ios-live-indicator">
+              LIVE
             </Badge>
           </div>
         </div>
@@ -53,9 +53,9 @@ export function DashboardHeader({
       {/* Right Section - Actions and User */}
       <div className="flex items-center space-x-3">
         {/* Network Status */}
-        <div className="flex items-center space-x-2 px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-200">
+        <div className="flex items-center space-x-2 px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-200 ios-glass">
           <Wifi className="w-4 h-4 text-emerald-600" />
-          <span className="text-sm font-medium text-emerald-700">9 Redes</span>
+          <span className="ios-status text-emerald-700">9 REDES</span>
         </div>
 
         {/* Refresh Button */}
@@ -64,10 +64,10 @@ export function DashboardHeader({
           size="sm"
           onClick={onRefresh}
           disabled={isRefreshing}
-          className="flex items-center space-x-2"
+          className="flex items-center space-x-2 ios-button-secondary"
         >
           <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-          <span className="hidden md:block">Actualizar</span>
+          <span className="hidden md:block font-montserrat uppercase font-semibold tracking-wide">ACTUALIZAR</span>
         </Button>
 
         {/* Notifications */}
@@ -92,8 +92,8 @@ export function DashboardHeader({
             <User className="w-4 h-4 text-white" />
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-medium text-slate-900">Hector Fabio</p>
-            <p className="text-xs text-slate-600">Admin</p>
+            <p className="ios-subheading text-slate-900">HECTOR FABIO</p>
+            <p className="ios-caption text-slate-600">ADMIN</p>
           </div>
           <ChevronDown className="w-4 h-4 text-slate-600" />
         </div>

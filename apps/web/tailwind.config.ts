@@ -15,6 +15,15 @@ const config: Config = {
       },
     },
     extend: {
+      fontFamily: {
+        'montserrat': ['var(--font-montserrat)', 'Montserrat', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        'montserrat-mono': ['var(--font-montserrat-mono)', 'Montserrat', 'monospace'],
+      },
+      letterSpacing: {
+        'ios': '-0.025em',
+        'ios-tight': '-0.03em',
+        'ios-wide': '0.025em',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

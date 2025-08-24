@@ -30,59 +30,59 @@ interface SidebarProps {
   onToggle?: () => void
 }
 
-// Función para crear elementos del menú con badges dinámicos
+// Función para crear elementos del menú con badges dinámicos - iOS Montserrat Style
 const createMenuItems = (badges: { opportunities: number; wallets: number; alerts: number }) => [
   {
-    title: 'Dashboard',
+    title: 'DASHBOARD',
     icon: LayoutDashboard,
     href: '/',
     active: true,
     badge: null
   },
   {
-    title: 'Oportunidades',
+    title: 'OPORTUNIDADES',
     icon: TrendingUp,
     href: '/opportunities',
     active: false,
     badge: badges.opportunities > 0 ? badges.opportunities.toString() : null
   },
   {
-    title: 'Portfolio',
+    title: 'PORTFOLIO',
     icon: PieChart,
     href: '/portfolio',
     active: false,
     badge: null
   },
   {
-    title: 'Transacciones',
+    title: 'TRANSACCIONES',
     icon: History,
     href: '/transactions',
     active: false,
     badge: null
   },
   {
-    title: 'Billeteras',
+    title: 'BILLETERAS',
     icon: Wallet,
     href: '/wallets',
     active: false,
     badge: badges.wallets > 0 ? badges.wallets.toString() : null
   },
   {
-    title: 'Redes',
+    title: 'REDES',
     icon: Network,
     href: '/networks',
     active: false,
     badge: null
   },
   {
-    title: 'Alertas',
+    title: 'ALERTAS',
     icon: Bell,
     href: '/alerts',
     active: false,
     badge: badges.alerts > 0 ? badges.alerts.toString() : null
   },
   {
-    title: 'Configuración',
+    title: 'CONFIGURACIÓN',
     icon: Settings,
     href: '/settings',
     active: false,
@@ -92,13 +92,13 @@ const createMenuItems = (badges: { opportunities: number; wallets: number; alert
 
 const bottomMenuItems = [
   {
-    title: 'Ayuda',
+    title: 'AYUDA',
     icon: HelpCircle,
     href: '/help',
     active: false
   },
   {
-    title: 'Perfil',
+    title: 'PERFIL',
     icon: User,
     href: '/profile',
     active: false
@@ -134,8 +134,8 @@ export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarPro
               <Activity className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold">ArbitrageX</h2>
-              <p className="text-xs text-slate-400">Pro 2025</p>
+              <h2 className="ios-heading text-white">ARBITRAGEX</h2>
+              <p className="ios-caption text-slate-400">PRO 2025</p>
             </div>
           </div>
         )}
@@ -170,12 +170,12 @@ export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarPro
                   <Icon className={cn("w-5 h-5", collapsed ? "" : "mr-3")} />
                   {!collapsed && (
                     <>
-                      <span className="flex-1">{item.title}</span>
+                      <span className="flex-1 ios-nav-item">{item.title}</span>
                       {item.badge && (
                         <Badge 
                           variant="secondary" 
                           className={cn(
-                            "ml-auto text-white text-xs px-2 py-0.5 transition-colors",
+                            "ml-auto text-white ios-caption px-2 py-0.5 transition-colors",
                             isLoading ? "bg-slate-500 animate-pulse" : "bg-emerald-500",
                             error && "bg-red-500"
                           )}

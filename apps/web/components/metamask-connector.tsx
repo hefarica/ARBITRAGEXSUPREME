@@ -57,28 +57,28 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
             variant="outline"
             size="sm"
             onClick={() => window.open('https://metamask.io/download/', '_blank')}
-            className="text-orange-600 border-orange-200 hover:bg-orange-50"
+            className="text-orange-600 border-orange-200 hover:bg-orange-50 ios-button-secondary"
           >
             <Download className="w-4 h-4 mr-2" />
-            Instalar MetaMask
+            <span className="font-montserrat uppercase font-semibold tracking-wide">INSTALAR METAMASK</span>
           </Button>
         ) : !isConnected ? (
           <Button
             onClick={connect}
             disabled={isLoading}
             size="sm"
-            className="bg-orange-500 hover:bg-orange-600 text-white"
+            className="bg-orange-500 hover:bg-orange-600 text-white ios-button-primary"
           >
             {isLoading ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <Wallet className="w-4 h-4 mr-2" />
             )}
-            Conectar
+            <span className="font-montserrat uppercase font-semibold tracking-wide">CONECTAR</span>
           </Button>
         ) : (
           <div className="flex items-center space-x-2">
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 ios-caption">
               <CheckCircle2 className="w-3 h-3 mr-1" />
               {formatAddress(address!)}
             </Badge>
@@ -97,17 +97,17 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
   }
 
   return (
-    <Card className={className}>
+    <Card className={cn(className, "ios-glass")}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Wallet className="w-5 h-5 text-orange-500" />
-            <span>MetaMask Wallet</span>
+            <span className="ios-card-title">METAMASK WALLET</span>
           </div>
           {isConnected && (
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 ios-caption">
               <CheckCircle2 className="w-3 h-3 mr-1" />
-              Conectado
+              CONECTADO
             </Badge>
           )}
         </CardTitle>
@@ -123,44 +123,44 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
 
         {!isMetaMaskInstalled ? (
           <div className="text-center space-y-4">
-            <div className="text-slate-600">
-              MetaMask no está instalado en tu navegador
+            <div className="ios-body text-slate-600">
+              METAMASK NO ESTÁ INSTALADO EN TU NAVEGADOR
             </div>
             <Button
               onClick={() => window.open('https://metamask.io/download/', '_blank')}
-              className="bg-orange-500 hover:bg-orange-600 text-white"
+              className="bg-orange-500 hover:bg-orange-600 text-white ios-button-primary"
             >
               <Download className="w-4 h-4 mr-2" />
-              Descargar MetaMask
+              <span className="font-montserrat uppercase font-semibold tracking-wide">DESCARGAR METAMASK</span>
               <ExternalLink className="w-3 h-3 ml-2" />
             </Button>
           </div>
         ) : !isConnected ? (
           <div className="text-center space-y-4">
-            <div className="text-slate-600">
-              Conecta tu wallet MetaMask para ejecutar operaciones de arbitraje
+            <div className="ios-body text-slate-600">
+              CONECTA TU WALLET METAMASK PARA EJECUTAR OPERACIONES DE ARBITRAJE
             </div>
             <Button
               onClick={connect}
               disabled={isLoading}
-              className="bg-orange-500 hover:bg-orange-600 text-white"
+              className="bg-orange-500 hover:bg-orange-600 text-white ios-button-primary"
             >
               {isLoading ? (
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
               ) : (
                 <Wallet className="w-4 h-4 mr-2" />
               )}
-              Conectar MetaMask
+              <span className="font-montserrat uppercase font-semibold tracking-wide">CONECTAR METAMASK</span>
             </Button>
           </div>
         ) : (
           showDetails && (
             <div className="space-y-3">
               {/* Dirección */}
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg ios-glass">
                 <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wide">Dirección</div>
-                  <div className="font-mono text-sm">{formatAddress(address!)}</div>
+                  <div className="ios-caption text-slate-500">DIRECCIÓN</div>
+                  <div className="font-mono ios-body">{formatAddress(address!)}</div>
                 </div>
                 <Button
                   variant="ghost"
@@ -173,22 +173,22 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
               </div>
 
               {/* Red */}
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg ios-glass">
                 <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wide">Red</div>
+                  <div className="ios-caption text-slate-500">RED</div>
                   <div className="flex items-center space-x-2">
                     <Network className="w-4 h-4 text-slate-600" />
-                    <span className="text-sm">{chainName}</span>
+                    <span className="ios-body">{chainName}</span>
                   </div>
                 </div>
               </div>
 
               {/* Balance */}
               {balance && (
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg ios-glass">
                   <div>
-                    <div className="text-xs text-slate-500 uppercase tracking-wide">Balance</div>
-                    <div className="text-sm font-medium">{balance} ETH</div>
+                    <div className="ios-caption text-slate-500">BALANCE</div>
+                    <div className="ios-subheading">{balance} ETH</div>
                   </div>
                   <Button
                     variant="ghost"

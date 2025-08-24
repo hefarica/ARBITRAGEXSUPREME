@@ -32,13 +32,13 @@ import { cn, formatCurrency, formatPercentage, getNetworkStatusColor, getProfitC
 import { useArbitrageData, type ArbitrageOpportunity } from '@/hooks/useArbitrageData'
 import { MetaMaskConnector } from '@/components/metamask-connector'
 
-// Metrics Cards Component for Real Data
+// Metrics Cards Component for Real Data - iOS Montserrat Style
 function RealTimeMetricsCards({ metrics }: { metrics: any }) {
   if (!metrics) {
     return (
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Card key={i} className="animate-pulse">
+          <Card key={i} className="animate-pulse ios-glass">
             <CardContent className="p-6">
               <div className="h-16 bg-slate-200 rounded"></div>
             </CardContent>
@@ -117,10 +117,10 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
         const Icon = metric.icon
 
         return (
-          <Card key={index} className="relative overflow-hidden">
+          <Card key={index} className="relative overflow-hidden ios-glass hover:shadow-lg transition-all duration-200">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-slate-600">{metric.title}</CardTitle>
+                <CardTitle className="ios-metric-label">{metric.title}</CardTitle>
                 <div className="p-2 rounded-lg bg-emerald-100">
                   <Icon className="w-4 h-4 text-emerald-600" />
                 </div>
@@ -129,7 +129,7 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
             <CardContent className="pt-0">
               <div className="space-y-2">
                 <div className="flex items-baseline space-x-2">
-                  <span className="text-2xl font-bold text-slate-900">{metric.value}</span>
+                  <span className="ios-metric-value text-slate-900">{metric.value}</span>
                   {TrendIcon && (
                     <div className="flex items-center space-x-1 text-sm text-emerald-600">
                       <TrendIcon className="w-3 h-3" />
@@ -137,7 +137,7 @@ function RealTimeMetricsCards({ metrics }: { metrics: any }) {
                   )}
                 </div>
                 {metric.subtitle && (
-                  <p className="text-sm text-slate-600">{metric.subtitle}</p>
+                  <p className="ios-caption text-slate-600">{metric.subtitle}</p>
                 )}
               </div>
             </CardContent>
@@ -207,12 +207,12 @@ function RealTimeOpportunitiesTable({ opportunities }: { opportunities: Arbitrag
           <table className="w-full">
             <thead className="bg-slate-50 border-b">
               <tr>
-                <th className="text-left p-4 font-medium text-slate-600">Token/Red</th>
-                <th className="text-left p-4 font-medium text-slate-600">Ganancia</th>
-                <th className="text-left p-4 font-medium text-slate-600">Estrategia</th>
-                <th className="text-left p-4 font-medium text-slate-600">Confianza</th>
-                <th className="text-left p-4 font-medium text-slate-600">Expira</th>
-                <th className="text-right p-4 font-medium text-slate-600">Acciones</th>
+                <th className="text-left p-4 ios-caption text-slate-600">TOKEN/RED</th>
+                <th className="text-left p-4 ios-caption text-slate-600">GANANCIA</th>
+                <th className="text-left p-4 ios-caption text-slate-600">ESTRATEGIA</th>
+                <th className="text-left p-4 ios-caption text-slate-600">CONFIANZA</th>
+                <th className="text-left p-4 ios-caption text-slate-600">EXPIRA</th>
+                <th className="text-right p-4 ios-caption text-slate-600">ACCIONES</th>
               </tr>
             </thead>
             <tbody>
@@ -220,15 +220,15 @@ function RealTimeOpportunitiesTable({ opportunities }: { opportunities: Arbitrag
                 <tr key={opp.id} className="border-b hover:bg-slate-50 transition-colors">
                   <td className="p-4">
                     <div className="space-y-1">
-                      <div className="font-medium text-slate-900">
+                      <div className="ios-subheading text-slate-900">
                         {opp.tokenIn}/{opp.tokenOut}
                       </div>
-                      <div className="text-sm text-slate-600 flex items-center space-x-2">
-                        <Badge variant="outline" className={getNetworkColor(opp.blockchainFrom)}>
+                      <div className="ios-body text-slate-600 flex items-center space-x-2">
+                        <Badge variant="outline" className={`${getNetworkColor(opp.blockchainFrom)} ios-caption`}>
                           {opp.blockchainFrom}
                         </Badge>
                         <ArrowUpDown className="w-3 h-3" />
-                        <Badge variant="outline" className={getNetworkColor(opp.blockchainTo)}>
+                        <Badge variant="outline" className={`${getNetworkColor(opp.blockchainTo)} ios-caption`}>
                           {opp.blockchainTo}
                         </Badge>
                       </div>
@@ -239,11 +239,11 @@ function RealTimeOpportunitiesTable({ opportunities }: { opportunities: Arbitrag
                     <div className="space-y-1">
                       <div className="flex items-center space-x-2">
                         <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        <span className="font-semibold text-emerald-600">
+                        <span className="ios-subheading text-emerald-600">
                           {formatPercentage(opp.profitPercentage)}
                         </span>
                       </div>
-                      <div className="text-sm text-slate-600">
+                      <div className="ios-body text-slate-600">
                         {formatCurrency(parseFloat(opp.profitAmount))}
                       </div>
                     </div>
