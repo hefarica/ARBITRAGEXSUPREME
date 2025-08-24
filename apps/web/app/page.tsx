@@ -1,5 +1,5 @@
-import { ProfessionalDashboard } from '@/components/professional-dashboard'
+import { RealTimeDashboard } from '@/components/real-time-dashboard'
 
 export default function Home() {
-  return <ProfessionalDashboard />
+  return <RealTimeDashboard />
 }

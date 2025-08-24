@@ -17,6 +17,25 @@ const redis = new Redis({
 // Initialize blockchain service
 let blockchainInitialized = false;
 
+// Root endpoint - API Info
+fastify.get('/', async () => {
+  return {
+    name: 'ArbitrageX Pro 2025 API',
+    version: '2.0.0',
+    description: 'Enterprise DeFi Arbitrage Platform with Real-Time Blockchain Integration',
+    status: 'operational',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      networks: '/api/v2/blockchain/networks',
+      opportunities: '/api/v2/arbitrage/opportunities',
+      dashboard: '/api/v2/analytics/dashboard',
+      status: '/api/v2/status'
+    },
+    documentation: 'Visit /health for system status'
+  }
+});
+
 // Health check con blockchain integration
 fastify.get('/health', async () => {
   try {

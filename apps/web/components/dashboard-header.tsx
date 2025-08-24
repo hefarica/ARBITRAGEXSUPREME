@@ -40,13 +40,13 @@ export function DashboardHeader({
       <div className="flex items-center space-x-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-          <p className="text-sm text-slate-600 flex items-center space-x-2">
+          <div className="text-sm text-slate-600 flex items-center space-x-2">
             <Activity className="w-4 h-4 text-emerald-500" />
             <span>{subtitle}</span>
             <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 border-emerald-200">
               Live
             </Badge>
-          </p>
+          </div>
         </div>
       </div>
 
