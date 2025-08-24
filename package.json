@@ -45,5 +45,14 @@
     "url": "https://github.com/arbitragex/arbitragex-pro-2025.git"
   },
   "author": "ArbitrageX Team",
-  "license": "PROPRIETARY"
+  "license": "PROPRIETARY",
+  "dependencies": {
+    "@cosmjs/stargate": "^0.36.0",
+    "@solana/web3.js": "^1.98.4",
+    "axios": "^1.11.0",
+    "bitcoin-core": "^5.0.0",
+    "cardano-serialization-lib": "10.0.0-beta.16",
+    "ethers": "^6.15.0",
+    "ws": "^8.18.3"
+  }
 }

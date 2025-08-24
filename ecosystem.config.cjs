@@ -5,7 +5,7 @@ module.exports = {
   apps: [
     {
       name: 'arbitragex-api',
-      script: './apps/api/dist/index.database-connected.js',
+      script: './apps/api/dist/index.blockchain-enhanced.js',
       cwd: './',
       instances: 1,
       exec_mode: 'fork',
