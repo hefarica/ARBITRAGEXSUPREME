@@ -2,8 +2,8 @@
 
 import useSWR from 'swr'
 
-// API base URL - puerto 3001 donde corre el backend
-const API_BASE_URL = 'http://localhost:3001/api/v2'
+// API base URL - usando proxy de Next.js para evitar problemas de CORS
+const API_BASE_URL = '/api/proxy/api/v2'
 
 // Fetcher function for SWR
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
