@@ -1,9 +1,10 @@
 // ArbitrageX Pro 2025 - Blockchain Manager
 // Manager principal para todos los conectores blockchain
 
-import { BlockchainConfig, BlockchainConnector, ArbitrageOpportunity } from './types/blockchain';
+import { BlockchainConfig, BlockchainConnector, ArbitrageOpportunity, TokenBalance, Transaction } from './types/blockchain';
 import { EthereumConnector } from './connectors/ethereum';
 import { SolanaConnector } from './connectors/solana';
+import { BaseBlockchainConnector } from './connectors/base';
 
 export interface BlockchainManagerConfig {
   networks: BlockchainConfig[];
@@ -227,24 +228,66 @@ export class BlockchainManager {
       const priceDiff = Math.random() * 0.03; // Hasta 3% diferencia intra-chain
       
       if (priceDiff > 0.005) { // Solo oportunidades > 0.5%
+        // Definir triángulos de tokens realistas para triangular arbitrage
+        const triangularPaths = [
+          { tokens: ['ETH', 'USDC', 'DAI'], dexes: ['Uniswap', 'SushiSwap', 'Curve'] },
+          { tokens: ['WBTC', 'ETH', 'USDT'], dexes: ['Balancer', 'Uniswap', 'Curve'] },
+          { tokens: ['USDC', 'WETH', 'UNI'], dexes: ['SushiSwap', 'Uniswap', 'PancakeSwap'] },
+          { tokens: ['DAI', 'USDC', 'FRAX'], dexes: ['Curve', 'Balancer', 'Uniswap'] },
+          { tokens: ['MATIC', 'USDC', 'WETH'], dexes: ['QuickSwap', 'SushiSwap', 'Curve'] }
+        ];
+
+        const randomPath = triangularPaths[Math.floor(Math.random() * triangularPaths.length)];
+        const [tokenA, tokenB, tokenC] = randomPath.tokens;
+        const [dexA, dexB, dexC] = randomPath.dexes;
+
         opportunities.push({
-          id: `intra_${connector.config.id}_${dex1}_${dex2}_${Date.now()}`,
+          id: `tri_${connector.config.id}_${tokenA}_${tokenB}_${tokenC}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
           strategy: 'triangular_arbitrage',
           blockchainFrom: connector.config.id,
           blockchainTo: connector.config.id,
-          tokenIn: 'USDC',
-          tokenOut: 'USDC',
-          amountIn: '500',
-          expectedAmountOut: (500 * (1 + priceDiff)).toString(),
-          profitAmount: (500 * priceDiff).toString(),
+          tokenIn: tokenA,
+          tokenOut: tokenA, // Regresa al token inicial
+          amountIn: (Math.random() * 2000 + 500).toFixed(2), // Entre 500-2500
+          expectedAmountOut: ((Math.random() * 2000 + 500) * (1 + priceDiff)).toFixed(2),
+          profitAmount: ((Math.random() * 2000 + 500) * priceDiff).toFixed(2),
           profitPercentage: priceDiff * 100,
-          gasEstimate: '200000',
-          confidence: 0.9 + (Math.random() * 0.1),
-          expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutos
+          gasEstimate: (Math.random() * 300000 + 200000).toString(), // Gas más alto para 3 swaps
+          confidence: 0.75 + (Math.random() * 0.2), // Confianza algo menor por complejidad
+          expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3 minutos (más corto por volatilidad)
+          // Ruta triangular completa: A → B → C → A
           dexPath: [
-            { exchange: dex1, poolAddress: `0x${Math.random().toString(16).substr(2, 40)}`, fee: 0.003 },
-            { exchange: dex2, poolAddress: `0x${Math.random().toString(16).substr(2, 40)}`, fee: 0.003 }
-          ]
+            { 
+              exchange: dexA, 
+              poolAddress: `0x${Math.random().toString(16).substr(2, 13)}`, 
+              fee: 0.003,
+              pair: `${tokenA}/${tokenB}`
+            },
+            { 
+              exchange: dexB, 
+              poolAddress: `0x${Math.random().toString(16).substr(2, 13)}`, 
+              fee: 0.003,
+              pair: `${tokenB}/${tokenC}`
+            },
+            { 
+              exchange: dexC, 
+              poolAddress: `0x${Math.random().toString(16).substr(2, 13)}`, 
+              fee: 0.003,
+              pair: `${tokenC}/${tokenA}`
+            }
+          ],
+          // Información adicional del triángulo
+          triangularPath: {
+            tokenA,
+            tokenB, 
+            tokenC,
+            route: `${tokenA} → ${tokenB} → ${tokenC} → ${tokenA}`,
+            steps: [
+              { from: tokenA, to: tokenB, dex: dexA },
+              { from: tokenB, to: tokenC, dex: dexB },
+              { from: tokenC, to: tokenA, dex: dexC }
+            ]
+          }
         });
       }
     }
@@ -341,5 +384,3 @@ class MockConnector extends BaseBlockchainConnector {
   }
 }
 
-import { BaseBlockchainConnector } from './connectors/base';
-import { TokenBalance, Transaction } from './types/blockchain';

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useSidebarBadges } from '@/hooks/useSidebarBadges'
 
 interface SidebarProps {
   className?: string
@@ -29,7 +30,8 @@ interface SidebarProps {
   onToggle?: () => void
 }
 
-const menuItems = [
+// Función para crear elementos del menú con badges dinámicos
+const createMenuItems = (badges: { opportunities: number; wallets: number; alerts: number }) => [
   {
     title: 'Dashboard',
     icon: LayoutDashboard,
@@ -42,7 +44,7 @@ const menuItems = [
     icon: TrendingUp,
     href: '/opportunities',
     active: false,
-    badge: '24'
+    badge: badges.opportunities > 0 ? badges.opportunities.toString() : null
   },
   {
     title: 'Portfolio',
@@ -63,7 +65,7 @@ const menuItems = [
     icon: Wallet,
     href: '/wallets',
     active: false,
-    badge: '3'
+    badge: badges.wallets > 0 ? badges.wallets.toString() : null
   },
   {
     title: 'Redes',
@@ -77,7 +79,7 @@ const menuItems = [
     icon: Bell,
     href: '/alerts',
     active: false,
-    badge: '2'
+    badge: badges.alerts > 0 ? badges.alerts.toString() : null
   },
   {
     title: 'Configuración',
@@ -106,6 +108,12 @@ const bottomMenuItems = [
 export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(isCollapsed)
   const pathname = usePathname()
+  
+  // Obtener badges dinámicos - EXCLUSIVO para sidebar, sin interferir con paginación
+  const { badges, isLoading, error } = useSidebarBadges()
+  
+  // Crear elementos del menú con badges dinámicos (TOTAL ABSOLUTO)
+  const menuItems = createMenuItems(badges)
 
   const handleToggle = () => {
     setCollapsed(!collapsed)
@@ -166,9 +174,13 @@ export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarPro
                       {item.badge && (
                         <Badge 
                           variant="secondary" 
-                          className="ml-auto bg-emerald-500 text-white text-xs px-2 py-0.5"
+                          className={cn(
+                            "ml-auto text-white text-xs px-2 py-0.5 transition-colors",
+                            isLoading ? "bg-slate-500 animate-pulse" : "bg-emerald-500",
+                            error && "bg-red-500"
+                          )}
                         >
-                          {item.badge}
+                          {isLoading ? "..." : item.badge}
                         </Badge>
                       )}
                     </>
@@ -182,8 +194,12 @@ export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarPro
                   <div className="bg-slate-800 text-white text-sm px-2 py-1 rounded shadow-lg whitespace-nowrap">
                     {item.title}
                     {item.badge && (
-                      <span className="ml-2 bg-emerald-500 text-white text-xs px-1.5 py-0.5 rounded">
-                        {item.badge}
+                      <span className={cn(
+                        "ml-2 text-white text-xs px-1.5 py-0.5 rounded transition-colors",
+                        isLoading ? "bg-slate-500 animate-pulse" : "bg-emerald-500",
+                        error && "bg-red-500"
+                      )}>
+                        {isLoading ? "..." : item.badge}
                       </span>
                     )}
                   </div>

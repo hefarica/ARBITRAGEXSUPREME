@@ -48,10 +48,23 @@ export interface ArbitrageOpportunity {
     exchange: string
     poolAddress: string
     fee: number
+    pair?: string // Par de tokens para este swap
   }>
   networkDetails: {
     from: NetworkStatus
     to: NetworkStatus
+  }
+  // Información específica para triangular arbitrage
+  triangularPath?: {
+    tokenA: string
+    tokenB: string
+    tokenC: string
+    route: string // Descripción legible: "ETH → USDC → DAI → ETH"
+    steps: Array<{
+      from: string
+      to: string
+      dex: string
+    }>
   }
 }
 
@@ -115,9 +128,9 @@ export function useNetworks() {
   }
 }
 
-export function useOpportunities() {
+export function useOpportunities(page: number = 1, limit: number = 8) {
   const { data, error, isLoading, mutate } = useSWR(
-    `${API_BASE_URL}/arbitrage/opportunities`,
+    `${API_BASE_URL}/arbitrage/opportunities?page=${page}&limit=${limit}`,
     fetcher,
     {
       refreshInterval: 5000, // Refresh every 5 seconds for real-time data
@@ -126,11 +139,34 @@ export function useOpportunities() {
     }
   )
 
+  // Si el backend no soporta paginación, implementarla en el cliente
+  const allOpportunities = data?.opportunities || [];
+  const totalOpportunities = data?.total || allOpportunities.length;
+  
+  // Paginación en el cliente como fallback
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const paginatedOpportunities = allOpportunities.slice(startIndex, endIndex);
+  
+  // Información de paginación
+  const totalPages = Math.ceil(totalOpportunities / limit);
+  const hasNextPage = page < totalPages;
+  const hasPrevPage = page > 1;
+
   return {
-    opportunities: data?.opportunities || [],
-    totalOpportunities: data?.total || 0,
+    opportunities: data?.pagination ? allOpportunities : paginatedOpportunities, // Si hay paginación del backend, usar todas; si no, usar paginadas
+    totalOpportunities,
     breakdown: data?.breakdown || {},
     marketConditions: data?.market_conditions || {},
+    pagination: data?.pagination || {
+      page,
+      limit,
+      total: totalOpportunities,
+      totalPages,
+      hasNextPage,
+      hasPrevPage,
+      showing: `${startIndex + 1}-${Math.min(endIndex, totalOpportunities)} of ${totalOpportunities}`
+    },
     isLoading,
     error,
     refresh: mutate,

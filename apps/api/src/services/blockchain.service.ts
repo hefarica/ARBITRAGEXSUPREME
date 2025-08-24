@@ -1,7 +1,7 @@
 // ArbitrageX Pro 2025 - Blockchain Service Integration
 // Servicio que integra los conectores blockchain con la API
 
-import { BlockchainManager, getNetworkConfigs, ArbitrageOpportunity } from '../../../../packages/blockchain-connectors/src';
+import { BlockchainManager, getNetworkConfigs, ArbitrageOpportunity } from '@arbitragex/blockchain-connectors';
 
 export class BlockchainIntegrationService {
   private blockchainManager: BlockchainManager;

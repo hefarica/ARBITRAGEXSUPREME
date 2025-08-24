@@ -1,5 +1,6 @@
 // ArbitrageX Pro 2025 - Hybrid System Integration
 // Sistema completo que integra todas las 12 blockchains con detección JavaScript y ejecución en contratos inteligentes
+// ACTUALIZADO: Integra con UniversalFlashLoanArbitrage.sol para 12 tipos de arbitraje
 
 import { ethers, Contract, Wallet, providers } from 'ethers';
 import { Connection, PublicKey } from '@solana/web3.js';
@@ -7,23 +8,92 @@ import { connect, keyStores, WalletConnection } from 'near-api-js';
 import { SmartContractIntegration } from './SmartContractIntegration';
 import { ArbitrageOpportunity, ExecutionResult, BlockchainConfig } from '../types/blockchain';
 
+// ABI para UniversalFlashLoanArbitrage contract
+const UNIVERSAL_ARBITRAGE_ABI = [
+  'function executeUniversalArbitrage((uint8,uint8,address[],uint256[],address[],bytes[],address[],uint256[],uint256[],address[],bytes[],uint256,uint256,uint256,bytes)) external returns (bytes32)',
+  'function getArbitrageStats(uint8) external view returns (uint256,uint256,uint256)',
+  'function getSupportedFlashLoanProviders() external pure returns (uint8[])',
+  'function getSupportedArbitrageTypes() external pure returns (uint8[])',
+  'event FlashLoanInitiated(bytes32 indexed,uint8,uint8,address[],uint256[])',
+  'event ArbitrageExecuted(bytes32 indexed,uint8,bool,uint256,uint256)',
+  'event CrossChainArbitrageInitiated(bytes32 indexed,uint256,uint256,address,uint256)'
+];
+
+// Enums matching Solidity contract
+export enum FlashLoanProvider {
+  AAVE_V3 = 0,
+  BALANCER_V2 = 1,
+  DODO_V2 = 2,
+  COMPOUND_V3 = 3,
+  EULER = 4,
+  RADIANT = 5,
+  GEIST = 6,
+  BENQI = 7,
+  CREAM = 8,
+  UNISWAP_V3 = 9,
+  PANCAKESWAP_V3 = 10
+}
+
+export enum ArbitrageType {
+  INTRADEX_SIMPLE = 0,
+  INTRADEX_TRIANGULAR = 1,
+  INTERDEX_SIMPLE = 2,
+  INTERDEX_TRIANGULAR = 3,
+  INTERBLOCKCHAIN_SIMPLE = 4,
+  INTERBLOCKCHAIN_TRIANGULAR = 5,
+  INTENT_BASED = 6,
+  ACCOUNT_ABSTRACTION = 7,
+  MODULAR_ARBITRAGE = 8,
+  LIQUIDITY_FRAGMENTATION = 9,
+  GOVERNANCE_TOKEN = 10,
+  RWA_ARBITRAGE = 11
+}
+
+// Universal arbitrage parameters structure
+export interface UniversalArbitrageParams {
+  arbitrageType: ArbitrageType;
+  provider: FlashLoanProvider;
+  tokens: string[];
+  amounts: string[];
+  exchanges: string[];
+  exchangeData: string[];
+  swapRoutes: string[];
+  fees: string[];
+  chainIds: string[];
+  bridges: string[];
+  bridgeData: string[];
+  minProfit: string;
+  maxSlippage: string;
+  deadline: string;
+  strategyData: string;
+}
+
 // Configuraciones para todas las 12 blockchains
 export interface HybridSystemConfig {
-  // EVM Chains (Solidity contracts)
-  ethereum: BlockchainConfig;
-  polygon: BlockchainConfig;
-  bsc: BlockchainConfig;
-  arbitrum: BlockchainConfig;
-  optimism: BlockchainConfig;
-  avalanche: BlockchainConfig;
-  fantom: BlockchainConfig;
-  base: BlockchainConfig;
+  // EVM Chains (Solidity contracts) - Universal contract addresses
+  ethereum: BlockchainConfig & { universalContract: string };
+  polygon: BlockchainConfig & { universalContract: string };
+  bsc: BlockchainConfig & { universalContract: string };
+  arbitrum: BlockchainConfig & { universalContract: string };
+  optimism: BlockchainConfig & { universalContract: string };
+  avalanche: BlockchainConfig & { universalContract: string };
+  fantom: BlockchainConfig & { universalContract: string };
+  base: BlockchainConfig & { universalContract: string };
   
   // Non-EVM Chains (Native contracts)
   solana: SolanaConfig;
   near: NearConfig;
   cardano: CardanoConfig;
   cosmos: CosmosConfig;
+  
+  // Universal system settings
+  globalSettings: {
+    maxGasPrice: string;
+    minProfitThreshold: string;
+    maxSlippage: string;
+    defaultDeadline: number;
+    priorityProviders: FlashLoanProvider[];
+  };
 }
 
 export interface SolanaConfig {
@@ -208,6 +278,337 @@ export class HybridSystemIntegration {
   }
 
   /**
+   * NUEVO: Ejecuta arbitraje universal usando UniversalFlashLoanArbitrage contract
+   */
+  public async executeUniversalArbitrage(
+    chainName: string,
+    params: UniversalArbitrageParams
+  ): Promise<ExecutionResult> {
+    const startTime = Date.now();
+    
+    try {
+      // Validar que sea EVM chain (por ahora)
+      if (!this.evmIntegrations.has(chainName)) {
+        throw new Error(`Chain ${chainName} not supported for universal arbitrage`);
+      }
+
+      const integration = this.evmIntegrations.get(chainName)!;
+      const chainConfig = this.config[chainName as keyof HybridSystemConfig] as BlockchainConfig & { universalContract: string };
+      
+      // Conectar al contrato universal
+      const provider = new ethers.providers.JsonRpcProvider(chainConfig.rpcUrl);
+      const wallet = new ethers.Wallet(chainConfig.privateKey, provider);
+      const universalContract = new ethers.Contract(
+        chainConfig.universalContract,
+        UNIVERSAL_ARBITRAGE_ABI,
+        wallet
+      );
+
+      console.log(`🚀 Executing universal arbitrage on ${chainName}:`);
+      console.log(`   Type: ${ArbitrageType[params.arbitrageType]}`);
+      console.log(`   Provider: ${FlashLoanProvider[params.provider]}`);
+      console.log(`   Tokens: ${params.tokens.join(', ')}`);
+      console.log(`   Amounts: ${params.amounts.join(', ')}`);
+
+      // Convertir parámetros al formato del contrato
+      const contractParams = [
+        params.arbitrageType,
+        params.provider,
+        params.tokens,
+        params.amounts,
+        params.exchanges,
+        params.exchangeData,
+        params.swapRoutes,
+        params.fees,
+        params.chainIds,
+        params.bridges,
+        params.bridgeData,
+        params.minProfit,
+        params.maxSlippage,
+        params.deadline,
+        params.strategyData
+      ];
+
+      // Estimar gas
+      const gasEstimate = await universalContract.estimateGas.executeUniversalArbitrage(contractParams);
+      const gasPrice = await provider.getGasPrice();
+      const gasCost = gasEstimate.mul(gasPrice);
+
+      console.log(`💰 Gas estimate: ${ethers.utils.formatEther(gasCost)} ETH`);
+
+      // Verificar que el profit esperado supere el costo de gas
+      const minProfitWei = ethers.utils.parseEther(params.minProfit);
+      if (minProfitWei.lte(gasCost.mul(2))) { // 2x gas cost minimum
+        throw new Error(`Profit too low: ${params.minProfit} ETH < ${ethers.utils.formatEther(gasCost.mul(2))} ETH (2x gas)`);
+      }
+
+      // Ejecutar arbitraje
+      const tx = await universalContract.executeUniversalArbitrage(contractParams, {
+        gasLimit: gasEstimate.mul(120).div(100), // +20% buffer
+        gasPrice: gasPrice
+      });
+
+      console.log(`📝 Transaction sent: ${tx.hash}`);
+      
+      // Esperar confirmación
+      const receipt = await tx.wait();
+      const executionTime = Date.now() - startTime;
+
+      // Buscar eventos de arbitraje
+      const arbitrageEvents = receipt.logs
+        .filter((log: any) => {
+          try {
+            const parsedLog = universalContract.interface.parseLog(log);
+            return parsedLog.name === 'ArbitrageExecuted';
+          } catch {
+            return false;
+          }
+        })
+        .map((log: any) => universalContract.interface.parseLog(log));
+
+      if (arbitrageEvents.length === 0) {
+        throw new Error('No ArbitrageExecuted event found');
+      }
+
+      const arbitrageEvent = arbitrageEvents[0];
+      const success = arbitrageEvent.args.success;
+      const profit = arbitrageEvent.args.profit;
+      const gasUsed = receipt.gasUsed;
+      const actualGasCost = gasUsed.mul(gasPrice);
+
+      // Actualizar estadísticas
+      this.updateStats(chainName, success, profit, actualGasCost, executionTime);
+
+      const result: ExecutionResult = {
+        success,
+        transactionHash: tx.hash,
+        profit: ethers.utils.formatEther(profit),
+        gasCost: ethers.utils.formatEther(actualGasCost),
+        executionTime,
+        blockNumber: receipt.blockNumber,
+        gasUsed: gasUsed.toString(),
+        arbitrageType: ArbitrageType[params.arbitrageType],
+        flashLoanProvider: FlashLoanProvider[params.provider],
+        details: {
+          arbitrageId: arbitrageEvent.args.arbitrageId,
+          netProfit: ethers.utils.formatEther(profit.sub(actualGasCost)),
+          roi: profit.gt(0) ? profit.mul(100).div(minProfitWei).toString() + '%' : '0%'
+        }
+      };
+
+      if (success) {
+        console.log(`✅ Arbitrage executed successfully!`);
+        console.log(`   Profit: ${result.profit} ETH`);
+        console.log(`   Gas Cost: ${result.gasCost} ETH`);
+        console.log(`   Net Profit: ${result.details.netProfit} ETH`);
+        console.log(`   ROI: ${result.details.roi}`);
+      } else {
+        console.log(`❌ Arbitrage execution failed`);
+      }
+
+      return result;
+
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      console.error(`🚫 Error executing universal arbitrage on ${chainName}:`, error);
+      
+      return {
+        success: false,
+        transactionHash: '',
+        profit: '0',
+        gasCost: '0',
+        executionTime,
+        blockNumber: 0,
+        gasUsed: '0',
+        arbitrageType: ArbitrageType[params.arbitrageType],
+        flashLoanProvider: FlashLoanProvider[params.provider],
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: {
+          arbitrageId: '',
+          netProfit: '0',
+          roi: '0%'
+        }
+      };
+    }
+  }
+
+  /**
+   * Detecta y ejecuta automáticamente oportunidades de arbitraje universal
+   */
+  public async detectAndExecuteUniversalOpportunities(): Promise<ExecutionResult[]> {
+    const results: ExecutionResult[] = [];
+    
+    // Detectar oportunidades en todas las EVM chains
+    for (const [chainName, integration] of this.evmIntegrations) {
+      try {
+        // Obtener oportunidades de arbitraje
+        const opportunities = await this.detectOpportunitiesOnChain(chainName);
+        
+        for (const opportunity of opportunities) {
+          // Convertir oportunidad a parámetros universales
+          const params = await this.convertOpportunityToUniversalParams(opportunity, chainName);
+          
+          if (params) {
+            const result = await this.executeUniversalArbitrage(chainName, params);
+            results.push(result);
+            
+            // Si fue exitoso, esperar un poco antes del siguiente
+            if (result.success) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        }
+        
+      } catch (error) {
+        console.error(`Error detecting opportunities on ${chainName}:`, error);
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Convierte oportunidad detectada a parámetros del contrato universal
+   */
+  private async convertOpportunityToUniversalParams(
+    opportunity: ArbitrageOpportunity,
+    chainName: string
+  ): Promise<UniversalArbitrageParams | null> {
+    
+    try {
+      // Determinar tipo de arbitraje basado en la oportunidad
+      let arbitrageType: ArbitrageType;
+      let provider: FlashLoanProvider;
+      
+      // Lógica para determinar el mejor tipo de arbitraje
+      if (opportunity.exchanges.length === 1) {
+        arbitrageType = opportunity.tokens.length === 2 
+          ? ArbitrageType.INTRADEX_SIMPLE 
+          : ArbitrageType.INTRADEX_TRIANGULAR;
+      } else if (opportunity.exchanges.length > 1) {
+        arbitrageType = opportunity.tokens.length === 2 
+          ? ArbitrageType.INTERDEX_SIMPLE 
+          : ArbitrageType.INTERDEX_TRIANGULAR;
+      } else {
+        // Default to liquidity fragmentation
+        arbitrageType = ArbitrageType.LIQUIDITY_FRAGMENTATION;
+      }
+      
+      // Seleccionar mejor flash loan provider para la chain
+      provider = this.selectBestFlashLoanProvider(chainName, opportunity.tokens[0]);
+      
+      // Preparar exchange data
+      const exchangeData = opportunity.exchanges.map(exchange => {
+        // Encode swap data for each exchange
+        return ethers.utils.defaultAbiCoder.encode(
+          ['address', 'uint24'], 
+          [exchange, 3000] // Default 0.3% fee
+        );
+      });
+      
+      const params: UniversalArbitrageParams = {
+        arbitrageType,
+        provider,
+        tokens: opportunity.tokens,
+        amounts: opportunity.amounts.map(amt => ethers.utils.parseEther(amt.toString()).toString()),
+        exchanges: opportunity.exchanges,
+        exchangeData,
+        swapRoutes: opportunity.tokens, // Simple route
+        fees: ['3000'], // 0.3% default
+        chainIds: [this.getChainId(chainName).toString()],
+        bridges: [], // No cross-chain for now
+        bridgeData: [],
+        minProfit: ethers.utils.parseEther((opportunity.expectedProfit * 0.8).toString()).toString(), // 80% of expected
+        maxSlippage: '500', // 5% max slippage
+        deadline: (Math.floor(Date.now() / 1000) + 300).toString(), // 5 minutes
+        strategyData: '0x' // No additional strategy data
+      };
+      
+      return params;
+      
+    } catch (error) {
+      console.error('Error converting opportunity to universal params:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Selecciona el mejor flash loan provider para una chain específica
+   */
+  private selectBestFlashLoanProvider(chainName: string, token: string): FlashLoanProvider {
+    const chainId = this.getChainId(chainName);
+    
+    // Priorizar providers con 0% fees
+    const zeroFeeProviders = [FlashLoanProvider.BALANCER_V2, FlashLoanProvider.DODO_V2];
+    
+    // Verificar disponibilidad por chain
+    switch (chainId) {
+      case 1: // Ethereum
+        return zeroFeeProviders.includes(FlashLoanProvider.BALANCER_V2) 
+          ? FlashLoanProvider.BALANCER_V2 
+          : FlashLoanProvider.AAVE_V3;
+      case 137: // Polygon
+      case 42161: // Arbitrum
+        return FlashLoanProvider.BALANCER_V2;
+      case 56: // BSC
+        return FlashLoanProvider.DODO_V2;
+      case 8453: // Base
+        return FlashLoanProvider.BALANCER_V2;
+      default:
+        return FlashLoanProvider.AAVE_V3;
+    }
+  }
+
+  /**
+   * Obtiene chain ID numérico
+   */
+  private getChainId(chainName: string): number {
+    const chainIds: Record<string, number> = {
+      ethereum: 1,
+      polygon: 137,
+      bsc: 56,
+      arbitrum: 42161,
+      optimism: 10,
+      avalanche: 43114,
+      fantom: 250,
+      base: 8453
+    };
+    
+    return chainIds[chainName] || 1;
+  }
+
+  /**
+   * Actualiza estadísticas del sistema
+   */
+  private updateStats(
+    chainName: string,
+    success: boolean,
+    profit: ethers.BigNumber,
+    gasCost: ethers.BigNumber,
+    executionTime: number
+  ): void {
+    
+    this.stats.totalExecuted++;
+    if (success) {
+      this.stats.totalProfit += parseFloat(ethers.utils.formatEther(profit));
+    }
+    this.stats.totalGasSpent += parseFloat(ethers.utils.formatEther(gasCost));
+    this.stats.successRate = (this.stats.totalProfit > 0 ? 1 : 0) * 100;
+    this.stats.averageExecutionTime = (this.stats.averageExecutionTime + executionTime) / 2;
+    
+    // Actualizar estadísticas por chain
+    const chainStats = this.stats.chainPerformance.get(chainName);
+    if (chainStats) {
+      chainStats.executed++;
+      if (success) {
+        chainStats.profit += parseFloat(ethers.utils.formatEther(profit));
+      }
+      chainStats.gasSpent += parseFloat(ethers.utils.formatEther(gasCost));
+      chainStats.successRate = chainStats.profit > 0 ? (chainStats.profit / chainStats.executed) * 100 : 0;
+    }
+  }
+
+  /**
    * Inicia el sistema de monitoreo híbrido para todas las blockchains
    */
   public async startHybridMonitoring(): Promise<void> {
@@ -219,13 +620,148 @@ export class HybridSystemIntegration {
     console.log('🔍 Starting hybrid arbitrage monitoring across 12 blockchains...');
     this.isMonitoring = true;
 
+    // Monitorear y ejecutar automáticamente cada 10 segundos
+    const monitoringLoop = async () => {
+      while (this.isMonitoring) {
+        try {
+          console.log('🔄 Scanning for universal arbitrage opportunities...');
+          const results = await this.detectAndExecuteUniversalOpportunities();
+          
+          if (results.length > 0) {
+            const successfulArbitrages = results.filter(r => r.success);
+            console.log(`📊 Executed ${results.length} arbitrages, ${successfulArbitrages.length} successful`);
+            
+            if (successfulArbitrages.length > 0) {
+              const totalProfit = successfulArbitrages.reduce((sum, r) => sum + parseFloat(r.profit), 0);
+              console.log(`💰 Total profit: ${totalProfit.toFixed(6)} ETH`);
+            }
+          }
+          
+        } catch (error) {
+          console.error('Error in monitoring loop:', error);
+        }
+        
+        // Esperar 10 segundos antes del siguiente ciclo
+        await new Promise(resolve => setTimeout(resolve, 10000));
+      }
+    };
+
+    // Iniciar el loop de monitoreo
+    monitoringLoop();
+
     // Monitorear todas las EVM chains en paralelo
     const evmPromises = Array.from(this.evmIntegrations.entries()).map(([chain, integration]) =>
       this.monitorEVMChain(chain, integration)
     );
 
-    // Monitorear non-EVM chains
+    // Monitorear non-EVM chains (placeholder)
     const nonEvmPromises = [
+      this.monitorSolana(),
+      this.monitorNear(),
+      this.monitorCardano(),
+      this.monitorCosmos()
+    ];
+
+    // Ejecutar todos en paralelo
+    await Promise.all([...evmPromises, ...nonEvmPromises]);
+  }
+
+  /**
+   * Detecta oportunidades en una chain específica
+   */
+  private async detectOpportunitiesOnChain(chainName: string): Promise<ArbitrageOpportunity[]> {
+    // Placeholder - implementar lógica de detección específica
+    // Por ahora retorna array vacío
+    return [];
+  }
+
+  /**
+   * Para el monitoreo híbrido
+   */
+  public stopHybridMonitoring(): void {
+    this.isMonitoring = false;
+    console.log('🛑 Hybrid monitoring stopped');
+  }
+
+  /**
+   * Obtiene estadísticas del sistema
+   */
+  public getSystemStats() {
+    return {
+      ...this.stats,
+      chainPerformance: Object.fromEntries(this.stats.chainPerformance)
+    };
+  }
+
+  /**
+   * Obtiene estadísticas de un contrato universal específico
+   */
+  public async getUniversalContractStats(chainName: string): Promise<any> {
+    try {
+      const chainConfig = this.config[chainName as keyof HybridSystemConfig] as BlockchainConfig & { universalContract: string };
+      const provider = new ethers.providers.JsonRpcProvider(chainConfig.rpcUrl);
+      const contract = new ethers.Contract(
+        chainConfig.universalContract,
+        UNIVERSAL_ARBITRAGE_ABI,
+        provider
+      );
+
+      // Obtener estadísticas para todos los tipos de arbitraje
+      const arbitrageTypes = await contract.getSupportedArbitrageTypes();
+      const stats: any = {};
+
+      for (const arbitrageType of arbitrageTypes) {
+        const [executions, profits, successRate] = await contract.getArbitrageStats(arbitrageType);
+        stats[ArbitrageType[arbitrageType]] = {
+          executions: executions.toString(),
+          profits: ethers.utils.formatEther(profits),
+          successRate: successRate.toString()
+        };
+      }
+
+      return stats;
+      
+    } catch (error) {
+      console.error(`Error getting contract stats for ${chainName}:`, error);
+      return {};
+    }
+  }
+
+  // Métodos de monitoreo por chain (placeholder)
+  private async monitorEVMChain(chain: string, integration: SmartContractIntegration): Promise<void> {
+    // Implementar lógica específica de monitoreo EVM
+  }
+
+  private async monitorSolana(): Promise<void> {
+    console.log('📡 Monitoring Solana for arbitrage opportunities...');
+    // TODO: Implementar integración completa con programa Solana
+  }
+
+  private async monitorNear(): Promise<void> {
+    console.log('📡 Monitoring Near for arbitrage opportunities...');
+    // TODO: Implementar integración completa con contrato Near
+  }
+
+  private async monitorCardano(): Promise<void> {
+    console.log('📡 Monitoring Cardano for arbitrage opportunities...');
+    // TODO: Implementar integración completa con script Cardano
+  }
+
+  private async monitorCosmos(): Promise<void> {
+    console.log('📡 Monitoring Cosmos for arbitrage opportunities...');
+    // TODO: Implementar integración completa con contrato CosmWasm
+  }
+}
+
+// Interfaces adicionales
+interface ChainMetrics {
+  opportunities: number;
+  executed: number;
+  profit: number;
+  gasSpent: number;
+  averageGasPrice: number;
+  successRate: number;
+}
       this.monitorSolana(),
       this.monitorNear(),
       this.monitorCardano(),

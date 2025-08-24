@@ -85,7 +85,20 @@ export interface ArbitrageOpportunity {
     exchange: string;
     poolAddress: string;
     fee?: number;
+    pair?: string; // Par de tokens para este swap (ej: "ETH/USDC")
   }[];
+  // Información específica para triangular arbitrage
+  triangularPath?: {
+    tokenA: string;
+    tokenB: string;
+    tokenC: string;
+    route: string; // Descripción legible: "ETH → USDC → DAI → ETH"
+    steps: {
+      from: string;
+      to: string;
+      dex: string;
+    }[];
+  };
 }
 
 export interface DEXInfo {

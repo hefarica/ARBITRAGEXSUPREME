@@ -23,9 +23,19 @@ import {
 } from 'lucide-react'
 import { cn, formatCurrency, formatPercentage, formatTimeAgo, getNetworkColor } from '@/lib/utils'
 import { useOpportunities, type ArbitrageOpportunity } from '@/hooks/useArbitrageData'
+import { Pagination } from '@/components/ui/pagination'
+import { MetaMaskConnector } from '@/components/metamask-connector'
+import { useMetaMask } from '@/hooks/useMetaMask'
 
 // Enhanced Opportunities Table with filters and detailed view
-function EnhancedOpportunitiesTable({ opportunities, isLoading }: { opportunities: ArbitrageOpportunity[], isLoading: boolean }) {
+function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPageChange, onExecute, isConnected }: { 
+  opportunities: ArbitrageOpportunity[], 
+  isLoading: boolean,
+  pagination?: any,
+  onPageChange: (page: number) => void,
+  onExecute: (opp: ArbitrageOpportunity) => void,
+  isConnected: boolean
+}) {
   const [sortField, setSortField] = useState<keyof ArbitrageOpportunity>('profitPercentage')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'executing'>('all')
@@ -175,21 +185,60 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading }: { opportunitie
                 <tr key={opp.id} className="border-b hover:bg-slate-50 transition-colors">
                   <td className="p-4">
                     <div className="space-y-2">
-                      <div className="font-medium text-slate-900">
-                        {opp.tokenIn}/{opp.tokenOut}
-                      </div>
+                      {/* Mostrar ruta triangular si existe */}
+                      {opp.strategy === 'triangular_arbitrage' && opp.triangularPath ? (
+                        <div>
+                          <div className="font-medium text-slate-900">
+                            {opp.triangularPath.route}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            {opp.triangularPath.steps.map((step, idx) => (
+                              <span key={idx}>
+                                {step.from} → {step.to} ({step.dex})
+                                {idx < opp.triangularPath!.steps.length - 1 ? ' • ' : ''}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="font-medium text-slate-900">
+                          {opp.tokenIn}/{opp.tokenOut}
+                        </div>
+                      )}
+                      
                       <div className="flex items-center space-x-2">
                         <Badge variant="outline" className={getNetworkColor(opp.blockchainFrom)}>
                           {opp.blockchainFrom}
                         </Badge>
-                        <ArrowUpDown className="w-3 h-3" />
-                        <Badge variant="outline" className={getNetworkColor(opp.blockchainTo)}>
-                          {opp.blockchainTo}
-                        </Badge>
+                        {opp.blockchainFrom !== opp.blockchainTo && (
+                          <>
+                            <ArrowUpDown className="w-3 h-3" />
+                            <Badge variant="outline" className={getNetworkColor(opp.blockchainTo)}>
+                              {opp.blockchainTo}
+                            </Badge>
+                          </>
+                        )}
+                        {opp.strategy === 'triangular_arbitrage' && (
+                          <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200">
+                            Triangular
+                          </Badge>
+                        )}
                       </div>
+                      
                       {opp.dexPath && (
                         <div className="text-xs text-slate-500">
-                          {opp.dexPath.map(path => path.exchange).join(' → ')}
+                          {opp.strategy === 'triangular_arbitrage' ? (
+                            // Para triangular, mostrar la secuencia completa
+                            opp.dexPath.map((path, idx) => (
+                              <span key={idx}>
+                                {path.exchange}{path.pair ? ` (${path.pair})` : ''}
+                                {idx < opp.dexPath.length - 1 ? ' → ' : ''}
+                              </span>
+                            ))
+                          ) : (
+                            // Para otros tipos, mostrar como antes
+                            opp.dexPath.map(path => path.exchange).join(' → ')
+                          )}
                         </div>
                       )}
                     </div>
@@ -250,9 +299,17 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading }: { opportunitie
                   
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end space-x-2">
-                      <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+                      <Button 
+                        size="sm" 
+                        onClick={() => onExecute(opp)}
+                        disabled={!isConnected}
+                        className={cn(
+                          "bg-emerald-600 hover:bg-emerald-700",
+                          !isConnected && "bg-slate-400 hover:bg-slate-400 cursor-not-allowed"
+                        )}
+                      >
                         <Play className="w-3 h-3 mr-1" />
-                        Ejecutar
+                        {isConnected ? 'Ejecutar' : 'Conectar Wallet'}
                       </Button>
                       <Button size="sm" variant="outline">
                         <ExternalLink className="w-3 h-3" />
@@ -274,6 +331,18 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading }: { opportunitie
             <p className="text-sm text-slate-500 mt-1">
               Ajusta los filtros o espera a que se detecten nuevas oportunidades
             </p>
+          </div>
+        )}
+        
+        {/* Paginación */}
+        {pagination && pagination.totalPages > 1 && (
+          <div className="p-4 border-t bg-slate-50">
+            <Pagination
+              currentPage={pagination.page}
+              totalPages={pagination.totalPages}
+              onPageChange={onPageChange}
+              showing={pagination.showing}
+            />
           </div>
         )}
       </CardContent>
@@ -346,10 +415,31 @@ function OpportunityStats({ opportunities }: { opportunities: ArbitrageOpportuni
 }
 
 export function RealTimeOpportunitiesPage() {
-  const { opportunities, totalOpportunities, breakdown, isLoading, error, refresh } = useOpportunities()
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(8) // Máximo 8 por página como solicitaste
+  
+  const { opportunities, totalOpportunities, breakdown, pagination, isLoading, error, refresh } = useOpportunities(currentPage, itemsPerPage)
+  const { isConnected, address, chainName } = useMetaMask()
 
   const handleRefresh = () => {
     refresh()
+  }
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  const handleExecuteArbitrage = async (opp: ArbitrageOpportunity) => {
+    if (!isConnected || !address) {
+      alert('Por favor conecta tu wallet MetaMask primero')
+      return
+    }
+
+    if (opp.strategy === 'triangular_arbitrage' && opp.triangularPath) {
+      alert(`Ejecutando Triangular Arbitrage: ${opp.triangularPath.route}\n\nEsto es una simulación. En producción, se ejecutarían las transacciones reales.`)
+    } else {
+      alert(`Ejecutando Arbitraje: ${opp.tokenIn} → ${opp.tokenOut}\n\nEsto es una simulación. En producción, se ejecutarían las transacciones reales.`)
+    }
   }
 
   if (error) {
@@ -381,8 +471,15 @@ export function RealTimeOpportunitiesPage() {
       isRefreshing={isLoading}
     >
       <div className="space-y-6">
-        {/* Statistics */}
-        <OpportunityStats opportunities={opportunities} />
+        {/* MetaMask Connection and Statistics */}
+        <div className="grid gap-6 lg:grid-cols-4">
+          <div className="lg:col-span-3">
+            <OpportunityStats opportunities={opportunities} />
+          </div>
+          <div className="lg:col-span-1">
+            <MetaMaskConnector compact={false} showDetails={true} />
+          </div>
+        </div>
 
         {/* Market Overview */}
         {breakdown && (
@@ -422,6 +519,10 @@ export function RealTimeOpportunitiesPage() {
         <EnhancedOpportunitiesTable 
           opportunities={opportunities} 
           isLoading={isLoading}
+          pagination={pagination}
+          onPageChange={handlePageChange}
+          onExecute={handleExecuteArbitrage}
+          isConnected={isConnected}
         />
       </div>
     </DashboardLayout>

@@ -185,10 +185,29 @@ fastify.get('/api/v2/blockchain/status', async (request, reply) => {
   }
 });
 
-// Arbitrage opportunities REALES con blockchain
+// Arbitrage opportunities REALES con blockchain y paginación
 fastify.get('/api/v2/arbitrage/opportunities', async (request, reply) => {
   try {
-    // Obtener oportunidades de la base de datos (como antes)
+    // Parámetros de paginación
+    const query = request.query as any;
+    const page = parseInt(query.page) || 1;
+    const limit = parseInt(query.limit) || 8; // Máximo 8 por página como solicitaste
+    const offset = (page - 1) * limit;
+    
+    // Límites de seguridad
+    const maxLimit = 50;
+    const actualLimit = Math.min(limit, maxLimit);
+    
+    // Obtener el total de oportunidades de la base de datos
+    const totalDbOpportunities = await prisma.arbitrageOpportunity.count({
+      where: {
+        expires_at: {
+          gt: new Date(),
+        },
+      },
+    });
+
+    // Obtener oportunidades de la base de datos (paginadas)
     const dbOpportunities = await prisma.arbitrageOpportunity.findMany({
       where: {
         expires_at: {
@@ -208,21 +227,22 @@ fastify.get('/api/v2/arbitrage/opportunities', async (request, reply) => {
       orderBy: {
         profit_percentage: 'desc',
       },
-      take: 25,
+      skip: offset,
+      take: actualLimit,
     });
 
-    // Obtener oportunidades REALES de blockchain (si está inicializado)
-    let blockchainOpportunities: any[] = [];
+    // Obtener todas las oportunidades REALES de blockchain (si está inicializado)
+    let allBlockchainOpportunities: any[] = [];
     if (blockchainInitialized) {
       try {
-        blockchainOpportunities = await blockchainService.getArbitrageOpportunities();
+        allBlockchainOpportunities = await blockchainService.getArbitrageOpportunities();
       } catch (error) {
         fastify.log.warn('Blockchain opportunities scan failed:', error);
       }
     }
 
-    // Combinar oportunidades de DB y blockchain
-    const allOpportunities = [
+    // Combinar TODAS las oportunidades de DB y blockchain (sin paginación aquí)
+    const allCombinedOpportunities = [
       ...dbOpportunities.map(opp => ({
         ...opp,
         source: 'database',
@@ -230,28 +250,63 @@ fastify.get('/api/v2/arbitrage/opportunities', async (request, reply) => {
         profit_usd: Number(opp.profit_usd),
         confidence_score: Number(opp.confidence_score)
       })),
-      ...blockchainOpportunities.map(opp => ({
+      ...allBlockchainOpportunities.map(opp => ({
         ...opp,
         source: 'blockchain_scan',
         detected_at: new Date().toISOString()
       }))
     ].sort((a, b) => b.profit_percentage - a.profit_percentage);
 
+    // El total real incluye TODAS las oportunidades (DB + blockchain)
+    const totalOpportunities = totalDbOpportunities + allBlockchainOpportunities.length;
+    
+    // Para la paginación, tomamos solo las oportunidades de la página actual
+    // Las de blockchain se deben mezclar con las de DB y luego paginar
+    const startIndex = 0; // Ya aplicamos offset en la consulta de DB
+    const endIndex = actualLimit;
+    const paginatedOpportunities = allCombinedOpportunities.slice(startIndex, endIndex);
+    
+    // Información de paginación
+    const totalPages = Math.ceil(totalOpportunities / actualLimit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
     // Cache result for 15 seconds (más frecuente por ser data real)
+    const cacheKey = `arbitrage:opportunities:page_${page}_limit_${actualLimit}`;
     await redis.setex(
-      'arbitrage:opportunities:combined',
+      cacheKey,
       15,
-      JSON.stringify(allOpportunities)
+      JSON.stringify({
+        opportunities: paginatedOpportunities,
+        pagination: {
+          total: totalOpportunities,
+          page,
+          limit: actualLimit,
+          totalPages,
+          hasNextPage,
+          hasPrevPage
+        }
+      })
     );
 
     return {
       success: true,
-      opportunities: allOpportunities,
-      total: allOpportunities.length,
+      opportunities: paginatedOpportunities,
+      total: totalOpportunities,
+      pagination: {
+        page,
+        limit: actualLimit,
+        total: totalOpportunities,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+        showing: `${offset + 1}-${Math.min(offset + actualLimit, totalOpportunities)} of ${totalOpportunities}`
+      },
       breakdown: {
-        database_opportunities: dbOpportunities.length,
-        blockchain_opportunities: blockchainOpportunities.length,
-        blockchain_scanning_active: blockchainInitialized
+        database_opportunities: totalDbOpportunities,
+        blockchain_opportunities: allBlockchainOpportunities.length,
+        blockchain_scanning_active: blockchainInitialized,
+        page_showing: paginatedOpportunities.length
       },
       cached_until: new Date(Date.now() + 15000).toISOString(),
     };
@@ -260,13 +315,19 @@ fastify.get('/api/v2/arbitrage/opportunities', async (request, reply) => {
     
     // Fallback to cache
     try {
-      const cached = await redis.get('arbitrage:opportunities:combined');
+      const query = request.query as any;
+      const page = parseInt(query.page) || 1;
+      const limit = parseInt(query.limit) || 8;
+      const cacheKey = `arbitrage:opportunities:page_${page}_limit_${limit}`;
+      
+      const cached = await redis.get(cacheKey);
       if (cached) {
-        const opportunities = JSON.parse(cached);
+        const cachedData = JSON.parse(cached);
         return {
           success: true,
-          opportunities,
-          total: opportunities.length,
+          opportunities: cachedData.opportunities,
+          total: cachedData.pagination.total,
+          pagination: cachedData.pagination,
           source: 'cache',
           warning: 'Using cached data due to service error',
         };

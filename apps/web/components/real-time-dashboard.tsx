@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { cn, formatCurrency, formatPercentage, getNetworkStatusColor, getProfitColor, formatTimeAgo, getNetworkColor } from '@/lib/utils'
 import { useArbitrageData, type ArbitrageOpportunity } from '@/hooks/useArbitrageData'
+import { MetaMaskConnector } from '@/components/metamask-connector'
 
 // Metrics Cards Component for Real Data
 function RealTimeMetricsCards({ metrics }: { metrics: any }) {
@@ -339,8 +340,16 @@ export function RealTimeDashboard() {
       isRefreshing={isLoading}
     >
       <div className="space-y-6">
-        {/* Real-Time Metrics */}
-        <RealTimeMetricsCards metrics={metrics} />
+        {/* MetaMask Wallet Connection */}
+        <div className="grid gap-6 lg:grid-cols-4">
+          <div className="lg:col-span-3">
+            {/* Real-Time Metrics */}
+            <RealTimeMetricsCards metrics={metrics} />
+          </div>
+          <div className="lg:col-span-1">
+            <MetaMaskConnector showDetails={true} />
+          </div>
+        </div>
 
         {/* Networks and Quick Stats */}
         <div className="grid gap-6 lg:grid-cols-3">
