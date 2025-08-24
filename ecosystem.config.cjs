@@ -30,7 +30,7 @@ module.exports = {
     {
       name: 'arbitragex-web',
       script: 'npm',
-      args: 'start',
+      args: 'run dev',
       cwd: './apps/web',
       instances: 1,
       exec_mode: 'fork',
