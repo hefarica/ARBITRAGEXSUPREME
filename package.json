@@ -1,0 +1,49 @@
+{
+  "name": "arbitragex-pro-2025",
+  "version": "2.0.0",
+  "description": "Plataforma SaaS Enterprise más avanzada para arbitraje DeFi",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "turbo run test:e2e",
+    "test:performance": "turbo run test:performance",
+    "test:security": "turbo run test:security",
+    "test:deployment": "turbo run test:deployment",
+    "test:db-connections": "node scripts/test-db-connections.js",
+    "test:blockchain-connections": "node scripts/test-blockchain-connections.js",
+    "clean": "turbo run clean",
+    "validate": "bash scripts/validate-complete.sh",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "k8s:deploy": "kubectl apply -f infrastructure/kubernetes/",
+    "migrate:dev": "turbo run migrate:dev",
+    "migrate:prod": "turbo run migrate:prod",
+    "seed": "turbo run seed"
+  },
+  "devDependencies": {
+    "@turbo/gen": "^1.10.12",
+    "turbo": "^1.10.12",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arbitragex/arbitragex-pro-2025.git"
+  },
+  "author": "ArbitrageX Team",
+  "license": "PROPRIETARY"
+}

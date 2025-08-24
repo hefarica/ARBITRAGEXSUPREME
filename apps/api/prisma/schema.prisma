@@ -1,0 +1,203 @@
+// ArbitrageX Pro 2025 - Simplified Prisma Schema
+// Single schema setup for initial development
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// TENANT AND USER MODELS
+// =============================================================================
+
+model Tenant {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String   @unique
+  domain          String?  @unique
+  branding        Json?
+  subscription_id String?  @db.Uuid
+  settings        Json?
+  status          TenantStatus @default(ACTIVE)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // Relationships
+  subscription    Subscription? @relation(fields: [subscription_id], references: [id])
+  users           User[]
+  api_keys        ApiKey[]
+  arbitrage_configs ArbitrageConfig[]
+
+  @@map("tenants")
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_id     String   @db.Uuid
+  email         String   @unique
+  password_hash String?
+  first_name    String
+  last_name     String
+  role          UserRole @default(USER)
+  status        UserStatus @default(ACTIVE)
+  last_login_at DateTime?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relationships
+  tenant        Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  api_keys      ApiKey[]
+
+  @@map("users")
+}
+
+model ApiKey {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_id   String   @db.Uuid
+  user_id     String   @db.Uuid
+  name        String
+  key_hash    String   @unique
+  permissions Json
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  // Relationships
+  tenant      Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  user        User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// =============================================================================
+// SUBSCRIPTION MODELS
+// =============================================================================
+
+model Subscription {
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenant_id             String   @db.Uuid
+  stripe_subscription_id String? @unique
+  stripe_customer_id    String?
+  plan_id               String   @db.Uuid
+  status                SubscriptionStatus
+  current_period_start  DateTime
+  current_period_end    DateTime
+  cancel_at_period_end  Boolean  @default(false)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  // Relationships
+  plan                  SubscriptionPlan @relation(fields: [plan_id], references: [id])
+  tenants               Tenant[]
+
+  @@map("subscriptions")
+}
+
+model SubscriptionPlan {
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String
+  description       String?
+  stripe_price_id   String?  @unique
+  price_monthly     Decimal  @db.Decimal(10, 2)
+  features          Json
+  limits            Json
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+
+  // Relationships
+  subscriptions     Subscription[]
+
+  @@map("subscription_plans")
+}
+
+// =============================================================================
+// ARBITRAGE MODELS
+// =============================================================================
+
+model ArbitrageConfig {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenant_id         String   @db.Uuid
+  name              String
+  description       String?
+  strategies        Json
+  blockchains       Json
+  risk_settings     Json
+  slippage_tolerance Decimal @db.Decimal(5, 4) @default(0.005)
+  min_profit_threshold Decimal @db.Decimal(10, 4) @default(0.02)
+  max_position_size    Decimal @db.Decimal(20, 8)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relationships
+  tenant            Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  opportunities     ArbitrageOpportunity[]
+
+  @@map("arbitrage_configs")
+}
+
+model ArbitrageOpportunity {
+  id                String   @id @default(uuid()) @db.Uuid
+  config_id         String   @db.Uuid
+  strategy_name     String
+  blockchain_from   String
+  blockchain_to     String
+  token_symbol      String
+  profit_percentage Decimal  @db.Decimal(10, 6)
+  profit_usd        Decimal  @db.Decimal(20, 8)
+  confidence_score  Decimal  @db.Decimal(3, 2)
+  status            OpportunityStatus @default(DETECTED)
+  expires_at        DateTime
+  detected_at       DateTime @default(now())
+
+  // Relationships
+  config            ArbitrageConfig @relation(fields: [config_id], references: [id])
+
+  @@map("arbitrage_opportunities")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+  TRIALING
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum OpportunityStatus {
+  DETECTED
+  ANALYZING
+  READY
+  EXECUTING
+  EXECUTED
+  FAILED
+  EXPIRED
+}
