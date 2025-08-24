@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { 
   LayoutDashboard,
@@ -103,6 +105,7 @@ const bottomMenuItems = [
 
 export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(isCollapsed)
+  const pathname = usePathname()
 
   const handleToggle = () => {
     setCollapsed(!collapsed)
@@ -142,33 +145,36 @@ export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarPro
       <nav className="flex-1 p-4 space-y-2">
         {menuItems.map((item) => {
           const Icon = item.icon
+          const isActive = pathname === item.href
           return (
             <div key={item.href} className="relative">
-              <Button
-                variant="ghost"
-                className={cn(
-                  "w-full justify-start text-left h-10 px-3",
-                  collapsed ? "px-2 justify-center" : "px-3",
-                  item.active 
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800"
-                )}
-              >
-                <Icon className={cn("w-5 h-5", collapsed ? "" : "mr-3")} />
-                {!collapsed && (
-                  <>
-                    <span className="flex-1">{item.title}</span>
-                    {item.badge && (
-                      <Badge 
-                        variant="secondary" 
-                        className="ml-auto bg-emerald-500 text-white text-xs px-2 py-0.5"
-                      >
-                        {item.badge}
-                      </Badge>
-                    )}
-                  </>
-                )}
-              </Button>
+              <Link href={item.href}>
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start text-left h-10 px-3",
+                    collapsed ? "px-2 justify-center" : "px-3",
+                    isActive 
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700" 
+                      : "text-slate-300 hover:text-white hover:bg-slate-800"
+                  )}
+                >
+                  <Icon className={cn("w-5 h-5", collapsed ? "" : "mr-3")} />
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1">{item.title}</span>
+                      {item.badge && (
+                        <Badge 
+                          variant="secondary" 
+                          className="ml-auto bg-emerald-500 text-white text-xs px-2 py-0.5"
+                        >
+                          {item.badge}
+                        </Badge>
+                      )}
+                    </>
+                  )}
+                </Button>
+              </Link>
               
               {/* Tooltip for collapsed state */}
               {collapsed && (
@@ -209,18 +215,19 @@ export function Sidebar({ className, isCollapsed = false, onToggle }: SidebarPro
         {bottomMenuItems.map((item) => {
           const Icon = item.icon
           return (
-            <Button
-              key={item.href}
-              variant="ghost"
-              className={cn(
-                "w-full justify-start text-left h-10",
-                collapsed ? "px-2 justify-center" : "px-3",
-                "text-slate-300 hover:text-white hover:bg-slate-800"
-              )}
-            >
-              <Icon className={cn("w-5 h-5", collapsed ? "" : "mr-3")} />
-              {!collapsed && <span>{item.title}</span>}
-            </Button>
+            <Link key={item.href} href={item.href}>
+              <Button
+                variant="ghost"
+                className={cn(
+                  "w-full justify-start text-left h-10",
+                  collapsed ? "px-2 justify-center" : "px-3",
+                  "text-slate-300 hover:text-white hover:bg-slate-800"
+                )}
+              >
+                <Icon className={cn("w-5 h-5", collapsed ? "" : "mr-3")} />
+                {!collapsed && <span>{item.title}</span>}
+              </Button>
+            </Link>
           )
         })}
         
