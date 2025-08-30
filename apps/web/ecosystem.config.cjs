@@ -1,20 +1,25 @@
 module.exports = {
   apps: [
     {
-      name: 'arbitragex-frontend',
-      script: 'npm',
-      args: 'run dev',
+      name: 'arbitragex-web-stable',
+      script: 'npx',
+      args: 'next dev --port 3000',
       cwd: '/home/user/webapp/apps/web',
+      instances: 1,
+      exec_mode: 'fork',
       env: {
         NODE_ENV: 'development',
         PORT: 3000
       },
+      error_file: '/home/user/webapp/logs/web-error.log',
+      out_file: '/home/user/webapp/logs/web-out.log',
+      log_file: '/home/user/webapp/logs/web-combined.log',
+      time: true,
+      max_memory_restart: '1G',
       watch: false,
-      instances: 1,
-      exec_mode: 'fork',
-      log_file: '/home/user/webapp/logs/frontend.log',
-      error_file: '/home/user/webapp/logs/frontend-error.log',
-      out_file: '/home/user/webapp/logs/frontend-out.log'
+      ignore_watch: ['node_modules', 'logs', 'coverage', '.next'],
+      min_uptime: '10s',
+      max_restarts: 3
     }
   ]
 }

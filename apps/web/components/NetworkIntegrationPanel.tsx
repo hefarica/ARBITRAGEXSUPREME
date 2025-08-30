@@ -23,6 +23,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useNetworkIntegration, type NetworkIntegrationStatus, IMPLEMENTED_NETWORKS } from '@/hooks/useNetworkIntegration'
 import { useCryptoPrices } from '@/hooks/useCryptoPrices'
+import { useWalletBalance } from '@/hooks/useWalletBalance'
+import { BlockchainLogo } from '@/components/BlockchainLogos'
 
 // Componente para mostrar el estado de una red individual
 function NetworkIntegrationCard({ 
@@ -30,13 +32,15 @@ function NetworkIntegrationCard({
   onAddNetwork, 
   onSwitchNetwork,
   isLoading = false,
-  tokenPrice
+  tokenPrice,
+  walletBalance
 }: { 
   status: NetworkIntegrationStatus
   onAddNetwork: (chainId: string) => Promise<void>
   onSwitchNetwork: (chainId: string) => Promise<void>
   isLoading?: boolean
   tokenPrice?: { price: number; change24h: number; symbol: string }
+  walletBalance?: { nativeBalance: number; usdValue: number; formattedBalance: string }
 }) {
   const [isAdding, setIsAdding] = useState(false)
   const [isSwitching, setIsSwitching] = useState(false)
@@ -93,115 +97,103 @@ function NetworkIntegrationCard({
 
   return (
     <Card className={cn(
-      'transition-all duration-300 hover:scale-[1.02] hover:shadow-xl',
+      'transition-all duration-300 hover:scale-[1.01] hover:shadow-xl',
       'rounded-2xl border border-slate-200/40',
       getStatusColor()
     )}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            {getStatusIcon()}
-            <div>
-              <CardTitle className="text-base">{config?.name || 'Red Desconocida'}</CardTitle>
-              <p className="text-sm text-gray-600">
-                {config?.symbol} • {status.chainId}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            {/* Estado del Sistema */}
-            <Badge variant={status.isImplemented ? "default" : "secondary"} className="text-xs">
-              {status.isImplemented ? 'Sistema' : 'No Impl.'}
-            </Badge>
-            {/* Estado de MetaMask */}
-            <Badge variant={status.isInMetamask ? "default" : "outline"} className="text-xs">
-              {status.isInMetamask ? '🦊 MetaMask' : 'No MetaMask'}
-            </Badge>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="pt-0">
+      <CardContent className="p-4">
         <div className="space-y-3">
-          {/* Estado de Conectividad */}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">Estado del Sistema:</span>
-            <div className="flex items-center space-x-2">
-              {status.systemNetwork?.connected ? (
-                <Wifi className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <WifiOff className="w-4 h-4 text-red-600" />
-              )}
-              <span className={status.systemNetwork?.connected ? 'text-emerald-600' : 'text-red-600'}>
-                {status.systemNetwork?.connected ? 'Conectado' : 'Desconectado'}
-              </span>
+          {/* Header compacto con logo y estado */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <BlockchainLogo chainId={status.chainId} size="md" />
+              <div className="flex-1">
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-sm font-semibold text-gray-900">{config?.name || 'Red Desconocida'}</h3>
+                  <Badge variant={status.isImplemented ? "default" : "secondary"} className="text-xs px-1.5 py-0.5">
+                    Sistema
+                  </Badge>
+                  <Badge variant={status.isInMetamask ? "default" : "outline"} className="text-xs px-1.5 py-0.5">
+                    🦊
+                  </Badge>
+                </div>
+                <p className="text-xs text-gray-500">{config?.symbol} • {status.chainId}</p>
+              </div>
             </div>
+            {status.systemNetwork?.connected ? (
+              <Wifi className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <WifiOff className="w-4 h-4 text-red-600" />
+            )}
           </div>
 
-          {/* Información de la red del sistema */}
-          {status.systemNetwork && (
-            <div className="text-sm text-gray-600">
-              <div className="flex justify-between">
-                <span>Bloque:</span>
-                <span className="font-medium">#{status.systemNetwork.blockNumber.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Estado RPC:</span>
-                <Badge variant="outline" className="text-xs">
-                  {status.systemNetwork.rpcStatus}
-                </Badge>
-              </div>
-            </div>
-          )}
-
-          {/* Información de precios del token nativo */}
-          {tokenPrice && (
-            <div className="bg-gradient-to-br from-indigo-50/40 to-blue-50/20 backdrop-blur-sm rounded-xl p-3 border border-indigo-200/20 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-700">💰 {tokenPrice.symbol}</span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <span className="text-base font-bold text-gray-900">
-                    ${tokenPrice.price >= 1000 
-                      ? tokenPrice.price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-                      : tokenPrice.price >= 1 
-                        ? tokenPrice.price.toFixed(2)
-                        : tokenPrice.price.toFixed(4)
-                    }
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">24h:</span>
-                <div className="flex items-center space-x-1">
+          {/* Fila de información financiera compacta */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Precio del token */}
+            {tokenPrice && (
+              <div className="bg-gradient-to-br from-blue-50/50 to-indigo-50/30 rounded-xl p-2.5 border border-blue-200/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-600">💰 Precio</span>
                   <span className={cn(
-                    "text-xs font-medium flex items-center space-x-1",
+                    "text-xs font-medium",
                     tokenPrice.change24h >= 0 ? "text-emerald-600" : "text-red-600"
                   )}>
-                    <span>{tokenPrice.change24h >= 0 ? '📈' : '📉'}</span>
-                    <span>{tokenPrice.change24h >= 0 ? '+' : ''}{tokenPrice.change24h.toFixed(2)}%</span>
+                    {tokenPrice.change24h >= 0 ? '📈' : '📉'} {tokenPrice.change24h >= 0 ? '+' : ''}{tokenPrice.change24h.toFixed(1)}%
                   </span>
                 </div>
+                <div className="text-sm font-bold text-gray-900 mt-1">
+                  ${tokenPrice.price >= 1000 
+                    ? tokenPrice.price.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                    : tokenPrice.price >= 1 
+                      ? tokenPrice.price.toFixed(2)
+                      : tokenPrice.price.toFixed(4)
+                  }
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Acciones */}
-          <div className="flex space-x-2 pt-3 border-t border-slate-200/50">
+            {/* Balance de wallet */}
+            {walletBalance && (
+              <div className="bg-gradient-to-br from-emerald-50/50 to-green-50/30 rounded-xl p-2.5 border border-emerald-200/20">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-600">💼 Mi Balance</span>
+                  <span className="text-xs text-gray-500">{walletBalance.formattedBalance}</span>
+                </div>
+                <div className="text-sm font-bold text-gray-900 mt-1">
+                  ${walletBalance.usdValue >= 1000 
+                    ? (walletBalance.usdValue / 1000).toFixed(1) + 'K'
+                    : walletBalance.usdValue.toFixed(2)
+                  }
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Información del sistema compacta */}
+          <div className="flex items-center justify-between text-xs text-gray-500 bg-slate-50/50 rounded-lg p-2">
+            <div className="flex items-center space-x-4">
+              <span>Bloque: #{status.systemNetwork?.blockNumber.toLocaleString() || 'N/A'}</span>
+              <Badge variant="outline" className="text-xs">
+                {status.systemNetwork?.rpcStatus || 'UNKNOWN'}
+              </Badge>
+            </div>
+          </div>
+
+          {/* Botones de acción compactos */}
+          <div className="flex space-x-2 pt-2">
             {status.canBeAdded && (
               <Button
                 size="sm"
                 onClick={handleAddNetwork}
                 disabled={isAdding || isLoading}
-                className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/25 rounded-xl transition-all duration-200"
+                className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-sm rounded-xl transition-all duration-200 text-xs"
               >
                 {isAdding ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <RefreshCw className="w-3 h-3 animate-spin" />
                 ) : (
-                  <Plus className="w-4 h-4 mr-1" />
+                  <Plus className="w-3 h-3 mr-1" />
                 )}
-                Conectar Red
+                Conectar
               </Button>
             )}
 
@@ -211,14 +203,14 @@ function NetworkIntegrationCard({
                 variant="outline"
                 onClick={handleSwitchNetwork}
                 disabled={isSwitching || isLoading}
-                className="flex-1 border-slate-200/50 bg-white/70 backdrop-blur-sm hover:bg-slate-50/80 rounded-xl transition-all duration-200 shadow-sm"
+                className="flex-1 border-slate-200/50 bg-white/70 backdrop-blur-sm hover:bg-slate-50/80 rounded-xl transition-all duration-200 shadow-sm text-xs"
               >
                 {isSwitching ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <RefreshCw className="w-3 h-3 animate-spin" />
                 ) : (
-                  <ArrowRight className="w-4 h-4 mr-1" />
+                  <ArrowRight className="w-3 h-3 mr-1" />
                 )}
-                Cambiar a Esta Red
+                Cambiar
               </Button>
             )}
 
@@ -227,9 +219,9 @@ function NetworkIntegrationCard({
                 size="sm"
                 variant="ghost"
                 onClick={() => window.open(config.blockExplorerUrls[0], '_blank')}
-                className="rounded-xl hover:bg-slate-100/50 transition-all duration-200"
+                className="px-2 rounded-xl hover:bg-slate-100/50 transition-all duration-200"
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="w-3 h-3" />
               </Button>
             )}
           </div>
@@ -341,6 +333,9 @@ export function NetworkIntegrationPanel() {
   const chainIds = integrationStatus.map(status => status.chainId)
   const { prices, isLoading: pricesLoading, error: pricesError } = useCryptoPrices(chainIds)
 
+  // Hook para obtener balances de wallet
+  const { balances, isLoading: balancesLoading, formatUsdBalance, getTotalUsdBalance } = useWalletBalance(chainIds, metamask.isConnected)
+
   // Estado del panel de integración
   const syncPercentage = getSyncPercentage()
 
@@ -429,28 +424,43 @@ export function NetworkIntegrationPanel() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-800">Estado de Redes por Blockchain</h3>
-          <div className="flex items-center space-x-2">
-            {pricesLoading && (
+          <div className="flex items-center space-x-3">
+            {/* Indicador de carga */}
+            {(pricesLoading || balancesLoading) && (
               <div className="flex items-center space-x-1 text-xs text-gray-500">
                 <RefreshCw className="w-3 h-3 animate-spin" />
-                <span>Actualizando precios...</span>
+                <span>
+                  {pricesLoading && balancesLoading ? 'Cargando datos...' :
+                   pricesLoading ? 'Actualizando precios...' : 'Actualizando balances...'}
+                </span>
               </div>
             )}
-            {pricesError && (
-              <div className="text-xs text-red-500">
-                Precios no disponibles
+            
+            {/* Balance total */}
+            {Object.keys(balances).length > 0 && (
+              <div className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg">
+                💼 Total: ${formatUsdBalance(getTotalUsdBalance())}
               </div>
             )}
-            {!pricesLoading && !pricesError && Object.keys(prices).length > 0 && (
+
+            {/* Estado de precios */}
+            {!pricesLoading && Object.keys(prices).length > 0 && (
               <div className="text-xs text-emerald-600">
                 💹 Precios actualizados
+              </div>
+            )}
+
+            {/* Errores */}
+            {pricesError && (
+              <div className="text-xs text-red-500">
+                ⚠️ Precios no disponibles
               </div>
             )}
           </div>
         </div>
         
         {isLoading && integrationStatus.length === 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <Card key={i} className="animate-pulse bg-white/50 backdrop-blur-sm border border-slate-200/30 rounded-2xl">
                 <CardContent className="p-6">
@@ -460,7 +470,7 @@ export function NetworkIntegrationPanel() {
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {integrationStatus.map((status) => (
               <NetworkIntegrationCard
                 key={status.chainId}
@@ -469,6 +479,7 @@ export function NetworkIntegrationPanel() {
                 onSwitchNetwork={switchToNetwork}
                 isLoading={isAnalyzing}
                 tokenPrice={prices[status.chainId]}
+                walletBalance={balances[status.chainId]}
               />
             ))}
           </div>
@@ -485,8 +496,14 @@ export function NetworkIntegrationPanel() {
                 🦊 MetaMask conectado a {metamask.chainName}
               </span>
             </div>
-            <div className="text-sm text-gray-600">
-              Balance: {metamask.balance} {metamask.supportedNetworks[metamask.chainId as keyof typeof metamask.supportedNetworks]?.symbol || 'ETH'}
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <span>Red actual: {metamask.balance} {metamask.supportedNetworks[metamask.chainId as keyof typeof metamask.supportedNetworks]?.symbol || 'ETH'}</span>
+              {Object.keys(balances).length > 0 && (
+                <div className="flex items-center space-x-2">
+                  <span>•</span>
+                  <span className="font-medium text-emerald-700">Total: {formatUsdBalance(getTotalUsdBalance())}</span>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
