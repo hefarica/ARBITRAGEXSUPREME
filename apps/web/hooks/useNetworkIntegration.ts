@@ -394,16 +394,9 @@ export function useNetworkIntegration() {
           n.id === chainId
         )
         
-        // DATOS MOCK cuando no hay backend - Crear datos básicos para que funcione la UI
-        const mockSystemNetwork = !systemNetwork && systemNetworks.length === 0 ? {
-          id: chainId,
-          name: config.name,
-          connected: true,
-          blockNumber: Math.floor(Math.random() * 1000000) + 18000000,
-          gasPrice: `${Math.floor(Math.random() * 50) + 20} gwei`,
-          rpcStatus: 'ACTIVE' as const,
-          lastBlock: Math.floor(Date.now() / 1000).toString()
-        } : systemNetwork
+        // CONECTAR AL BACKEND REAL - NO más datos mock
+        // Si no hay systemNetwork, significa que la red no está conectada al sistema de arbitraje
+        const realSystemNetwork = systemNetwork
         
         // Verificar si es la red actual de MetaMask
         const isCurrentMetamaskNetwork = mockMetamask.chainId === chainId
@@ -413,15 +406,15 @@ export function useNetworkIntegration() {
         const commonNetworks = ['0x1', '0x89', '0x38', '0xa4b1'] // ETH, Polygon, BSC, Arbitrum
         const likelyInMetamask = commonNetworks.includes(chainId) || isCurrentMetamaskNetwork
         
-        // Crear estado de integración
+        // Crear estado de integración REAL
         const status: NetworkIntegrationStatus = {
           chainId,
-          systemNetwork: mockSystemNetwork,
+          systemNetwork: realSystemNetwork, // Usar datos reales del backend
           metamaskNetwork: likelyInMetamask ? { chainId, ...config } : undefined,
-          isImplemented: !!mockSystemNetwork, // Usar mock si no hay datos reales
+          isImplemented: !!realSystemNetwork, // Solo redes realmente conectadas al sistema
           isInMetamask: likelyInMetamask, // Basado en redes comunes + red actual
           needsUpdate: false,
-          canBeAdded: !!mockSystemNetwork && !likelyInMetamask // Solo mostrar "agregar" si no está en MetaMask
+          canBeAdded: !!realSystemNetwork && !likelyInMetamask // Solo mostrar "agregar" si está en sistema pero no en MetaMask
         }
         
         statusArray.push(status)

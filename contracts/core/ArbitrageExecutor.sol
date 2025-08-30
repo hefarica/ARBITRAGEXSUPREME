@@ -2,705 +2,425 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-import "../interfaces/IArbitrageExecutor.sol";
-import "../interfaces/IFlashLoanReceiver.sol";
-import "../interfaces/IDEXRegistry.sol";
-import "../libraries/ArbitrageLib.sol";
+import "../interfaces/IArbitrageStrategy.sol";
+import "../interfaces/IFlashLoanProvider.sol";
+import "../libraries/SafeMath.sol";
 
 /**
  * @title ArbitrageExecutor
- * @dev Contrato principal del motor de arbitraje híbrido más avanzado del mercado
- * @notice Sistema que combina JavaScript backend con Solidity execution
- * @author ArbitrageX Pro 2025 Team
+ * @dev Core contract para ejecutar todas las estrategias de arbitraje de ArbitrageX Supreme
+ * @notice Contrato principal que orquesta las 14+ estrategias de flash loans
  */
-contract ArbitrageExecutor is 
-    IArbitrageExecutor,
-    IFlashLoanReceiver,
-    ReentrancyGuard,
-    Pausable,
-    AccessControl 
-{
+contract ArbitrageExecutor is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
-    using ArbitrageLib for *;
+    using SafeMath for uint256;
 
-    // Roles de acceso
-    bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
-    bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
+    // ==================== STRUCTS ====================
+    
+    struct ArbitrageParams {
+        address strategy;           // Dirección del contrato de estrategia
+        bytes strategyData;        // Datos codificados para la estrategia
+        address flashLoanProvider; // Proveedor de flash loan (Aave, Balancer, etc)
+        address asset;             // Token a pedir prestado
+        uint256 amount;            // Cantidad a pedir prestado
+        uint256 minProfit;         // Ganancia mínima esperada
+        uint256 deadline;          // Timestamp de expiración
+    }
 
-    // Configuración del sistema
-    uint256 public maxGasPrice;
-    uint256 public minProfitThreshold;
-    uint256 public maxSlippage;
-    uint256 public flashLoanFeeThreshold;
-    
-    // Registros y direcciones
-    IDEXRegistry public dexRegistry;
-    mapping(address => bool) public supportedTokens;
-    mapping(address => bool) public flashLoanProviders;
-    mapping(address => uint256) public executorNonces;
-    
-    // Estadísticas y analytics
-    uint256 public totalArbitragesExecuted;
-    uint256 public totalProfitGenerated;
-    uint256 public totalGasUsed;
-    mapping(address => uint256) public userProfits;
-    mapping(string => uint256) public strategyStats;
+    struct ExecutionResult {
+        bool success;
+        uint256 profit;
+        uint256 gasUsed;
+        string errorMessage;
+    }
 
-    // Proveedores de Flash Loans
-    address public aaveV3Pool;
-    address public balancerVault;
-    address public uniswapV3Factory;
+    // ==================== EVENTS ====================
     
-    // Eventos adicionales para analytics avanzada
-    event ArbitrageAnalyzed(
-        address indexed analyzer,
-        uint256 expectedProfit,
-        uint256 gasEstimate,
-        bool approved
+    event ArbitrageExecuted(
+        address indexed strategy,
+        address indexed asset,
+        uint256 amount,
+        uint256 profit,
+        uint256 gasUsed
     );
-
-    event FlashLoanProviderUpdated(
+    
+    event FlashLoanExecuted(
         address indexed provider,
-        bool isActive
+        address indexed asset,
+        uint256 amount,
+        uint256 fee
     );
-
-    event ConfigurationUpdated(
-        string parameter,
-        uint256 oldValue,
-        uint256 newValue
+    
+    event ProfitWithdrawn(
+        address indexed token,
+        address indexed recipient,
+        uint256 amount
     );
+    
+    event StrategyAdded(address indexed strategy, string name);
+    event StrategyRemoved(address indexed strategy);
+    event FlashLoanProviderUpdated(address indexed provider, bool enabled);
 
-    modifier onlyExecutor() {
-        require(hasRole(EXECUTOR_ROLE, msg.sender), "Not authorized executor");
+    // ==================== STORAGE ====================
+    
+    mapping(address => bool) public authorizedStrategies;
+    mapping(address => bool) public authorizedFlashLoanProviders;
+    mapping(address => uint256) public strategyProfits;
+    mapping(address => uint256) public totalExecutions;
+    
+    uint256 public constant MAX_SLIPPAGE = 500; // 5%
+    uint256 public constant BASIS_POINTS = 10000;
+    uint256 public minExecutionGas = 200000;
+    uint256 public treasuryFee = 100; // 1%
+    address public treasury;
+    
+    bool public emergencyPaused = false;
+    
+    // ==================== MODIFIERS ====================
+    
+    modifier onlyAuthorizedStrategy(address strategy) {
+        require(authorizedStrategies[strategy], "Strategy not authorized");
+        _;
+    }
+    
+    modifier onlyAuthorizedFlashLoanProvider(address provider) {
+        require(authorizedFlashLoanProviders[provider], "FlashLoan provider not authorized");
+        _;
+    }
+    
+    modifier notPaused() {
+        require(!emergencyPaused, "Contract is paused");
+        _;
+    }
+    
+    modifier validDeadline(uint256 deadline) {
+        require(deadline >= block.timestamp, "Deadline expired");
         _;
     }
 
-    modifier validGasPrice() {
-        require(tx.gasprice <= maxGasPrice, "Gas price too high");
-        _;
+    // ==================== CONSTRUCTOR ====================
+    
+    constructor(address _treasury) {
+        treasury = _treasury;
     }
 
-    constructor(
-        address _dexRegistry,
-        address _aaveV3Pool,
-        address _balancerVault,
-        address _uniswapV3Factory,
-        uint256 _maxGasPrice,
-        uint256 _minProfitThreshold
-    ) {
-        require(_dexRegistry != address(0), "Invalid DEX registry");
-        
-        // Setup roles
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(ADMIN_ROLE, msg.sender);
-        _grantRole(EXECUTOR_ROLE, msg.sender);
-        _grantRole(EMERGENCY_ROLE, msg.sender);
-
-        // Initialize configuration
-        dexRegistry = IDEXRegistry(_dexRegistry);
-        aaveV3Pool = _aaveV3Pool;
-        balancerVault = _balancerVault;
-        uniswapV3Factory = _uniswapV3Factory;
-        maxGasPrice = _maxGasPrice;
-        minProfitThreshold = _minProfitThreshold;
-        maxSlippage = 300; // 3%
-        flashLoanFeeThreshold = 50; // 0.5%
-
-        // Setup flash loan providers
-        if (_aaveV3Pool != address(0)) {
-            flashLoanProviders[_aaveV3Pool] = true;
-        }
-        if (_balancerVault != address(0)) {
-            flashLoanProviders[_balancerVault] = true;
-        }
-    }
-
-    /**
-     * @dev Ejecuta arbitraje simple entre dos DEXs
-     */
-    function executeArbitrage(
-        ArbitrageParams calldata params,
-        SwapRoute[] calldata routes
-    ) 
-        external 
-        payable 
-        override
-        nonReentrant 
-        whenNotPaused 
-        onlyExecutor
-        validGasPrice
-        returns (ExecutionResult memory result) 
-    {
-        uint256 gasBefore = gasleft();
-        
-        // Validar parámetros
-        require(params.deadline >= block.timestamp, "Expired deadline");
-        require(routes.length >= 2, "Invalid route length");
-        
-        // Validar ruta
-        (bool isValidRoute, string memory reason) = dexRegistry.validateRoute(
-            _extractPath(routes),
-            _extractDexes(routes),
-            _extractFees(routes)
-        );
-        require(isValidRoute, reason);
-
-        // Calcular rentabilidad esperada
-        (uint256 expectedProfit, uint256 gasEstimate, bool isProfitable) = 
-            calculateProfitability(params, routes);
-        
-        require(isProfitable, "Unprofitable arbitrage");
-
-        emit ArbitrageAnalyzed(msg.sender, expectedProfit, gasEstimate, true);
-
-        try this._executeArbitrageInternal(params, routes) returns (uint256 actualProfit) {
-            uint256 gasUsed = gasBefore - gasleft();
-            
-            result = ExecutionResult({
-                actualAmountOut: actualProfit + params.amountIn,
-                gasUsed: gasUsed,
-                profit: actualProfit,
-                feesPaid: _calculateTotalFees(routes),
-                success: true,
-                errorMessage: ""
-            });
-
-            // Actualizar estadísticas
-            _updateStats(msg.sender, actualProfit, gasUsed, "simple");
-
-            emit ArbitrageExecuted(
-                msg.sender,
-                params.tokenA,
-                params.tokenB,
-                params.amountIn,
-                result.actualAmountOut,
-                actualProfit,
-                gasUsed,
-                "simple"
-            );
-
-        } catch Error(string memory error) {
-            result = ExecutionResult({
-                actualAmountOut: 0,
-                gasUsed: gasBefore - gasleft(),
-                profit: 0,
-                feesPaid: 0,
-                success: false,
-                errorMessage: error
-            });
-        }
-    }
-
-    /**
-     * @dev Ejecuta arbitraje triangular A->B->C->A
-     */
-    function executeTriangularArbitrage(
-        address tokenA,
-        address tokenB,
-        address tokenC,
-        uint256 amountIn,
-        SwapRoute[] calldata routes
-    ) 
-        external 
-        payable 
-        override
-        nonReentrant 
-        whenNotPaused 
-        onlyExecutor
-        validGasPrice
-        returns (ExecutionResult memory result) 
-    {
-        require(routes.length == 3, "Triangular requires 3 routes");
-        require(routes[0].tokenIn == tokenA && routes[2].tokenOut == tokenA, "Invalid triangular path");
-        
-        uint256 gasBefore = gasleft();
-
-        try this._executeTriangularInternal(tokenA, tokenB, tokenC, amountIn, routes) 
-            returns (uint256 finalAmount) {
-            
-            uint256 gasUsed = gasBefore - gasleft();
-            uint256 profit = finalAmount > amountIn ? finalAmount - amountIn : 0;
-            
-            result = ExecutionResult({
-                actualAmountOut: finalAmount,
-                gasUsed: gasUsed,
-                profit: profit,
-                feesPaid: _calculateTotalFees(routes),
-                success: true,
-                errorMessage: ""
-            });
-
-            _updateStats(msg.sender, profit, gasUsed, "triangular");
-
-            emit ArbitrageExecuted(
-                msg.sender,
-                tokenA,
-                tokenA, // Triangular returns to same token
-                amountIn,
-                finalAmount,
-                profit,
-                gasUsed,
-                "triangular"
-            );
-
-        } catch Error(string memory error) {
-            result = ExecutionResult({
-                actualAmountOut: 0,
-                gasUsed: gasBefore - gasleft(),
-                profit: 0,
-                feesPaid: 0,
-                success: false,
-                errorMessage: error
-            });
-        }
-    }
-
+    // ==================== MAIN EXECUTION FUNCTIONS ====================
+    
     /**
      * @dev Ejecuta arbitraje con flash loan
+     * @param params Parámetros del arbitraje
+     * @return result Resultado de la ejecución
      */
-    function executeFlashLoanArbitrage(
-        address flashLoanProvider,
-        address asset,
-        uint256 amount,
-        bytes calldata params
-    ) 
+    function executeArbitrage(ArbitrageParams calldata params) 
         external 
-        override
         nonReentrant 
-        whenNotPaused 
-        onlyExecutor
+        notPaused 
+        onlyAuthorizedStrategy(params.strategy)
+        onlyAuthorizedFlashLoanProvider(params.flashLoanProvider)
+        validDeadline(params.deadline)
         returns (ExecutionResult memory result) 
     {
-        require(flashLoanProviders[flashLoanProvider], "Unsupported flash loan provider");
-        require(supportedTokens[asset] || asset == address(0), "Unsupported token");
-
-        // Initiate flash loan based on provider
-        if (flashLoanProvider == aaveV3Pool) {
-            _initiateAaveFlashLoan(asset, amount, params);
-        } else if (flashLoanProvider == balancerVault) {
-            _initiateBalancerFlashLoan(asset, amount, params);
-        } else {
-            revert("Unknown flash loan provider");
+        uint256 gasStart = gasleft();
+        
+        try this._executeArbitrageInternal(params) returns (uint256 profit) {
+            uint256 gasUsed = gasStart.sub(gasleft());
+            
+            // Verificar ganancia mínima
+            require(profit >= params.minProfit, "Insufficient profit");
+            
+            // Calcular y transferir fee del treasury
+            uint256 treasuryAmount = profit.mul(treasuryFee).div(BASIS_POINTS);
+            if (treasuryAmount > 0) {
+                IERC20(params.asset).safeTransfer(treasury, treasuryAmount);
+            }
+            
+            // Actualizar estadísticas
+            strategyProfits[params.strategy] = strategyProfits[params.strategy].add(profit);
+            totalExecutions[params.strategy] = totalExecutions[params.strategy].add(1);
+            
+            emit ArbitrageExecuted(params.strategy, params.asset, params.amount, profit, gasUsed);
+            
+            result = ExecutionResult({
+                success: true,
+                profit: profit,
+                gasUsed: gasUsed,
+                errorMessage: ""
+            });
+        } catch Error(string memory reason) {
+            result = ExecutionResult({
+                success: false,
+                profit: 0,
+                gasUsed: gasStart.sub(gasleft()),
+                errorMessage: reason
+            });
+        } catch (bytes memory) {
+            result = ExecutionResult({
+                success: false,
+                profit: 0,
+                gasUsed: gasStart.sub(gasleft()),
+                errorMessage: "Unknown error"
+            });
         }
-
-        // Result will be set in the callback
-        return result;
     }
-
+    
     /**
-     * @dev Calcula rentabilidad esperada de arbitraje
+     * @dev Función interna para ejecutar arbitraje (separada para manejo de errores)
+     * @param params Parámetros del arbitraje
+     * @return profit Ganancia obtenida
      */
-    function calculateProfitability(
-        ArbitrageParams calldata params,
-        SwapRoute[] calldata routes
-    ) 
-        public 
-        view 
-        override
-        returns (
-            uint256 expectedProfit,
-            uint256 gasEstimate,
-            bool isProfitable
-        ) 
+    function _executeArbitrageInternal(ArbitrageParams calldata params) 
+        external 
+        returns (uint256 profit) 
     {
-        // Simular swaps para obtener amount out
-        uint256 currentAmount = params.amountIn;
-        uint256 totalGasEstimate = 0;
-
-        for (uint256 i = 0; i < routes.length; i++) {
-            (uint256 amountOut, uint256 gasEst,) = dexRegistry.simulateSwap(
-                routes[i].dex,
-                routes[i].tokenIn,
-                routes[i].tokenOut,
-                currentAmount,
-                routes[i].fee
-            );
-            
-            currentAmount = amountOut;
-            totalGasEstimate += gasEst;
-        }
-
-        // Calcular flash loan fee si se usa
-        uint256 flashLoanFee = 0;
-        if (params.useFlashLoan) {
-            flashLoanFee = _calculateFlashLoanFee(
-                params.flashLoanProvider,
-                params.tokenA,
-                params.amountIn
-            );
-        }
-
-        // Usar librería para cálculo de profit
-        ArbitrageLib.ProfitCalculation memory calc = ArbitrageLib.calculateSimpleArbitrageProfit(
-            params.amountIn,
-            0, // No usado en esta función
-            currentAmount,
-            tx.gasprice,
-            totalGasEstimate,
-            flashLoanFee
+        require(msg.sender == address(this), "Only self-call allowed");
+        
+        // Obtener balance inicial
+        uint256 initialBalance = IERC20(params.asset).balanceOf(address(this));
+        
+        // Iniciar flash loan
+        IFlashLoanProvider(params.flashLoanProvider).flashLoan(
+            params.asset,
+            params.amount,
+            abi.encode(params)
         );
-
-        return (calc.netProfit, totalGasEstimate, calc.isProfitable);
+        
+        // Obtener balance final
+        uint256 finalBalance = IERC20(params.asset).balanceOf(address(this));
+        
+        // Calcular ganancia
+        require(finalBalance > initialBalance, "No profit generated");
+        profit = finalBalance.sub(initialBalance);
     }
 
     /**
-     * @dev Valida una ruta de arbitraje
-     */
-    function validateRoute(
-        SwapRoute[] calldata routes
-    ) external view override returns (bool isValid, string memory reason) {
-        if (routes.length < 2) {
-            return (false, "Route too short");
-        }
-
-        for (uint256 i = 0; i < routes.length; i++) {
-            if (!dexRegistry.isDEXSupported(routes[i].dex)) {
-                return (false, "Unsupported DEX");
-            }
-            
-            if (!supportedTokens[routes[i].tokenIn] || !supportedTokens[routes[i].tokenOut]) {
-                return (false, "Unsupported token");
-            }
-        }
-
-        // Validar continuidad de la ruta
-        for (uint256 i = 0; i < routes.length - 1; i++) {
-            if (routes[i].tokenOut != routes[i + 1].tokenIn) {
-                return (false, "Route discontinuity");
-            }
-        }
-
-        return (true, "Valid route");
-    }
-
-    // ============ FLASH LOAN CALLBACKS ============
-
-    /**
-     * @dev Aave V3 Flash Loan Callback
+     * @dev Callback para flash loans - implementa la lógica de arbitraje
+     * @param asset Token prestado
+     * @param amount Cantidad prestada
+     * @param fee Fee del flash loan
+     * @param params Parámetros codificados
      */
     function executeOperation(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        uint256[] calldata premiums,
-        address initiator,
+        address asset,
+        uint256 amount,
+        uint256 fee,
         bytes calldata params
-    ) external override returns (bool) {
-        require(msg.sender == aaveV3Pool, "Unauthorized callback");
-        require(initiator == address(this), "Invalid initiator");
-
-        // Decode parameters and execute arbitrage
-        (ArbitrageParams memory arbParams, SwapRoute[] memory routes) = 
-            abi.decode(params, (ArbitrageParams, SwapRoute[]));
-
-        uint256 totalAmount = amounts[0];
-        uint256 totalFee = premiums[0];
-
-        // Execute arbitrage with flash loan amount
-        uint256 profit = _executeArbitrageWithAmount(arbParams, routes, totalAmount);
-
-        // Ensure we can repay the flash loan
-        require(profit > totalFee, "Insufficient profit to repay");
-
-        // Approve repayment
-        IERC20(assets[0]).safeApprove(aaveV3Pool, totalAmount + totalFee);
-
-        emit FlashLoanExecuted(aaveV3Pool, assets[0], totalAmount, totalFee, true);
-
+    ) external returns (bool) {
+        // Decodificar parámetros
+        ArbitrageParams memory arbitrageParams = abi.decode(params, (ArbitrageParams));
+        
+        // Verificar que el call viene del proveedor autorizado
+        require(
+            msg.sender == arbitrageParams.flashLoanProvider,
+            "Unauthorized flash loan provider"
+        );
+        
+        // Ejecutar estrategia de arbitraje
+        IArbitrageStrategy strategy = IArbitrageStrategy(arbitrageParams.strategy);
+        
+        uint256 profit = strategy.execute(
+            asset,
+            amount,
+            arbitrageParams.strategyData
+        );
+        
+        // Verificar que tenemos suficiente para repagar el loan + fee
+        uint256 totalRepayment = amount.add(fee);
+        uint256 balance = IERC20(asset).balanceOf(address(this));
+        require(balance >= totalRepayment, "Insufficient balance to repay loan");
+        
+        // Aprobar repago del flash loan
+        IERC20(asset).safeApprove(msg.sender, totalRepayment);
+        
+        emit FlashLoanExecuted(msg.sender, asset, amount, fee);
+        
         return true;
     }
 
+    // ==================== BATCH EXECUTION ====================
+    
     /**
-     * @dev Balancer V2 Flash Loan Callback
+     * @dev Ejecuta múltiples arbitrajes en una sola transacción
+     * @param paramsArray Array de parámetros de arbitraje
+     * @return results Array de resultados
      */
-    function receiveFlashLoan(
-        address[] memory tokens,
-        uint256[] memory amounts,
-        uint256[] memory feeAmounts,
-        bytes memory userData
-    ) external override {
-        require(msg.sender == balancerVault, "Unauthorized callback");
-
-        // Decode and execute arbitrage
-        (ArbitrageParams memory arbParams, SwapRoute[] memory routes) = 
-            abi.decode(userData, (ArbitrageParams, SwapRoute[]));
-
-        uint256 totalAmount = amounts[0];
-        uint256 totalFee = feeAmounts[0];
-
-        uint256 profit = _executeArbitrageWithAmount(arbParams, routes, totalAmount);
-
-        require(profit > totalFee, "Insufficient profit to repay");
-
-        // Repay flash loan
-        IERC20(tokens[0]).safeTransfer(balancerVault, totalAmount + totalFee);
-
-        emit FlashLoanExecuted(balancerVault, tokens[0], totalAmount, totalFee, true);
-    }
-
-    // ============ INTERNAL FUNCTIONS ============
-
-    function _executeArbitrageInternal(
-        ArbitrageParams calldata params,
-        SwapRoute[] calldata routes
-    ) external returns (uint256 profit) {
-        require(msg.sender == address(this), "Internal only");
-        return _executeArbitrageWithAmount(params, routes, params.amountIn);
-    }
-
-    function _executeTriangularInternal(
-        address tokenA,
-        address tokenB,
-        address tokenC,
-        uint256 amountIn,
-        SwapRoute[] calldata routes
-    ) external returns (uint256 finalAmount) {
-        require(msg.sender == address(this), "Internal only");
+    function batchExecuteArbitrage(ArbitrageParams[] calldata paramsArray)
+        external
+        nonReentrant
+        notPaused
+        returns (ExecutionResult[] memory results)
+    {
+        require(paramsArray.length > 0 && paramsArray.length <= 10, "Invalid batch size");
         
-        uint256 currentAmount = amountIn;
+        results = new ExecutionResult[](paramsArray.length);
         
-        // Ejecutar los 3 swaps secuencialmente
-        for (uint256 i = 0; i < 3; i++) {
-            currentAmount = dexRegistry.executeSwap(
-                IDEXRegistry.SwapParams({
-                    dex: routes[i].dex,
-                    tokenIn: routes[i].tokenIn,
-                    tokenOut: routes[i].tokenOut,
-                    amountIn: currentAmount,
-                    minAmountOut: routes[i].minAmountOut,
-                    fee: routes[i].fee,
-                    to: address(this),
-                    deadline: block.timestamp + 300, // 5 minutos
-                    extraData: routes[i].extraData
-                })
-            );
-        }
-        
-        return currentAmount;
-    }
-
-    function _executeArbitrageWithAmount(
-        ArbitrageParams memory params,
-        SwapRoute[] memory routes,
-        uint256 amount
-    ) internal returns (uint256 profit) {
-        uint256 currentAmount = amount;
-        
-        // Ejecutar swaps secuencialmente
-        for (uint256 i = 0; i < routes.length; i++) {
-            currentAmount = dexRegistry.executeSwap(
-                IDEXRegistry.SwapParams({
-                    dex: routes[i].dex,
-                    tokenIn: routes[i].tokenIn,
-                    tokenOut: routes[i].tokenOut,
-                    amountIn: currentAmount,
-                    minAmountOut: routes[i].minAmountOut,
-                    fee: routes[i].fee,
-                    to: address(this),
-                    deadline: params.deadline,
-                    extraData: routes[i].extraData
-                })
-            );
-        }
-        
-        // Calcular profit
-        if (currentAmount > amount) {
-            profit = currentAmount - amount;
-        } else {
-            profit = 0;
-        }
-        
-        return profit;
-    }
-
-    function _updateStats(
-        address user,
-        uint256 profit,
-        uint256 gasUsed,
-        string memory strategy
-    ) internal {
-        totalArbitragesExecuted++;
-        totalProfitGenerated += profit;
-        totalGasUsed += gasUsed;
-        userProfits[user] += profit;
-        strategyStats[strategy]++;
-    }
-
-    function _calculateTotalFees(
-        SwapRoute[] memory routes
-    ) internal pure returns (uint256 totalFees) {
-        for (uint256 i = 0; i < routes.length; i++) {
-            totalFees += routes[i].fee;
+        for (uint256 i = 0; i < paramsArray.length; i++) {
+            // Validar cada parámetro
+            require(authorizedStrategies[paramsArray[i].strategy], "Strategy not authorized");
+            require(authorizedFlashLoanProviders[paramsArray[i].flashLoanProvider], "Provider not authorized");
+            require(paramsArray[i].deadline >= block.timestamp, "Deadline expired");
+            
+            // Ejecutar arbitraje
+            results[i] = this.executeArbitrage(paramsArray[i]);
         }
     }
 
-    function _calculateFlashLoanFee(
-        address provider,
-        address asset,
-        uint256 amount
-    ) internal view returns (uint256 fee) {
-        // Implementar cálculo específico por proveedor
-        if (provider == aaveV3Pool) {
-            return (amount * 9) / 10000; // 0.09% Aave fee
-        } else if (provider == balancerVault) {
-            return 0; // Balancer fees are 0%
-        }
-        return 0;
+    // ==================== SIMULATION ====================
+    
+    /**
+     * @dev Simula una ejecución de arbitraje sin ejecutarla realmente
+     * @param params Parámetros del arbitraje
+     * @return expectedProfit Ganancia esperada
+     * @return gasEstimate Estimación de gas
+     */
+    function simulateArbitrage(ArbitrageParams calldata params)
+        external
+        view
+        onlyAuthorizedStrategy(params.strategy)
+        returns (uint256 expectedProfit, uint256 gasEstimate)
+    {
+        // Llamar función de simulación en la estrategia
+        IArbitrageStrategy strategy = IArbitrageStrategy(params.strategy);
+        (expectedProfit, gasEstimate) = strategy.simulate(
+            params.asset,
+            params.amount,
+            params.strategyData
+        );
     }
 
-    function _initiateAaveFlashLoan(
-        address asset,
-        uint256 amount,
-        bytes calldata params
-    ) internal {
-        address[] memory assets = new address[](1);
-        assets[0] = asset;
-        
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = amount;
-        
-        uint256[] memory modes = new uint256[](1);
-        modes[0] = 0; // No debt mode
-        
-        // Call Aave flash loan
-        // IAavePool(aaveV3Pool).flashLoan(address(this), assets, amounts, modes, address(this), params, 0);
+    // ==================== ADMIN FUNCTIONS ====================
+    
+    /**
+     * @dev Añade una nueva estrategia autorizada
+     * @param strategy Dirección del contrato de estrategia
+     * @param name Nombre de la estrategia
+     */
+    function addStrategy(address strategy, string memory name) external onlyOwner {
+        require(strategy != address(0), "Invalid strategy address");
+        authorizedStrategies[strategy] = true;
+        emit StrategyAdded(strategy, name);
+    }
+    
+    /**
+     * @dev Remueve una estrategia autorizada
+     * @param strategy Dirección del contrato de estrategia
+     */
+    function removeStrategy(address strategy) external onlyOwner {
+        authorizedStrategies[strategy] = false;
+        emit StrategyRemoved(strategy);
+    }
+    
+    /**
+     * @dev Actualiza proveedor de flash loan autorizado
+     * @param provider Dirección del proveedor
+     * @param enabled Si está habilitado o no
+     */
+    function updateFlashLoanProvider(address provider, bool enabled) external onlyOwner {
+        authorizedFlashLoanProviders[provider] = enabled;
+        emit FlashLoanProviderUpdated(provider, enabled);
+    }
+    
+    /**
+     * @dev Actualiza dirección del treasury
+     * @param _treasury Nueva dirección del treasury
+     */
+    function updateTreasury(address _treasury) external onlyOwner {
+        require(_treasury != address(0), "Invalid treasury address");
+        treasury = _treasury;
+    }
+    
+    /**
+     * @dev Actualiza fee del treasury
+     * @param _treasuryFee Nuevo fee (en basis points)
+     */
+    function updateTreasuryFee(uint256 _treasuryFee) external onlyOwner {
+        require(_treasuryFee <= 1000, "Fee too high"); // Máximo 10%
+        treasuryFee = _treasuryFee;
+    }
+    
+    /**
+     * @dev Pausa/despausa el contrato en caso de emergencia
+     * @param paused Si pausar o no
+     */
+    function setEmergencyPause(bool paused) external onlyOwner {
+        emergencyPaused = paused;
     }
 
-    function _initiateBalancerFlashLoan(
-        address asset,
-        uint256 amount,
-        bytes calldata params
-    ) internal {
-        address[] memory tokens = new address[](1);
-        tokens[0] = asset;
-        
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = amount;
-        
-        // Call Balancer flash loan
-        // IBalancerVault(balancerVault).flashLoan(address(this), tokens, amounts, params);
-    }
-
-    // ============ UTILITY FUNCTIONS ============
-
-    function _extractPath(SwapRoute[] calldata routes) internal pure returns (address[] memory path) {
-        path = new address[](routes.length + 1);
-        path[0] = routes[0].tokenIn;
-        for (uint256 i = 0; i < routes.length; i++) {
-            path[i + 1] = routes[i].tokenOut;
-        }
-    }
-
-    function _extractDexes(SwapRoute[] calldata routes) internal pure returns (address[] memory dexes) {
-        dexes = new address[](routes.length);
-        for (uint256 i = 0; i < routes.length; i++) {
-            dexes[i] = routes[i].dex;
-        }
-    }
-
-    function _extractFees(SwapRoute[] calldata routes) internal pure returns (uint24[] memory fees) {
-        fees = new uint24[](routes.length);
-        for (uint256 i = 0; i < routes.length; i++) {
-            fees[i] = routes[i].fee;
-        }
-    }
-
-    // ============ ADMIN FUNCTIONS ============
-
-    function setMaxGasPrice(uint256 _maxGasPrice) external override onlyRole(ADMIN_ROLE) {
-        uint256 oldValue = maxGasPrice;
-        maxGasPrice = _maxGasPrice;
-        emit ConfigurationUpdated("maxGasPrice", oldValue, _maxGasPrice);
-    }
-
-    function setMinProfitThreshold(uint256 _minProfit) external override onlyRole(ADMIN_ROLE) {
-        uint256 oldValue = minProfitThreshold;
-        minProfitThreshold = _minProfit;
-        emit ConfigurationUpdated("minProfitThreshold", oldValue, _minProfit);
-    }
-
-    function updateDEXRegistry(address _newRegistry) external override onlyRole(ADMIN_ROLE) {
-        require(_newRegistry != address(0), "Invalid registry");
-        dexRegistry = IDEXRegistry(_newRegistry);
-    }
-
-    function addSupportedToken(address token) external onlyRole(ADMIN_ROLE) {
-        supportedTokens[token] = true;
-    }
-
-    function removeSupportedToken(address token) external onlyRole(ADMIN_ROLE) {
-        supportedTokens[token] = false;
-    }
-
-    function updateFlashLoanProvider(
-        address provider,
-        bool isActive
-    ) external onlyRole(ADMIN_ROLE) {
-        flashLoanProviders[provider] = isActive;
-        emit FlashLoanProviderUpdated(provider, isActive);
-    }
-
-    // ============ EMERGENCY FUNCTIONS ============
-
-    function emergencyWithdraw(
+    // ==================== RECOVERY FUNCTIONS ====================
+    
+    /**
+     * @dev Retira tokens del contrato (solo owner)
+     * @param token Dirección del token
+     * @param amount Cantidad a retirar
+     * @param recipient Destinatario
+     */
+    function withdrawToken(
         address token,
-        uint256 amount
-    ) external override onlyRole(EMERGENCY_ROLE) {
-        if (token == address(0)) {
-            payable(msg.sender).transfer(amount);
-        } else {
-            IERC20(token).safeTransfer(msg.sender, amount);
-        }
-        emit EmergencyWithdraw(token, msg.sender, amount);
+        uint256 amount,
+        address recipient
+    ) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient");
+        IERC20(token).safeTransfer(recipient, amount);
+        emit ProfitWithdrawn(token, recipient, amount);
+    }
+    
+    /**
+     * @dev Retira ETH del contrato (solo owner)
+     * @param amount Cantidad a retirar
+     * @param recipient Destinatario
+     */
+    function withdrawETH(uint256 amount, address payable recipient) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient");
+        require(address(this).balance >= amount, "Insufficient ETH balance");
+        recipient.transfer(amount);
     }
 
-    function pause() external override onlyRole(EMERGENCY_ROLE) {
-        _pause();
+    // ==================== VIEW FUNCTIONS ====================
+    
+    /**
+     * @dev Obtiene estadísticas de una estrategia
+     * @param strategy Dirección de la estrategia
+     * @return totalProfit Ganancia total acumulada
+     * @return executionCount Número de ejecuciones
+     */
+    function getStrategyStats(address strategy)
+        external
+        view
+        returns (uint256 totalProfit, uint256 executionCount)
+    {
+        totalProfit = strategyProfits[strategy];
+        executionCount = totalExecutions[strategy];
+    }
+    
+    /**
+     * @dev Verifica si una estrategia está autorizada
+     * @param strategy Dirección de la estrategia
+     * @return authorized Si está autorizada
+     */
+    function isStrategyAuthorized(address strategy) external view returns (bool authorized) {
+        authorized = authorizedStrategies[strategy];
+    }
+    
+    /**
+     * @dev Verifica si un proveedor de flash loan está autorizado
+     * @param provider Dirección del proveedor
+     * @return authorized Si está autorizado
+     */
+    function isFlashLoanProviderAuthorized(address provider) external view returns (bool authorized) {
+        authorized = authorizedFlashLoanProviders[provider];
     }
 
-    function unpause() external override onlyRole(EMERGENCY_ROLE) {
-        _unpause();
-    }
-
-    // ============ VIEW FUNCTIONS ============
-
-    function getMaxGasPrice() external view override returns (uint256) {
-        return maxGasPrice;
-    }
-
-    function getMinProfitThreshold() external view override returns (uint256) {
-        return minProfitThreshold;
-    }
-
-    function isPaused() external view override returns (bool) {
-        return paused();
-    }
-
-    function getSupportedTokens() external view override returns (address[] memory tokens) {
-        // Implementation would return array of supported tokens
-        // For gas efficiency, might need a separate mapping to track count
-    }
-
-    function getSupportedDEXs() external view override returns (address[] memory dexes) {
-        return dexRegistry.getSupportedDEXs();
-    }
-
-    function getStats() external view returns (
-        uint256 totalArbitrages,
-        uint256 totalProfit,
-        uint256 totalGas
-    ) {
-        return (totalArbitragesExecuted, totalProfitGenerated, totalGasUsed);
-    }
-
-    // ============ FALLBACK ============
-
-    receive() external payable {
-        // Allow contract to receive ETH for gas payments
-    }
+    // ==================== FALLBACK ====================
+    
+    /**
+     * @dev Recibe ETH
+     */
+    receive() external payable {}
+    
+    /**
+     * @dev Fallback para calls no reconocidos
+     */
+    fallback() external payable {}
 }

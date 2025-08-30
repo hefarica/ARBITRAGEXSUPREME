@@ -15,67 +15,106 @@ interface WalletBalancesState {
   [chainId: string]: WalletBalance
 }
 
-// Balances mock para desarrollo - en producción se obtendría de MetaMask/Web3
-const MOCK_BALANCES = {
-  '0x1': { native: 0.361, usd: 1247.82 }, // ETH
-  '0x89': { native: 1250.45, usd: 1175.42 }, // MATIC
-  '0x38': { native: 3.024, usd: 1166.21 }, // BNB
-  '0xa4b1': { native: 0.285, usd: 983.25 }, // Arbitrum ETH
-  '0xa': { native: 0.198, usd: 682.91 } // Optimism ETH
-}
+// DATOS MOCK ELIMINADOS - Ahora se usan balances reales de MetaMask y backend
 
 export function useWalletBalance(chainIds: string[] = [], metamaskConnected: boolean = false) {
   const [balances, setBalances] = useState<WalletBalancesState>({})
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Función para obtener balance real de MetaMask (cuando esté conectado)
+  // Función para obtener balance real de MetaMask con cálculo USD
   const fetchRealBalance = async (chainId: string): Promise<WalletBalance | null> => {
-    if (!metamaskConnected || !window.ethereum) {
+    if (!metamaskConnected || !window.ethereum || !window.ethereum.selectedAddress) {
       return null
     }
 
     try {
-      // Obtener balance del token nativo
+      // Obtener balance del token nativo de la red actual de MetaMask
       const balance = await window.ethereum.request({
         method: 'eth_getBalance',
         params: [window.ethereum.selectedAddress, 'latest']
       })
 
       // Convertir de wei a ether (o token nativo)
-      const nativeAmount = parseFloat(balance) / Math.pow(10, 18)
+      const nativeAmount = parseInt(balance, 16) / Math.pow(10, 18)
+      
+      // Obtener precio del token para calcular valor USD
+      let usdValue = 0
+      try {
+        const symbols = {
+          '0x1': 'ETH',
+          '0x89': 'MATIC', 
+          '0x38': 'BNB',
+          '0xa4b1': 'ETH',
+          '0xa': 'ETH'
+        }
+        const symbol = symbols[chainId as keyof typeof symbols]
+        
+        const priceResponse = await fetch(`/api/arbitrage/prices/${symbol}`)
+        if (priceResponse.ok) {
+          const priceData = await priceResponse.json()
+          if (priceData.success) {
+            usdValue = nativeAmount * priceData.price
+          }
+        }
+      } catch (priceError) {
+        console.warn(`Could not fetch price for USD calculation:`, priceError)
+      }
+      
+      const symbolMap = {
+        '0x1': 'ETH',
+        '0x89': 'MATIC', 
+        '0x38': 'BNB',
+        '0xa4b1': 'ETH',
+        '0xa': 'ETH'
+      }
+      const symbol = symbolMap[chainId as keyof typeof symbolMap] || 'TOKEN'
       
       return {
         chainId,
         nativeBalance: nativeAmount,
-        usdValue: 0, // Se calculará con precios del hook de crypto
-        formattedBalance: `${nativeAmount.toFixed(4)}`,
+        usdValue: usdValue,
+        formattedBalance: `${nativeAmount.toFixed(6)} ${symbol}`,
         lastUpdated: Date.now()
       }
     } catch (error) {
-      console.error(`Error fetching balance for ${chainId}:`, error)
+      console.error(`Error fetching MetaMask balance for ${chainId}:`, error)
       return null
     }
   }
 
-  // Función para obtener balances mock
-  const getMockBalance = (chainId: string): WalletBalance => {
-    const mockData = MOCK_BALANCES[chainId as keyof typeof MOCK_BALANCES]
-    const symbols = {
-      '0x1': 'ETH',
-      '0x89': 'MATIC', 
-      '0x38': 'BNB',
-      '0xa4b1': 'ETH',
-      '0xa': 'ETH'
-    }
+  // Función para obtener balance desde el backend de arbitraje
+  const getBackendBalance = async (chainId: string, walletAddress: string): Promise<WalletBalance | null> => {
+    try {
+      // CONEXIÓN REAL AL BACKEND DE ARBITRAJE
+      const response = await fetch(`/api/arbitrage/balance/${chainId}/${walletAddress}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      })
 
-    return {
-      chainId,
-      nativeBalance: mockData?.native || 0,
-      usdValue: mockData?.usd || 0,
-      formattedBalance: `${(mockData?.native || 0).toFixed(4)} ${symbols[chainId as keyof typeof symbols] || 'TOKEN'}`,
-      lastUpdated: Date.now()
+      if (!response.ok) {
+        throw new Error(`Backend balance error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.success) {
+        return {
+          chainId,
+          nativeBalance: data.nativeBalance,
+          usdValue: data.usdValue,
+          formattedBalance: data.formattedBalance,
+          lastUpdated: Date.now()
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching backend balance for ${chainId}:`, error)
     }
+    
+    return null
   }
 
   // Función para obtener todos los balances
@@ -85,9 +124,19 @@ export function useWalletBalance(chainIds: string[] = [], metamaskConnected: boo
 
     try {
       const balancePromises = targetChainIds.map(async (chainId) => {
-        // Intentar obtener balance real primero, luego usar mock
-        const realBalance = await fetchRealBalance(chainId)
-        const balance = realBalance || getMockBalance(chainId)
+        // Prioridad: 1. Backend, 2. MetaMask, 3. Error (no mock)
+        let balance: WalletBalance | null = null
+        
+        // Intentar obtener desde backend si hay dirección de wallet
+        if (metamaskConnected && window.ethereum?.selectedAddress) {
+          balance = await getBackendBalance(chainId, window.ethereum.selectedAddress)
+        }
+        
+        // Si el backend falla, usar balance directo de MetaMask
+        if (!balance && metamaskConnected) {
+          balance = await fetchRealBalance(chainId)
+        }
+        
         return { chainId, balance }
       })
 

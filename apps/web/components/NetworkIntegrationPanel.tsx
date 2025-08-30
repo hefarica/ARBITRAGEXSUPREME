@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { useNetworkIntegration, type NetworkIntegrationStatus, IMPLEMENTED_NETWORKS } from '@/hooks/useNetworkIntegration'
 import { useCryptoPrices } from '@/hooks/useCryptoPrices'
 import { useWalletBalance } from '@/hooks/useWalletBalance'
+import { useDashboardData } from '@/hooks/useDashboardData'
 import { BlockchainLogo } from '@/components/BlockchainLogos'
 
 // Componente para mostrar el estado de una red individual
@@ -36,8 +37,8 @@ function NetworkIntegrationCard({
   walletBalance
 }: { 
   status: NetworkIntegrationStatus
-  onAddNetwork: (chainId: string) => Promise<void>
-  onSwitchNetwork: (chainId: string) => Promise<void>
+  onAddNetwork: (chainId: string) => Promise<boolean>
+  onSwitchNetwork: (chainId: string) => Promise<boolean>
   isLoading?: boolean
   tokenPrice?: { price: number; change24h: number; symbol: string }
   walletBalance?: { nativeBalance: number; usdValue: number; formattedBalance: string }
@@ -231,12 +232,15 @@ function NetworkIntegrationCard({
   )
 }
 
-// Panel de estadísticas de sincronización
-function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading }: {
+// Panel de estadísticas de sincronización INTEGRADO CON DASHBOARD
+function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading, dashboardData, formatUsdBalance, getTotalUsdBalance }: {
   stats: any
   syncPercentage: number
   onSyncAll: () => Promise<void>
   isLoading: boolean
+  dashboardData?: any
+  formatUsdBalance?: (value: number) => string
+  getTotalUsdBalance?: () => number
 }) {
   const [isSyncing, setIsSyncing] = useState(false)
 
@@ -273,23 +277,23 @@ function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading }: {
             </p>
           </div>
 
-          {/* Estadísticas */}
+          {/* Estadísticas INTEGRADAS CON DASHBOARD REAL */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 bg-gradient-to-br from-blue-50/50 to-blue-100/30 backdrop-blur-sm rounded-2xl border border-blue-200/20 shadow-sm">
-              <div className="text-lg font-bold text-blue-600">{stats.totalImplemented}</div>
-              <div className="text-xs text-blue-700/80">Implementadas</div>
+              <div className="text-lg font-bold text-blue-600">{dashboardData?.totalNetworks || stats.totalImplemented}</div>
+              <div className="text-xs text-blue-700/80">Redes Totales</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-emerald-50/50 to-emerald-100/30 backdrop-blur-sm rounded-2xl border border-emerald-200/20 shadow-sm">
-              <div className="text-lg font-bold text-emerald-600">{stats.matched}</div>
-              <div className="text-xs text-emerald-700/80">Sincronizadas</div>
+              <div className="text-lg font-bold text-emerald-600">{dashboardData?.connectedNetworks || stats.matched}</div>
+              <div className="text-xs text-emerald-700/80">Conectadas</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-yellow-50/50 to-yellow-100/30 backdrop-blur-sm rounded-2xl border border-yellow-200/20 shadow-sm">
               <div className="text-lg font-bold text-yellow-600">{stats.missing}</div>
               <div className="text-xs text-yellow-700/80">Faltantes</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-purple-50/50 to-purple-100/30 backdrop-blur-sm rounded-2xl border border-purple-200/20 shadow-sm">
-              <div className="text-lg font-bold text-purple-600">{stats.totalInMetamask}</div>
-              <div className="text-xs text-purple-700/80">En MetaMask</div>
+              <div className="text-lg font-bold text-purple-600">{dashboardData?.totalBalance ? `$${(dashboardData.totalBalance / 1000).toFixed(1)}K` : (formatUsdBalance && getTotalUsdBalance ? formatUsdBalance(getTotalUsdBalance()) : '$0.00')}</div>
+              <div className="text-xs text-purple-700/80">Balance Total</div>
             </div>
           </div>
 
@@ -314,7 +318,7 @@ function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading }: {
   )
 }
 
-// Componente principal del panel de integración
+// Componente principal del panel de integración - TOTALMENTE INTEGRADO CON DASHBOARD REAL
 export function NetworkIntegrationPanel() {
   const {
     integrationStatus,
@@ -329,11 +333,21 @@ export function NetworkIntegrationPanel() {
     getSyncPercentage
   } = useNetworkIntegration()
 
-  // Hook para obtener precios de criptomonedas
+  // Hook para obtener datos del dashboard del sistema de arbitraje
+  const { 
+    data: dashboardData, 
+    isLoading: dashboardLoading, 
+    error: dashboardError, 
+    formatTotalBalance,
+    getSystemStatus,
+    refresh: refreshDashboard
+  } = useDashboardData()
+
+  // Hook para obtener precios de criptomonedas (ahora conectado al backend real)
   const chainIds = integrationStatus.map(status => status.chainId)
   const { prices, isLoading: pricesLoading, error: pricesError } = useCryptoPrices(chainIds)
 
-  // Hook para obtener balances de wallet
+  // Hook para obtener balances de wallet (ahora conectado al backend real)
   const { balances, isLoading: balancesLoading, formatUsdBalance, getTotalUsdBalance } = useWalletBalance(chainIds, metamask.isConnected)
 
   // Estado del panel de integración
@@ -401,29 +415,57 @@ export function NetworkIntegrationPanel() {
             Sincronización entre redes implementadas y MetaMask
           </p>
         </div>
-        <Button
-          onClick={refresh}
-          disabled={isLoading || isAnalyzing}
-          variant="outline"
-          className="border-slate-200/50 bg-white/70 backdrop-blur-sm hover:bg-slate-50/80 rounded-xl transition-all duration-200 shadow-sm"
-        >
-          <RefreshCw className={cn("w-4 h-4 mr-2", (isLoading || isAnalyzing) && "animate-spin")} />
-          Actualizar
-        </Button>
+        <div className="flex space-x-2">
+          {/* Indicador de estado del backend */}
+          {dashboardError && (
+            <Badge variant="outline" className="text-red-600 border-red-200">
+              Backend desconectado
+            </Badge>
+          )}
+          
+          <Button
+            onClick={() => {
+              refresh()
+              refreshDashboard()
+            }}
+            disabled={isLoading || isAnalyzing || dashboardLoading}
+            variant="outline"
+            className="border-slate-200/50 bg-white/70 backdrop-blur-sm hover:bg-slate-50/80 rounded-xl transition-all duration-200 shadow-sm"
+          >
+            <RefreshCw className={cn("w-4 h-4 mr-2", (isLoading || isAnalyzing || dashboardLoading) && "animate-spin")} />
+            Actualizar Todo
+          </Button>
+        </div>
       </div>
 
-      {/* Panel de estadísticas */}
+      {/* Panel de estadísticas INTEGRADO CON DATOS REALES DEL DASHBOARD */}
       <SyncStatsPanel
         stats={syncStats}
-        syncPercentage={syncPercentage}
+        syncPercentage={dashboardData?.networkIntegration?.syncPercentage || syncPercentage}
         onSyncAll={syncAllNetworks}
-        isLoading={isLoading}
+        isLoading={isLoading || dashboardLoading}
+        dashboardData={dashboardData}
+        formatUsdBalance={formatUsdBalance}
+        getTotalUsdBalance={getTotalUsdBalance}
       />
 
       {/* Grid de redes */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-800">Estado de Redes por Blockchain</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-800">Estado de Redes por Blockchain</h3>
+            <div className="flex items-center space-x-2 text-xs">
+              <span className="text-gray-500">Sistema:</span>
+              <Badge className={cn(
+                "text-xs px-2 py-1",
+                dashboardData?.systemStatus === 'active' ? "bg-emerald-100 text-emerald-700" :
+                dashboardData?.systemStatus === 'error' ? "bg-red-100 text-red-700" :
+                "bg-gray-100 text-gray-700"
+              )}>
+                {getSystemStatus().text}
+              </Badge>
+            </div>
+          </div>
           <div className="flex items-center space-x-3">
             {/* Indicador de carga */}
             {(pricesLoading || balancesLoading) && (
@@ -436,10 +478,10 @@ export function NetworkIntegrationPanel() {
               </div>
             )}
             
-            {/* Balance total */}
-            {Object.keys(balances).length > 0 && (
+            {/* Balance total - PRIORIZAR DATOS DEL BACKEND DE ARBITRAJE */}
+            {(dashboardData?.totalBalance || Object.keys(balances).length > 0) && (
               <div className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg">
-                💼 Total: ${formatUsdBalance(getTotalUsdBalance())}
+                💼 Total: {dashboardData?.totalBalance ? formatTotalBalance() : formatUsdBalance(getTotalUsdBalance())}
               </div>
             )}
 

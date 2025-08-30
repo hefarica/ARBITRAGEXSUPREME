@@ -762,41 +762,6 @@ interface ChainMetrics {
   averageGasPrice: number;
   successRate: number;
 }
-      this.monitorSolana(),
-      this.monitorNear(),
-      this.monitorCardano(),
-      this.monitorCosmos()
-    ];
-
-    // Ejecutar todo en paralelo
-    await Promise.all([...evmPromises, ...nonEvmPromises]);
-  }
-
-  /**
-   * Monitorea oportunidades en una EVM chain específica
-   */
-  private async monitorEVMChain(chainName: string, integration: SmartContractIntegration): Promise<void> {
-    console.log(`🔍 Monitoring ${chainName} for arbitrage opportunities...`);
-
-    while (this.isMonitoring) {
-      try {
-        // Detectar oportunidades usando JavaScript
-        const opportunities = await this.detectEVMOpportunities(chainName, integration);
-
-        for (const opportunity of opportunities) {
-          await this.processOpportunity(chainName, opportunity, integration);
-        }
-
-        // Pausa entre scans (ajustable por chain)
-        const scanInterval = this.getScanInterval(chainName);
-        await new Promise(resolve => setTimeout(resolve, scanInterval));
-
-      } catch (error) {
-        console.error(`❌ Error monitoring ${chainName}:`, error);
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Recovery delay
-      }
-    }
-  }
 
   /**
    * Detecta oportunidades de arbitraje en EVM chains usando JavaScript

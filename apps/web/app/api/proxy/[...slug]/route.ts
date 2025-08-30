@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 // ARBITRAGEX PRO 2025 - PROXY REAL SIN MOCK DATA
 // =============================================
 
-const API_BASE_URL = process.env.BACKEND_URL || 'http://localhost:8080'
+const API_BASE_URL = process.env.BACKEND_URL || 'http://localhost:3001'
 
 console.log(`🔗 Proxy configurado para backend: ${API_BASE_URL}`)
 

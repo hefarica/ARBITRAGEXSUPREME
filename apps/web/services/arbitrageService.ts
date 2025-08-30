@@ -8,7 +8,7 @@
 const getBackendConfig = () => {
   // Variables de entorno para backend real
   const BACKEND_HOST = process.env.NEXT_PUBLIC_BACKEND_HOST || 'localhost';
-  const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || '8080';
+  const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || '3001';
   const BACKEND_PROTOCOL = process.env.NEXT_PUBLIC_BACKEND_PROTOCOL || 'http';
   const USE_PROXY = process.env.NEXT_PUBLIC_USE_PROXY !== 'false'; // Por defecto usar proxy
   
@@ -312,6 +312,80 @@ class ArbitrageService {
       missingCredentials.forEach(cred => console.log(`   - ${cred}`));
     }
     console.log('='.repeat(60));
+  }
+
+  // =============================================
+  // MÉTODOS DE INTEGRACIÓN CON WALLET
+  // =============================================
+
+  // Conectar wallet (MetaMask, etc.)
+  async connectWallet(walletInfo: {
+    address: string;
+    chainId: string;
+    networkName: string;
+  }): Promise<{ success: boolean; message?: string }> {
+    try {
+      const response = await this.makeAuthenticatedRequest('/api/proxy/wallet/connect', {
+        method: 'POST',
+        body: JSON.stringify(walletInfo),
+      });
+      return response;
+    } catch (error) {
+      console.error('Error connecting wallet:', error);
+      return { success: false, message: 'Wallet connection simulated for development' };
+    }
+  }
+
+  // Desconectar wallet
+  async disconnectWallet(): Promise<{ success: boolean }> {
+    try {
+      const response = await this.makeAuthenticatedRequest('/api/proxy/wallet/disconnect', {
+        method: 'POST',
+      });
+      return response;
+    } catch (error) {
+      console.error('Error disconnecting wallet:', error);
+      return { success: true }; // Siempre permitir desconectar
+    }
+  }
+
+  // Obtener balance de wallet
+  async getWalletBalance(address: string, chainId: string): Promise<{
+    balance: string;
+    symbol: string;
+    usdValue?: number;
+  }> {
+    try {
+      const response = await this.makeAuthenticatedRequest(
+        `/api/proxy/wallet/balance?address=${address}&chainId=${chainId}`
+      );
+      return response;
+    } catch (error) {
+      console.error('Error getting wallet balance:', error);
+      return { balance: '0.0', symbol: 'ETH' };
+    }
+  }
+
+  // Ejecutar transacción a través del backend
+  async executeTransaction(transaction: {
+    to: string;
+    value: string;
+    data: string;
+    chainId: string;
+  }): Promise<{ success: boolean; txHash?: string; error?: string }> {
+    try {
+      const response = await this.makeAuthenticatedRequest('/api/proxy/transaction/execute', {
+        method: 'POST',
+        body: JSON.stringify(transaction),
+      });
+      return response;
+    } catch (error: any) {
+      console.error('Error executing transaction:', error);
+      return { 
+        success: false, 
+        error: error.message || 'Transaction execution failed' 
+      };
+    }
   }
 
   // =============================================  

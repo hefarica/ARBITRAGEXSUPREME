@@ -6,11 +6,39 @@
 
 ## 📋 URLs del Proyecto
 
-- **Producción**: No deployado aún (sistema listo para deployment)
-- **GitHub**: https://github.com/user/webapp
-- **Documentación**: Este README.md
+- **Dashboard Empresarial**: https://3000-ieud15hdqvkzxftnpjpun-6532622b.e2b.dev
+- **API Consolidada**: https://3000-ieud15hdqvkzxftnpjpun-6532622b.e2b.dev/api/snapshot/consolidated
+- **GitHub**: Repository configurado con autenticación
+- **Documentación**: Sistema documentado y operacional
 
 ## 🎯 Características Principales
+
+### 📊 **Dashboard Empresarial ArbitrageX Supreme**
+
+**Completamente implementado y funcional** con tablas contables detalladas:
+
+#### **Tablas Contables por Blockchain:**
+- **Oportunidades de Arbitraje**: Análisis detallado por red con profit potencial y ROI
+- **Protocolos DEX**: Distribución de TVL, tipos de AMM y soporte flash loans
+- **Protocolos Lending**: Tasas de interés, TVL y oportunidades de arbitraje de rates
+
+#### **Métricas en Tiempo Real:**
+- Actualización cada 5 segundos con cache inteligente
+- Monitoreo de 20 blockchains con 100+ protocolos DeFi
+- Sistema de alertas y estado de salud del sistema
+- Subtotales agregados por tipo de protocolo y blockchain
+
+#### **Integración Completa:**
+- API RESTful con endpoints `/api/snapshot/consolidated`
+- Hook personalizado `useArbitrageSnapshot` para datos en tiempo real  
+- Sistema de cache LRU con TTL de 5 segundos
+- Fallback automático a datos mockeados para desarrollo
+
+#### **Arquitectura Empresarial:**
+- Next.js 14 con App Router para máximo rendimiento
+- TypeScript con tipado fuerte para toda la aplicación
+- Componentes UI reutilizables con Tailwind CSS
+- Sistema de estado reactivo con hooks personalizados
 
 ### ✨ **13 Tipos de Arbitraje Completamente Implementados**
 

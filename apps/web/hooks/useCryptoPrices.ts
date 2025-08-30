@@ -31,7 +31,7 @@ export function useCryptoPrices(chainIds: string[] = []) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Función para obtener precio desde CoinGecko
+  // Función para obtener precio desde backend de arbitraje
   const fetchTokenPrice = async (chainId: string): Promise<TokenPrice | null> => {
     const tokenInfo = NATIVE_TOKENS[chainId as keyof typeof NATIVE_TOKENS]
     if (!tokenInfo) return null
@@ -44,9 +44,58 @@ export function useCryptoPrices(chainIds: string[] = []) {
     }
 
     try {
-      // API gratuita de CoinGecko (sin API key)
+      // CONEXIÓN REAL AL BACKEND DE ARBITRAJE
+      // Endpoint del sistema de arbitraje para obtener precios
       const response = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${tokenInfo.coingeckoId}&vs_currencies=usd&include_24hr_change=true`,
+        `/api/arbitrage/prices/${tokenInfo.symbol}`,
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        // Si el backend no responde, usar CoinGecko como fallback a través del proxy
+        return await fetchFromCoinGeckoProxy(tokenInfo)
+      }
+
+      const data = await response.json()
+      
+      if (data.success && data.price) {
+        const priceData: TokenPrice = {
+          symbol: tokenInfo.symbol,
+          price: data.price,
+          change24h: data.change24h || 0,
+          lastUpdated: Date.now()
+        }
+
+        // Guardar en cache
+        priceCache.set(cacheKey, {
+          data: priceData,
+          expiry: Date.now() + CACHE_DURATION
+        })
+
+        return priceData
+      } else {
+        throw new Error('Invalid response from arbitrage backend')
+      }
+    } catch (err) {
+      console.warn(`Backend price fetch failed for ${tokenInfo.symbol}, trying CoinGecko proxy:`, err)
+      
+      // Fallback: CoinGecko a través del proxy del backend
+      return await fetchFromCoinGeckoProxy(tokenInfo)
+    }
+  }
+
+  // Función fallback para CoinGecko a través del proxy del backend
+  const fetchFromCoinGeckoProxy = async (tokenInfo: typeof NATIVE_TOKENS[keyof typeof NATIVE_TOKENS]): Promise<TokenPrice | null> => {
+    try {
+      // Usar el proxy del backend para evitar problemas de CORS
+      const response = await fetch(
+        `/api/proxy/coingecko?ids=${tokenInfo.coingeckoId}&vs_currencies=usd&include_24hr_change=true`,
         {
           headers: {
             'Accept': 'application/json',
@@ -55,7 +104,7 @@ export function useCryptoPrices(chainIds: string[] = []) {
       )
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        throw new Error(`CoinGecko proxy error: ${response.status}`)
       }
 
       const data = await response.json()
@@ -70,7 +119,7 @@ export function useCryptoPrices(chainIds: string[] = []) {
         }
 
         // Guardar en cache
-        priceCache.set(cacheKey, {
+        priceCache.set(tokenInfo.coingeckoId, {
           data: priceData,
           expiry: Date.now() + CACHE_DURATION
         })
@@ -78,29 +127,15 @@ export function useCryptoPrices(chainIds: string[] = []) {
         return priceData
       }
     } catch (err) {
-      console.error(`Error fetching price for ${tokenInfo.symbol}:`, err)
-      
-      // Fallback: datos mock para desarrollo
-      return {
-        symbol: tokenInfo.symbol,
-        price: getMockPrice(tokenInfo.symbol),
-        change24h: (Math.random() - 0.5) * 10, // Cambio aleatorio entre -5% y +5%
-        lastUpdated: Date.now()
-      }
+      console.error(`CoinGecko proxy failed for ${tokenInfo.symbol}:`, err)
     }
 
-    return null
+    // ÚLTIMO RECURSO: Error - NO usar datos mock en producción
+    throw new Error(`No se pudo obtener precio para ${tokenInfo.symbol} desde ninguna fuente`)
   }
 
-  // Función para obtener precios mock para desarrollo
-  const getMockPrice = (symbol: string): number => {
-    const mockPrices: { [key: string]: number } = {
-      'ETH': 3450.25, // Precio realista de ETH
-      'MATIC': 0.94, // Precio realista de MATIC  
-      'BNB': 385.67, // Precio realista de BNB
-    }
-    return mockPrices[symbol] || 1
-  }
+  // FUNCIÓN ELIMINADA: getMockPrice - NO MÁS DATOS MOCK
+  // Los precios ahora vienen del sistema de arbitraje real
 
   // Función para obtener todos los precios
   const fetchAllPrices = async (targetChainIds: string[]) => {
@@ -120,16 +155,12 @@ export function useCryptoPrices(chainIds: string[] = []) {
         if (result.status === 'fulfilled' && result.value.price) {
           newPrices[targetChainIds[index]] = result.value.price
         } else {
-          // Si falla, usar precio mock
+          // Si falla, registrar error - NO usar datos mock
           const chainId = targetChainIds[index]
           const tokenInfo = NATIVE_TOKENS[chainId as keyof typeof NATIVE_TOKENS]
           if (tokenInfo) {
-            newPrices[chainId] = {
-              symbol: tokenInfo.symbol,
-              price: getMockPrice(tokenInfo.symbol),
-              change24h: (Math.random() - 0.5) * 8, // -4% a +4%
-              lastUpdated: Date.now()
-            }
+            console.error(`No se pudo obtener precio para ${tokenInfo.symbol} en red ${chainId}`)
+            // NO agregar precio falso - el frontend debe manejar la ausencia de datos
           }
         }
       })
@@ -138,20 +169,9 @@ export function useCryptoPrices(chainIds: string[] = []) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error fetching prices')
       
-      // En caso de error total, usar todos los precios mock
-      const mockPrices: CryptoPricesState = {}
-      targetChainIds.forEach(chainId => {
-        const tokenInfo = NATIVE_TOKENS[chainId as keyof typeof NATIVE_TOKENS]
-        if (tokenInfo) {
-          mockPrices[chainId] = {
-            symbol: tokenInfo.symbol,
-            price: getMockPrice(tokenInfo.symbol),
-            change24h: (Math.random() - 0.5) * 8,
-            lastUpdated: Date.now()
-          }
-        }
-      })
-      setPrices(prev => ({ ...prev, ...mockPrices }))
+      // En caso de error total, NO usar datos mock - mostrar error real
+      console.error('Error crítico obteniendo precios de criptomonedas:', err)
+      // El frontend debe mostrar estado de error en lugar de datos falsos
     } finally {
       setIsLoading(false)
     }

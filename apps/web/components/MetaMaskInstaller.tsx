@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Globe,
-  Firefox
+  Globe as Firefox
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
