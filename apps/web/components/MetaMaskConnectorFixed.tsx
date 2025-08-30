@@ -1,10 +1,11 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useMetaMask } from '@/hooks/useMetaMask'
+import { MetaMaskInstaller } from './MetaMaskInstaller'
 import { 
   Wallet, 
   ExternalLink, 
@@ -14,17 +15,20 @@ import {
   Power,
   Network,
   Copy,
-  Download
+  Download,
+  Globe,
+  Chrome,
+  Firefox
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-interface MetaMaskConnectorProps {
+interface MetaMaskConnectorFixedProps {
   className?: string
   showDetails?: boolean
   compact?: boolean
 }
 
-export function MetaMaskConnector({ className, showDetails = true, compact = false }: MetaMaskConnectorProps) {
+export function MetaMaskConnectorFixed({ className, showDetails = true, compact = false }: MetaMaskConnectorFixedProps) {
   const {
     isConnected,
     address,
@@ -38,15 +42,93 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
     refresh
   } = useMetaMask()
 
-  const copyAddress = () => {
+  const [showInstaller, setShowInstaller] = useState(false)
+  const [copySuccess, setCopySuccess] = useState(false)
+
+  const copyAddress = async () => {
     if (address) {
-      navigator.clipboard.writeText(address)
-      // TODO: Agregar toast notification
+      try {
+        await navigator.clipboard.writeText(address)
+        setCopySuccess(true)
+        setTimeout(() => setCopySuccess(false), 2000)
+      } catch (error) {
+        console.error('Failed to copy address:', error)
+        // Fallback para navegadores sin clipboard API
+        const textArea = document.createElement('textarea')
+        textArea.value = address
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+        setCopySuccess(true)
+        setTimeout(() => setCopySuccess(false), 2000)
+      }
     }
   }
 
   const formatAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+  }
+
+  // Función mejorada para instalar MetaMask con múltiples opciones
+  const handleInstallMetaMask = () => {
+    const userAgent = navigator.userAgent
+    let primaryUrl = 'https://metamask.io/download/'
+    let alternativeUrls: string[] = []
+
+    // Detectar navegador y configurar URLs específicas
+    if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) {
+      alternativeUrls = [
+        'https://chrome.google.com/webstore/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn',
+        'https://github.com/MetaMask/metamask-extension/releases'
+      ]
+    } else if (userAgent.includes('Firefox')) {
+      primaryUrl = 'https://addons.mozilla.org/en-US/firefox/addon/ether-metamask/'
+      alternativeUrls = [
+        'https://metamask.io/download/',
+        'https://github.com/MetaMask/metamask-extension/releases'
+      ]
+    } else if (userAgent.includes('Edg')) {
+      primaryUrl = 'https://microsoftedge.microsoft.com/addons/detail/metamask/ejbalbakoplchlghecdalmeeeajnimhm'
+      alternativeUrls = [
+        'https://metamask.io/download/',
+        'https://github.com/MetaMask/metamask-extension/releases'
+      ]
+    }
+
+    // Intentar abrir la URL principal
+    const newWindow = window.open(primaryUrl, '_blank', 'noopener,noreferrer')
+    
+    // Si el pop-up es bloqueado, mostrar instalador con opciones
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+      setShowInstaller(true)
+    } else {
+      // Verificar instalación después de un tiempo
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && window.ethereum?.isMetaMask) {
+          window.location.reload()
+        }
+      }, 5000)
+    }
+  }
+
+  // Si no está instalado y se debe mostrar el instalador completo
+  if (!isMetaMaskInstalled && showInstaller) {
+    return (
+      <div className={className}>
+        <MetaMaskInstaller 
+          onInstallClick={() => {
+            // Después de hacer clic en instalar, esperar y verificar
+            setTimeout(() => {
+              if (typeof window !== 'undefined' && window.ethereum?.isMetaMask) {
+                setShowInstaller(false)
+                window.location.reload()
+              }
+            }, 3000)
+          }}
+        />
+      </div>
+    )
   }
 
   if (compact) {
@@ -56,26 +138,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              // Múltiples opciones de instalación
-              const userAgent = navigator.userAgent
-              let installUrl = 'https://metamask.io/download/'
-              
-              if (userAgent.includes('Chrome')) {
-                // Usar enlace directo evitando Chrome Web Store si hay problemas
-                installUrl = 'https://metamask.io/download/'
-              } else if (userAgent.includes('Firefox')) {
-                installUrl = 'https://addons.mozilla.org/en-US/firefox/addon/ether-metamask/'
-              }
-              
-              // Abrir en nueva pestaña con configuración segura
-              const newWindow = window.open(installUrl, '_blank', 'noopener,noreferrer')
-              
-              // Si no se abre (bloqueado), mostrar instrucciones
-              if (!newWindow) {
-                alert('Pop-up bloqueado. Ve manualmente a https://metamask.io/download/ para instalar MetaMask.')
-              }
-            }}
+            onClick={handleInstallMetaMask}
             className="text-orange-600 border-orange-200 hover:bg-orange-50"
           >
             <Download className="w-4 h-4 mr-2" />
@@ -145,35 +208,35 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
             <div className="font-montserrat uppercase text-sm text-slate-600 tracking-wide">
               METAMASK NO ESTÁ INSTALADO EN TU NAVEGADOR
             </div>
+            
+            {/* Botón principal de instalación */}
             <Button
-              onClick={() => {
-                // Estrategia múltiple para evitar bloqueos
-                const installOptions = [
-                  'https://metamask.io/download/',
-                  'https://chrome.google.com/webstore/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn',
-                  'https://github.com/MetaMask/metamask-extension/releases'
-                ]
-                
-                // Intentar abrir la página principal
-                const newWindow = window.open(installOptions[0], '_blank', 'noopener,noreferrer')
-                
-                // Si se bloquea, mostrar opciones alternativas
-                if (!newWindow) {
-                  const message = `Pop-up bloqueado. Opciones para instalar MetaMask:
-                  
-1. Ve a: https://metamask.io/download/
-2. O busca "MetaMask" en la tienda de extensiones de tu navegador
-3. O descarga desde: https://github.com/MetaMask/metamask-extension/releases`
-                  
-                  alert(message)
-                }
-              }}
-              className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-6 py-3 transition-all duration-200 shadow-md hover:shadow-lg"
+              onClick={handleInstallMetaMask}
+              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-xl px-6 py-3 transition-all duration-200 shadow-md hover:shadow-lg"
             >
               <Download className="w-4 h-4 mr-2" />
-              <span className="font-montserrat uppercase font-semibold tracking-wide">DESCARGAR METAMASK</span>
+              <span className="font-montserrat uppercase font-semibold tracking-wide">INSTALAR METAMASK</span>
               <ExternalLink className="w-3 h-3 ml-2" />
             </Button>
+
+            {/* Opciones alternativas rápidas */}
+            <div className="text-xs text-gray-500 space-y-2">
+              <p className="font-montserrat uppercase tracking-wider">O visita manualmente:</p>
+              <div className="flex flex-col space-y-1">
+                <button
+                  onClick={() => window.open('https://metamask.io/download/', '_blank')}
+                  className="text-blue-600 hover:text-blue-700 underline"
+                >
+                  metamask.io/download
+                </button>
+                <button
+                  onClick={() => setShowInstaller(true)}
+                  className="text-orange-600 hover:text-orange-700 underline font-medium"
+                >
+                  Ver más opciones de instalación
+                </button>
+              </div>
+            </div>
           </div>
         ) : !isConnected ? (
           <div className="text-center space-y-4">
@@ -206,7 +269,11 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
                   variant="ghost"
                   size="sm"
                   onClick={copyAddress}
-                  className="h-8 w-8 p-0 hover:bg-gray-100 rounded-lg"
+                  className={cn(
+                    "h-8 w-8 p-0 hover:bg-gray-100 rounded-lg transition-all duration-200",
+                    copySuccess && "bg-emerald-100 text-emerald-600"
+                  )}
+                  title={copySuccess ? "¡Copiado!" : "Copiar dirección"}
                 >
                   <Copy className="w-3 h-3" />
                 </Button>
