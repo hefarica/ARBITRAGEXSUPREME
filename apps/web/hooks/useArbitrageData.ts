@@ -1,233 +1,229 @@
 'use client'
 
-import useSWR from 'swr'
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { arbitrageService, type DashboardData, type NetworkStatus, type ArbitrageOpportunity, type ArbitrageMetrics } from '@/services/arbitrageService';
 
-// API base URL - usando proxy de Next.js para evitar problemas de CORS
-const API_BASE_URL = '/api/proxy/api/v2'
-
-// Fetcher function for SWR
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
-
-// Types based on the actual API responses
-export interface NetworkStatus {
-  id: string
-  name: string
-  symbol: string
-  connected: boolean
-  blockNumber: number
-  blockTime: number
-  gasPrice: string
-  lastCheck: string
-  explorerUrl: string
-  nativeCurrency: {
-    name: string
-    symbol: string
-    decimals: number
-  }
-  hasWebSocket: boolean
-  rpcStatus: string
-}
-
-export interface ArbitrageOpportunity {
-  id: string
-  strategy: string
-  blockchainFrom: string
-  blockchainTo: string
-  tokenIn: string
-  tokenOut: string
-  amountIn: string
-  expectedAmountOut: string
-  profitAmount: string
-  profitPercentage: number
-  gasEstimate: string
-  confidence: number
-  expiresAt: string
-  detected_at: string
-  source: string
-  dexPath: Array<{
-    exchange: string
-    poolAddress: string
-    fee: number
-    pair?: string // Par de tokens para este swap
-  }>
-  networkDetails: {
-    from: NetworkStatus
-    to: NetworkStatus
-  }
-  // Información específica para triangular arbitrage
-  triangularPath?: {
-    tokenA: string
-    tokenB: string
-    tokenC: string
-    route: string // Descripción legible: "ETH → USDC → DAI → ETH"
-    steps: Array<{
-      from: string
-      to: string
-      dex: string
-    }>
-  }
-}
-
-export interface DashboardMetrics {
-  totals: {
-    tenants: number
-    users: number
-    active_configs: number
-    active_opportunities: number
-  }
-  blockchain: {
-    networks: number
-    active_connections: number
-    live_opportunities: number
-    total_volume_24h: number
-    successful_arbitrages_24h: number
-    avg_execution_time: string
-    network_uptime: string
-  }
-  real_time_metrics: {
-    live_scanning: boolean
-    opportunities_per_minute: string
-    profit_rate: string
-    market_efficiency: string
-  }
-  recent_performance: {
-    opportunities_24h: number
-    total_potential_profit_24h: number
-    avg_profit_percentage_24h: number
-    live_profit_potential: string
-  }
-  recent_opportunities: Array<{
-    profit_percentage: string
-    profit_usd: string
-    strategy_name: string
-    blockchain_from: string
-    blockchain_to: string
-  }>
-  top_live_opportunities: ArbitrageOpportunity[]
-}
-
-// Custom hooks for each data endpoint
-export function useNetworks() {
-  const { data, error, isLoading, mutate } = useSWR(
-    `${API_BASE_URL}/blockchain/networks`,
-    fetcher,
-    {
-      refreshInterval: 30000, // Refresh every 30 seconds
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-    }
-  )
-
-  return {
-    networks: data?.networks || [],
-    totalNetworks: data?.total || 0,
-    activeConnections: data?.active_connections || 0,
-    isLoading,
-    error,
-    refresh: mutate,
-  }
-}
-
-export function useOpportunities(page: number = 1, limit: number = 8) {
-  const { data, error, isLoading, mutate } = useSWR(
-    `${API_BASE_URL}/arbitrage/opportunities?page=${page}&limit=${limit}`,
-    fetcher,
-    {
-      refreshInterval: 5000, // Refresh every 5 seconds for real-time data
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-    }
-  )
-
-  // Si el backend no soporta paginación, implementarla en el cliente
-  const allOpportunities = data?.opportunities || [];
-  const totalOpportunities = data?.total || allOpportunities.length;
+export interface UseArbitrageDataReturn {
+  // Data states
+  networks: NetworkStatus[];
+  opportunities: ArbitrageOpportunity[];
+  metrics: ArbitrageMetrics | null;
   
-  // Paginación en el cliente como fallback
-  const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + limit;
-  const paginatedOpportunities = allOpportunities.slice(startIndex, endIndex);
+  // Loading states
+  isLoading: boolean;
+  isRefreshing: boolean;
   
-  // Información de paginación
-  const totalPages = Math.ceil(totalOpportunities / limit);
-  const hasNextPage = page < totalPages;
-  const hasPrevPage = page > 1;
-
-  return {
-    opportunities: data?.pagination ? allOpportunities : paginatedOpportunities, // Si hay paginación del backend, usar todas; si no, usar paginadas
-    totalOpportunities,
-    breakdown: data?.breakdown || {},
-    marketConditions: data?.market_conditions || {},
-    pagination: data?.pagination || {
-      page,
-      limit,
-      total: totalOpportunities,
-      totalPages,
-      hasNextPage,
-      hasPrevPage,
-      showing: `${startIndex + 1}-${Math.min(endIndex, totalOpportunities)} of ${totalOpportunities}`
-    },
-    isLoading,
-    error,
-    refresh: mutate,
-  }
+  // Error states
+  hasError: boolean;
+  error: string | null;
+  
+  // Actions
+  refresh: () => Promise<void>;
+  executeArbitrage: (opportunityId: string) => Promise<{ success: boolean; txHash?: string; error?: string }>;
+  
+  // Real-time status
+  isConnected: boolean;
+  lastUpdate: Date | null;
 }
 
-export function useDashboardMetrics() {
-  const { data, error, isLoading, mutate } = useSWR(
-    `${API_BASE_URL}/analytics/dashboard`,
-    fetcher,
-    {
-      refreshInterval: 10000, // Refresh every 10 seconds
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
+export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageDataReturn {
+  // Data states
+  const [networks, setNetworks] = useState<NetworkStatus[]>([]);
+  const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
+  const [metrics, setMetrics] = useState<ArbitrageMetrics | null>(null);
+  
+  // Loading states
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Error states
+  const [hasError, setHasError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Connection states
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  
+  // Refs para cleanup
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Función para cargar datos completos
+  const loadDashboardData = useCallback(async (showRefreshIndicator = false) => {
+    try {
+      // Cancel previous request if exists
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      
+      // Create new abort controller
+      abortControllerRef.current = new AbortController();
+      
+      if (showRefreshIndicator) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+      
+      setHasError(false);
+      setError(null);
+
+      // Fetch complete dashboard data
+      const dashboardData: DashboardData = await arbitrageService.getDashboardData();
+      
+      // Update all states
+      setNetworks(dashboardData.networks);
+      setOpportunities(dashboardData.opportunities);
+      setMetrics(dashboardData.metrics);
+      
+      setIsConnected(true);
+      setLastUpdate(new Date());
+      
+      console.log('✅ Dashboard data loaded successfully:', {
+        networks: dashboardData.networks.length,
+        opportunities: dashboardData.opportunities.length,
+        metrics: dashboardData.metrics
+      });
+      
+    } catch (err: any) {
+      console.error('❌ Error loading dashboard data:', err);
+      setHasError(true);
+      setError(err.message || 'Failed to load data');
+      setIsConnected(false);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-  )
+  }, []);
+
+  // Función para refrescar datos manualmente
+  const refresh = useCallback(async () => {
+    await loadDashboardData(true);
+  }, [loadDashboardData]);
+
+  // Función para ejecutar arbitraje
+  const executeArbitrage = useCallback(async (opportunityId: string) => {
+    try {
+      const result = await arbitrageService.executeArbitrage(opportunityId);
+      
+      if (result.success) {
+        // Refresh data after successful execution
+        await loadDashboardData(true);
+      }
+      
+      return result;
+    } catch (err: any) {
+      console.error('Error executing arbitrage:', err);
+      return { success: false, error: err.message };
+    }
+  }, [loadDashboardData]);
+
+  // Effect para carga inicial
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  // Effect para polling de datos en tiempo real
+  useEffect(() => {
+    if (refreshInterval > 0) {
+      intervalRef.current = setInterval(() => {
+        if (!isRefreshing && !isLoading) {
+          loadDashboardData(false);
+        }
+      }, refreshInterval);
+
+      return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+        }
+      };
+    }
+  }, [refreshInterval, isRefreshing, isLoading, loadDashboardData]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   return {
-    metrics: data?.dashboard as DashboardMetrics,
+    // Data
+    networks,
+    opportunities,
+    metrics,
+    
+    // Loading states
     isLoading,
-    error,
-    refresh: mutate,
-  }
-}
-
-// Combined hook for all dashboard data
-export function useArbitrageData() {
-  const networksData = useNetworks()
-  const opportunitiesData = useOpportunities()
-  const metricsData = useDashboardMetrics()
-
-  const isLoading = networksData.isLoading || opportunitiesData.isLoading || metricsData.isLoading
-  const hasError = networksData.error || opportunitiesData.error || metricsData.error
-
-  const refresh = () => {
-    networksData.refresh()
-    opportunitiesData.refresh()
-    metricsData.refresh()
-  }
-
-  return {
-    // Networks data
-    networks: networksData.networks,
-    totalNetworks: networksData.totalNetworks,
-    activeConnections: networksData.activeConnections,
+    isRefreshing,
     
-    // Opportunities data
-    opportunities: opportunitiesData.opportunities,
-    totalOpportunities: opportunitiesData.totalOpportunities,
-    breakdown: opportunitiesData.breakdown,
-    marketConditions: opportunitiesData.marketConditions,
-    
-    // Metrics data
-    metrics: metricsData.metrics,
-    
-    // Loading and error states
-    isLoading,
+    // Error states
     hasError,
-    error: hasError ? (networksData.error || opportunitiesData.error || metricsData.error) : null,
+    error,
     
-    // Refresh function
+    // Actions
     refresh,
-  }
+    executeArbitrage,
+    
+    // Connection status
+    isConnected,
+    lastUpdate
+  };
+}
+
+// Hook específico para métricas en tiempo real
+export function useRealTimeMetrics(refreshInterval: number = 5000) {
+  const [metrics, setMetrics] = useState<ArbitrageMetrics | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadMetrics = useCallback(async () => {
+    try {
+      const metricsData = await arbitrageService.getMetrics();
+      setMetrics(metricsData);
+    } catch (error) {
+      console.error('Error loading real-time metrics:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMetrics();
+    
+    const interval = setInterval(loadMetrics, refreshInterval);
+    return () => clearInterval(interval);
+  }, [loadMetrics, refreshInterval]);
+
+  return { metrics, isLoading };
+}
+
+// Hook para estado de redes
+export function useNetworkStatus(refreshInterval: number = 15000) {
+  const [networks, setNetworks] = useState<NetworkStatus[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadNetworks = useCallback(async () => {
+    try {
+      const networksData = await arbitrageService.getNetworkStatus();
+      setNetworks(networksData);
+    } catch (error) {
+      console.error('Error loading network status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNetworks();
+    
+    const interval = setInterval(loadNetworks, refreshInterval);
+    return () => clearInterval(interval);
+  }, [loadNetworks, refreshInterval]);
+
+  return { networks, isLoading, refresh: loadNetworks };
 }

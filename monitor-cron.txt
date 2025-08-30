@@ -1,0 +1,2 @@
+# Monitor ArbitrageX Service every 2 minutes
+*/2 * * * * /home/user/webapp/monitor-service.sh

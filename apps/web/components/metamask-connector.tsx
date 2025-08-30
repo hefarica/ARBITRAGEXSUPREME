@@ -57,7 +57,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
             variant="outline"
             size="sm"
             onClick={() => window.open('https://metamask.io/download/', '_blank')}
-            className="text-orange-600 border-orange-200 hover:bg-orange-50 ios-button-secondary"
+            className="text-orange-600 border-orange-200 hover:bg-orange-50"
           >
             <Download className="w-4 h-4 mr-2" />
             <span className="font-montserrat uppercase font-semibold tracking-wide">INSTALAR METAMASK</span>
@@ -67,7 +67,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
             onClick={connect}
             disabled={isLoading}
             size="sm"
-            className="bg-orange-500 hover:bg-orange-600 text-white ios-button-primary"
+            className="bg-orange-500 hover:bg-orange-600 text-white"
           >
             {isLoading ? (
               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -78,7 +78,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
           </Button>
         ) : (
           <div className="flex items-center space-x-2">
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 ios-caption">
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 font-montserrat uppercase text-xs tracking-wider">
               <CheckCircle2 className="w-3 h-3 mr-1" />
               {formatAddress(address!)}
             </Badge>
@@ -97,15 +97,15 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
   }
 
   return (
-    <Card className={cn(className, "ios-glass")}>
+    <Card className={cn(className, "backdrop-blur-md bg-white/90 border rounded-2xl shadow-sm")}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Wallet className="w-5 h-5 text-orange-500" />
-            <span className="ios-card-title">METAMASK WALLET</span>
+            <span className="font-montserrat uppercase font-semibold tracking-wide text-gray-900">METAMASK WALLET</span>
           </div>
           {isConnected && (
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 ios-caption">
+            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 font-montserrat uppercase text-xs tracking-wider">
               <CheckCircle2 className="w-3 h-3 mr-1" />
               CONECTADO
             </Badge>
@@ -123,12 +123,12 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
 
         {!isMetaMaskInstalled ? (
           <div className="text-center space-y-4">
-            <div className="ios-body text-slate-600">
+            <div className="font-montserrat uppercase text-sm text-slate-600 tracking-wide">
               METAMASK NO ESTÁ INSTALADO EN TU NAVEGADOR
             </div>
             <Button
               onClick={() => window.open('https://metamask.io/download/', '_blank')}
-              className="bg-orange-500 hover:bg-orange-600 text-white ios-button-primary"
+              className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-6 py-3 transition-all duration-200 shadow-md hover:shadow-lg"
             >
               <Download className="w-4 h-4 mr-2" />
               <span className="font-montserrat uppercase font-semibold tracking-wide">DESCARGAR METAMASK</span>
@@ -137,13 +137,13 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
           </div>
         ) : !isConnected ? (
           <div className="text-center space-y-4">
-            <div className="ios-body text-slate-600">
+            <div className="font-montserrat uppercase text-sm text-slate-600 tracking-wide">
               CONECTA TU WALLET METAMASK PARA EJECUTAR OPERACIONES DE ARBITRAJE
             </div>
             <Button
               onClick={connect}
               disabled={isLoading}
-              className="bg-orange-500 hover:bg-orange-600 text-white ios-button-primary"
+              className="bg-orange-500 hover:bg-orange-600 text-white rounded-xl px-6 py-3 transition-all duration-200 shadow-md hover:shadow-lg"
             >
               {isLoading ? (
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -157,44 +157,44 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
           showDetails && (
             <div className="space-y-3">
               {/* Dirección */}
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg ios-glass">
+              <div className="flex items-center justify-between p-3 backdrop-blur-sm bg-white/50 rounded-xl border border-gray-100">
                 <div>
-                  <div className="ios-caption text-slate-500">DIRECCIÓN</div>
-                  <div className="font-mono ios-body">{formatAddress(address!)}</div>
+                  <div className="font-montserrat uppercase text-xs text-slate-500 tracking-wider">DIRECCIÓN</div>
+                  <div className="font-mono font-montserrat uppercase text-sm tracking-wide">{formatAddress(address!)}</div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={copyAddress}
-                  className="h-8 w-8 p-0"
+                  className="h-8 w-8 p-0 hover:bg-gray-100 rounded-lg"
                 >
                   <Copy className="w-3 h-3" />
                 </Button>
               </div>
 
               {/* Red */}
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg ios-glass">
+              <div className="flex items-center justify-between p-3 backdrop-blur-sm bg-white/50 rounded-xl border border-gray-100">
                 <div>
-                  <div className="ios-caption text-slate-500">RED</div>
+                  <div className="font-montserrat uppercase text-xs text-slate-500 tracking-wider">RED</div>
                   <div className="flex items-center space-x-2">
                     <Network className="w-4 h-4 text-slate-600" />
-                    <span className="ios-body">{chainName}</span>
+                    <span className="font-montserrat uppercase text-sm tracking-wide">{chainName}</span>
                   </div>
                 </div>
               </div>
 
               {/* Balance */}
               {balance && (
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg ios-glass">
+                <div className="flex items-center justify-between p-3 backdrop-blur-sm bg-white/50 rounded-xl border border-gray-100">
                   <div>
-                    <div className="ios-caption text-slate-500">BALANCE</div>
-                    <div className="ios-subheading">{balance} ETH</div>
+                    <div className="font-montserrat uppercase text-xs text-slate-500 tracking-wider">BALANCE</div>
+                    <div className="font-montserrat uppercase font-semibold text-base tracking-wide">{balance} ETH</div>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={refresh}
-                    className="h-8 w-8 p-0"
+                    className="h-8 w-8 p-0 hover:bg-gray-100 rounded-lg"
                   >
                     <RefreshCw className="w-3 h-3" />
                   </Button>
@@ -208,19 +208,19 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
                   size="sm"
                   onClick={refresh}
                   disabled={isLoading}
-                  className="flex-1"
+                  className="flex-1 rounded-xl border-gray-200 hover:bg-gray-50 transition-all duration-200"
                 >
                   <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
-                  Actualizar
+                  <span className="font-montserrat uppercase text-xs tracking-wider">ACTUALIZAR</span>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={disconnect}
-                  className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+                  className="flex-1 text-red-600 border-red-200 hover:bg-red-50 rounded-xl transition-all duration-200"
                 >
                   <Power className="w-4 h-4 mr-2" />
-                  Desconectar
+                  <span className="font-montserrat uppercase text-xs tracking-wider">DESCONECTAR</span>
                 </Button>
               </div>
             </div>

@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+/* Performance optimizations */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Hardware acceleration para animaciones */
+.transition-all,
+.transition-transform,
+.transition-colors {
+  will-change: transform;
+}
+
+/* Optimización de re-paints */
+.animate-pulse,
+.animate-spin {
+  will-change: opacity, transform;
+}
+
+/* 
+ * ArbitrageX Pro 2025 - Global Styles with Design Token Integration
+ * Compatible with Shadcn/UI components but enhanced with custom design system
+ */
+
+/* Shadcn/UI base variables (mantener compatibilidad) */
 :root {
   --background: 0 0% 100%;
   --foreground: 0 0% 3.9%;
@@ -7,7 +33,7 @@
   --card-foreground: 0 0% 3.9%;
   --popover: 0 0% 100%;
   --popover-foreground: 0 0% 3.9%;
-  --primary: 0 0% 9%;
+  --primary: 198 93% 60%;
   --primary-foreground: 0 0% 98%;
   --secondary: 0 0% 96.1%;
   --secondary-foreground: 0 0% 9%;
@@ -19,36 +45,31 @@
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 89.8%;
   --input: 0 0% 89.8%;
-  --ring: 0 0% 3.9%;
+  --ring: 198 93% 60%;
   --radius: 0.5rem;
-  
-  /* iOS Montserrat Typography Variables */
-  --font-montserrat: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --ios-letter-spacing: -0.025em;
-  --ios-line-height: 1.15;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 43 74% 66%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 43 74% 66%;
   }
 }
 
@@ -104,15 +125,7 @@ body {
   @apply text-base font-medium;
 }
 
-.ios-body {
-  font-family: var(--font-montserrat);
-  text-transform: uppercase;
-  letter-spacing: -0.005em;
-  font-weight: 400;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  @apply text-sm font-normal;
-}
+/* iOS body text style (for reference - styles applied directly) */
 
 .ios-caption {
   font-family: var(--font-montserrat);
@@ -124,15 +137,7 @@ body {
   @apply text-xs font-medium;
 }
 
-.ios-button {
-  font-family: var(--font-montserrat);
-  text-transform: uppercase;
-  letter-spacing: 0.01em;
-  font-weight: 600;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  @apply text-sm font-semibold;
-}
+/* Base button style (no longer used directly, styles included in specific buttons) */
 
 /* Sidebar Navigation Styles */
 .ios-nav-item {
@@ -241,11 +246,14 @@ body {
 
 /* Buttons with iOS Style */
 .ios-button-primary {
-  @apply ios-button rounded-lg px-4 py-2;
+  @apply rounded-lg px-4 py-2 text-sm font-semibold uppercase tracking-wide;
+  font-family: var(--font-montserrat);
   background: linear-gradient(135deg, #007AFF 0%, #0056CC 100%);
   color: white;
   border: none;
   transition: all 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .ios-button-primary:hover {
@@ -254,11 +262,14 @@ body {
 }
 
 .ios-button-secondary {
-  @apply ios-button rounded-lg px-4 py-2;
+  @apply rounded-lg px-4 py-2 text-sm font-semibold uppercase tracking-wide;
+  font-family: var(--font-montserrat);
   background: rgba(0, 122, 255, 0.1);
   color: #007AFF;
   border: 1px solid rgba(0, 122, 255, 0.2);
   transition: all 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .ios-button-secondary:hover {
@@ -267,10 +278,13 @@ body {
 
 /* Input Styles */
 .ios-input {
-  @apply ios-body rounded-lg px-3 py-2;
+  @apply text-sm font-normal uppercase tracking-tight rounded-lg px-3 py-2;
+  font-family: var(--font-montserrat);
   background: rgba(0, 0, 0, 0.05);
   border: 1px solid rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .ios-input:focus {

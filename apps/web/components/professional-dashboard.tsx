@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { DashboardLayout } from './dashboard-layout'
+// import { DashboardLayout } from './dashboard-layout' // Archivo no encontrado
 import { MetricsCards } from './metrics-cards'
 import { OpportunitiesTable } from './opportunities-table'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -129,12 +129,20 @@ export function ProfessionalDashboard() {
   const inactiveNetworks = data.networks.filter(n => n.status !== 'active')
 
   return (
-    <DashboardLayout
-      title="Dashboard de Arbitraje"
-      subtitle={`Actualizado ${formatTimeAgo(lastUpdate.toISOString())}`}
-      onRefresh={handleRefresh}
-      isRefreshing={isRefreshing}
-    >
+    <div className="space-y-6 p-6">
+      {/* Header simplificado */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard de Arbitraje</h1>
+        <p className="text-sm text-gray-600">Actualizado {formatTimeAgo(lastUpdate.toISOString())}</p>
+        <button 
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+        >
+          {isRefreshing ? 'Actualizando...' : 'Actualizar'}
+        </button>
+      </div>
+      
       <div className="space-y-6">
         {/* Metrics Cards */}
         <MetricsCards data={data.metrics} />
@@ -279,6 +287,6 @@ export function ProfessionalDashboard() {
         {/* Opportunities Table */}
         <OpportunitiesTable opportunities={data.opportunities} />
       </div>
-    </DashboardLayout>
+    </div>
   )
 }
