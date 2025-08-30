@@ -19,11 +19,13 @@ import {
   Clock,
   Zap,
   BarChart3,
-  Settings
+  Settings,
+  Wallet
 } from 'lucide-react'
 import { cn, formatTimeAgo } from '@/lib/utils'
 import { useNetworkStatus } from '@/hooks/useArbitrageData'
 import { type NetworkStatus } from '@/services/arbitrageService'
+import { NetworkIntegrationPanel } from './NetworkIntegrationPanel'
 
 // Network Status Card Component
 function NetworkCard({ network }: { network: NetworkStatus }) {
@@ -342,6 +344,11 @@ export function NetworksPage() {
 
         {/* Connection Summary */}
         <ConnectionSummary networks={networks} />
+
+        {/* Network Integration Panel */}
+        <div>
+          <NetworkIntegrationPanel />
+        </div>
 
         {/* Networks Grid */}
         <div>

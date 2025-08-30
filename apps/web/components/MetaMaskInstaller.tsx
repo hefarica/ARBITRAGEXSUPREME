@@ -7,13 +7,13 @@ import { Badge } from '@/components/ui/badge'
 import { 
   Download, 
   ExternalLink, 
-  Chrome, 
-  Firefox,
+  Chrome,
   Smartphone,
   AlertCircle,
   CheckCircle2,
   RefreshCw,
-  Globe
+  Globe,
+  Firefox
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 

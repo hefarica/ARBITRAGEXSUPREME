@@ -17,8 +17,7 @@ import {
   Copy,
   Download,
   Globe,
-  Chrome,
-  Firefox
+  Chrome
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
