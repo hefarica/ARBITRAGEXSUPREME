@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -174,22 +174,48 @@ export function NetworkGrid() {
   } = useMetaMask()
 
   const [addingNetworkId, setAddingNetworkId] = useState<string | null>(null)
+  const lastClickTime = useRef<{ [chainId: string]: number }>({})
+  const DEBOUNCE_DELAY = 2000 // 2 segundos
 
-  const handleAddNetwork = async (chainId: string) => {
+  const handleAddNetwork = useCallback(async (chainId: string) => {
+    const now = Date.now()
+    const lastClick = lastClickTime.current[chainId] || 0
+    
+    // Verificar debounce - evitar clics rápidos
+    if (now - lastClick < DEBOUNCE_DELAY) {
+      console.log(`⚠️ Evitando clic rápido para ${chainId}. Espera ${Math.ceil((DEBOUNCE_DELAY - (now - lastClick)) / 1000)} segundos.`)
+      return
+    }
+    
+    // Evitar solicitudes duplicadas
+    if (addingNetworkId === chainId) {
+      console.log(`⚠️ Solicitud ya en proceso para ${chainId}`)
+      return
+    }
+    
+    lastClickTime.current[chainId] = now
     setAddingNetworkId(chainId)
     
     try {
+      console.log(`🔄 Iniciando agregado de red ${chainId}`)
       const success = await addNetwork(chainId)
       if (success) {
+        console.log(`✅ Red ${chainId} agregada exitosamente`)
         // Refrescar la lista de redes después de agregar exitosamente
         await refreshNetworks()
+      } else {
+        console.log(`❌ Falloo agregar red ${chainId}`)
       }
-    } catch (err) {
-      console.error('Error adding network:', err)
+    } catch (err: any) {
+      console.error(`❌ Error agregando red ${chainId}:`, err)
+      // Si es error de solicitud pendiente, mostrar mensaje informativo
+      if (err.message && err.message.includes('already pending')) {
+        console.log(`🔄 Solicitud pendiente detectada para ${chainId}`)
+      }
     } finally {
       setAddingNetworkId(null)
     }
-  }
+  }, [addNetwork, refreshNetworks, addingNetworkId])
 
   const installedCount = installedNetworks.length
   const missingCount = ALL_SUPPORTED_NETWORKS.length - installedCount

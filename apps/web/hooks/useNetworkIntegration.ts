@@ -338,6 +338,10 @@ export function useNetworkIntegration() {
         errorMessage = 'Parámetros de red inválidos'
       } else if (error.code === -32603) {
         errorMessage = 'Error interno de MetaMask'
+      } else if (error.code === -32002) {
+        errorMessage = 'Ya hay una solicitud pendiente en MetaMask. Por favor espera.'
+      } else if (error.message && error.message.includes('already pending')) {
+        errorMessage = 'Solicitud ya pendiente. Por favor espera un momento antes de intentar nuevamente.'
       } else if (error.message) {
         errorMessage = error.message
       }

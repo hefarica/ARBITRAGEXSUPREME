@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { arbitrageService } from '@/services/arbitrageService'
 import { getNetworkConfig, getMissingNetworks, isNetworkInstalled, ALL_SUPPORTED_NETWORKS } from '@/lib/networkConfigs'
 import type { NetworkConfig, MetaMaskState } from '@/types/network'
@@ -41,7 +41,81 @@ export function useMetaMask(): UseMetaMaskReturn {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Network mapping removed - using chainId directly now
+  // Sistema de cola para evitar solicitudes simultáneas
+  const requestQueue = useRef<Array<{ chainId: string; resolve: (value: boolean) => void; reject: (error: any) => void }>>([])
+  const isProcessingQueue = useRef(false)
+  const pendingRequests = useRef<Set<string>>(new Set())
+
+  // Sistema de cola para procesar solicitudes MetaMask secuencialmente
+  const processQueue = useCallback(async () => {
+    if (isProcessingQueue.current || requestQueue.current.length === 0) {
+      return
+    }
+
+    isProcessingQueue.current = true
+
+    while (requestQueue.current.length > 0) {
+      const request = requestQueue.current.shift()
+      if (!request) break
+
+      try {
+        // Esperar un poco entre solicitudes para evitar conflictos
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        const result = await addNetworkDirect(request.chainId)
+        request.resolve(result)
+      } catch (error) {
+        request.reject(error)
+      } finally {
+        pendingRequests.current.delete(request.chainId)
+      }
+    }
+
+    isProcessingQueue.current = false
+  }, [])
+
+  // Función interna para agregar red sin queue
+  const addNetworkDirect = useCallback(async (chainId: string): Promise<boolean> => {
+    if (!window.ethereum) {
+      throw new Error('MetaMask no está instalado')
+    }
+
+    const networkConfig = getNetworkConfig(chainId)
+    if (!networkConfig) {
+      throw new Error('Configuración de red no encontrada')
+    }
+
+    // Verificar si ya está instalada primero (método switch)
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: networkConfig.chainId }]
+      })
+      console.log(`✅ Red ${networkConfig.chainName} ya existe, cambiado exitosamente`)
+      return true
+    } catch (switchError: any) {
+      // Si error 4902, la red no existe y necesita ser agregada
+      if (switchError.code !== 4902) {
+        throw switchError // Re-lanzar si es otro tipo de error
+      }
+    }
+
+    // Agregar la red
+    await window.ethereum.request({
+      method: 'wallet_addEthereumChain',
+      params: [{
+        chainId: networkConfig.chainId,
+        chainName: networkConfig.chainName,
+        nativeCurrency: networkConfig.nativeCurrency,
+        rpcUrls: networkConfig.rpcUrls,
+        blockExplorerUrls: networkConfig.blockExplorerUrls,
+        iconUrls: networkConfig.iconUrls
+      }]
+    })
+
+    console.log(`✅ Red ${networkConfig.chainName} agregada exitosamente`)
+    return true
+  }, [])
 
   // Check if MetaMask is installed
   const checkMetaMask = useCallback(() => {
@@ -235,16 +309,22 @@ export function useMetaMask(): UseMetaMaskReturn {
     return installedChainIds
   }, [])
 
-  // Agregar red a MetaMask
+  // Agregar red a MetaMask con sistema de cola
   const addNetwork = useCallback(async (chainId: string): Promise<boolean> => {
+    // Evitar solicitudes duplicadas
+    if (pendingRequests.current.has(chainId)) {
+      console.log(`⚠️ Solicitud para ${chainId} ya está pendiente`)
+      return false
+    }
+
     if (!window.ethereum) {
-      setError('MetaMask is not installed')
+      setError('MetaMask no está instalado')
       return false
     }
 
     const networkConfig = getNetworkConfig(chainId)
     if (!networkConfig) {
-      setError('Network configuration not found')
+      setError('Configuración de red no encontrada')
       return false
     }
 
@@ -262,33 +342,28 @@ export function useMetaMask(): UseMetaMaskReturn {
 
     setIsLoading(true)
     setError(null)
+    pendingRequests.current.add(chainId)
 
-    try {
-      // Intentar agregar la red
-      await window.ethereum.request({
-        method: 'wallet_addEthereumChain',
-        params: [{
-          chainId: networkConfig.chainId,
-          chainName: networkConfig.chainName,
-          nativeCurrency: networkConfig.nativeCurrency,
-          rpcUrls: networkConfig.rpcUrls,
-          blockExplorerUrls: networkConfig.blockExplorerUrls,
-          iconUrls: networkConfig.iconUrls
-        }]
-      })
-
-      // Actualizar estado de redes después de agregar
-      await refreshNetworks()
+    return new Promise((resolve, reject) => {
+      // Agregar a la cola
+      requestQueue.current.push({ chainId, resolve, reject })
       
-      console.log(`✅ Red ${networkConfig.chainName} agregada exitosamente`)
-      return true
-
-    } catch (err: any) {
-      console.error(`Error adding network ${networkConfig.chainName}:`, err)
+      // Procesar cola
+      processQueue().catch(reject)
+    }).then(async (result) => {
+      // Actualizar estado de redes después de agregar exitosamente
+      if (result) {
+        await refreshNetworks()
+      }
+      return result
+    }).catch((err: any) => {
+      console.error(`❌ Error agregando red ${networkConfig.chainName}:`, err)
       
       // Manejar diferentes tipos de errores de MetaMask
       if (err.code === 4001) {
         setError('Usuario rechazó agregar la red')
+      } else if (err.code === -32002) {
+        setError('Ya hay una solicitud pendiente en MetaMask. Por favor espera.')
       } else if (err.code === -32602) {
         setError('Parámetros de red inválidos')
       } else if (err.code === -32603) {
@@ -296,19 +371,21 @@ export function useMetaMask(): UseMetaMaskReturn {
       } else if (err.code === 4902) {
         setError('Red no reconocida por MetaMask')
       } else if (typeof err === 'object' && Object.keys(err).length === 0) {
-        // Error vacío {} - posible problema de conectividad
         setError('Error de conexión con MetaMask. Verifica que MetaMask esté desbloqueado.')
+      } else if (err.message && err.message.includes('already pending')) {
+        setError('Ya hay una solicitud pendiente. Por favor espera un momento.')
       } else if (err.message && typeof err.message === 'string') {
         setError(err.message)
       } else {
-        setError(`Error desconocido al agregar la red ${networkConfig.chainName}`)
+        setError(`Error agregando la red ${networkConfig.chainName}`)
       }
       
       return false
-    } finally {
+    }).finally(() => {
       setIsLoading(false)
-    }
-  }, [])
+      pendingRequests.current.delete(chainId)
+    })
+  }, [processQueue, refreshNetworks])
 
   // Refrescar detección de redes
   const refreshNetworks = useCallback(async () => {
