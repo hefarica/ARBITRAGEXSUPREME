@@ -86,10 +86,14 @@ export interface DashboardData {
 
 class ArbitrageService {
   private baseURL: string;
+  private useLocalEndpoints: boolean;
 
   constructor() {
     this.baseURL = API_BASE_URL;
+    // Usar endpoints locales por defecto (mock data) a menos que se especifique usar backend real
+    this.useLocalEndpoints = process.env.NEXT_PUBLIC_USE_LOCAL_ENDPOINTS !== 'false';
     console.log(`🔗 ArbitrageService initialized with URL: ${this.baseURL}`);
+    console.log(`📡 Using local endpoints: ${this.useLocalEndpoints ? 'YES (Mock Data)' : 'NO (Real Backend)'}`);
     this.logConfiguration();
   }
 
@@ -99,31 +103,35 @@ class ArbitrageService {
 
   // Obtener datos completos del dashboard
   async getDashboardData(): Promise<DashboardData> {
-    const response = await this.makeAuthenticatedRequest('/api/proxy/dashboard/complete');
+    const endpoint = this.useLocalEndpoints ? '/api/dashboard/complete' : '/api/proxy/dashboard/complete';
+    const response = await this.makeAuthenticatedRequest(endpoint);
     return response;
   }
 
   // Obtener estado de redes blockchain
   async getNetworkStatus(): Promise<NetworkStatus[]> {
-    const response = await this.makeAuthenticatedRequest('/api/proxy/blockchain/networks');
+    const endpoint = this.useLocalEndpoints ? '/api/networks/status' : '/api/proxy/blockchain/networks';
+    const response = await this.makeAuthenticatedRequest(endpoint);
     return response.networks || response;
   }
 
   // Obtener oportunidades de arbitraje en tiempo real
   async getOpportunities(): Promise<ArbitrageOpportunity[]> {
-    const response = await this.makeAuthenticatedRequest('/api/proxy/arbitrage/opportunities');
+    const endpoint = this.useLocalEndpoints ? '/api/opportunities/live' : '/api/proxy/arbitrage/opportunities';
+    const response = await this.makeAuthenticatedRequest(endpoint);
     return response.opportunities || response;
   }
 
   // Obtener métricas de rendimiento
   async getMetrics(): Promise<ArbitrageMetrics> {
-    const response = await this.makeAuthenticatedRequest('/api/proxy/metrics/performance');
+    const endpoint = this.useLocalEndpoints ? '/api/metrics/performance' : '/api/proxy/metrics/performance';
+    const response = await this.makeAuthenticatedRequest(endpoint);
     return response;
   }
 
   // Ejecutar arbitraje con autenticación completa
   async executeArbitrage(opportunityId: string): Promise<{ success: boolean; txHash?: string; error?: string }> {
-    const response = await this.makeAuthenticatedRequest('/api/proxy/arbitrage/execute', {
+    const response = await this.makeAuthenticatedRequest('/api/arbitrage/execute', {
       method: 'POST',
       body: JSON.stringify({ 
         opportunityId,
@@ -141,9 +149,10 @@ class ArbitrageService {
     try {
       const config = this.getAuthConfig();
       
-      if (!config.isConfigured) {
+      // Si usamos endpoints locales, no necesitamos credenciales completas
+      if (!config.isConfigured && !this.useLocalEndpoints) {
         const missingCredentials = this.getMissingCredentials(config);
-        console.warn(`⚠️ CONFIGURACIÓN INCOMPLETA: ${missingCredentials.join(', ')}`);
+        console.warn(`⚠️ CONFIGURACIÓN INCOMPLETA PARA BACKEND REAL: ${missingCredentials.join(', ')}`);
         
         // Devolver datos de estructura vacía en lugar de lanzar error
         return this.getEmptyResponse(endpoint);
@@ -298,18 +307,22 @@ class ArbitrageService {
     console.log('🚀 ARBITRAGEX PRO 2025 - CONFIGURACIÓN DE BACKEND');
     console.log('='.repeat(60));
     console.log(`🔗 Backend URL: ${this.baseURL}`);
+    console.log(`📡 Modo: ${this.useLocalEndpoints ? 'ENDPOINTS LOCALES (Mock Data)' : 'PROXY AL BACKEND REAL'}`);
     console.log(`✅ Configuración completa: ${config.isConfigured ? 'SÍ' : 'NO'}`);
     
-    if (config.isConfigured) {
-      console.log('✅ Credenciales configuradas correctamente');
+    if (this.useLocalEndpoints) {
+      console.log('🏠 Usando endpoints locales con mock data - NO requiere backend externo');
+    } else if (config.isConfigured) {
+      console.log('✅ Credenciales configuradas correctamente para backend real');
       console.log(`🔑 API Key: ${config.apiKey ? '***' + config.apiKey.slice(-4) : 'NO'}`);
       console.log(`👤 Client ID: ${config.clientId || 'NO'}`);
       console.log(`🔐 Client Secret: ${config.clientSecret ? '***' + config.clientSecret.slice(-4) : 'NO'}`);
       console.log(`💰 Wallet Address: ${config.walletAddress || 'NO CONFIGURADA'}`);
       console.log(`🌐 Network ID: ${config.networkId || 'mainnet (default)'}`);
     } else {
-      console.log('❌ CREDENCIALES FALTANTES:');
+      console.log('❌ CREDENCIALES FALTANTES PARA BACKEND REAL:');
       missingCredentials.forEach(cred => console.log(`   - ${cred}`));
+      console.log('⚠️  Cayendo a endpoints locales con mock data');
     }
     console.log('='.repeat(60));
   }
@@ -325,7 +338,7 @@ class ArbitrageService {
     networkName: string;
   }): Promise<{ success: boolean; message?: string }> {
     try {
-      const response = await this.makeAuthenticatedRequest('/api/proxy/wallet/connect', {
+      const response = await this.makeAuthenticatedRequest('/api/wallet/connect', {
         method: 'POST',
         body: JSON.stringify(walletInfo),
       });
@@ -339,7 +352,7 @@ class ArbitrageService {
   // Desconectar wallet
   async disconnectWallet(): Promise<{ success: boolean }> {
     try {
-      const response = await this.makeAuthenticatedRequest('/api/proxy/wallet/disconnect', {
+      const response = await this.makeAuthenticatedRequest('/api/wallet/disconnect', {
         method: 'POST',
       });
       return response;
@@ -357,7 +370,7 @@ class ArbitrageService {
   }> {
     try {
       const response = await this.makeAuthenticatedRequest(
-        `/api/proxy/wallet/balance?address=${address}&chainId=${chainId}`
+        `/api/wallet/balance?address=${address}&chainId=${chainId}`
       );
       return response;
     } catch (error) {
@@ -374,7 +387,7 @@ class ArbitrageService {
     chainId: string;
   }): Promise<{ success: boolean; txHash?: string; error?: string }> {
     try {
-      const response = await this.makeAuthenticatedRequest('/api/proxy/transaction/execute', {
+      const response = await this.makeAuthenticatedRequest('/api/transaction/execute', {
         method: 'POST',
         body: JSON.stringify(transaction),
       });

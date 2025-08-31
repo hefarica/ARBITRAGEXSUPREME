@@ -3,12 +3,12 @@ module.exports = {
     {
       name: 'arbitragex-web-stable',
       script: 'npx',
-      args: 'next dev --port 3000',
+      args: 'next start --port 3000',
       cwd: '/home/user/webapp/apps/web',
       instances: 1,
       exec_mode: 'fork',
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
         PORT: 3000
       },
       error_file: '/home/user/webapp/logs/web-error.log',
