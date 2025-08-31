@@ -76,8 +76,8 @@ export function useNetworkIntegration() {
   const metamask = useMetaMaskOptimized()
   const { networks: systemNetworks, isLoading: systemLoading } = useNetworkStatus()
   
-  // MODO TESTING - Reactivado temporalmente porque useMetaMaskOptimized no detecta correctamente
-  const isTestMode = true // El hook original no funciona bien, usar mock que funciona
+  // PRODUCCIÓN - Usar detección real de MetaMask sin datos mock
+  const isTestMode = false // Usar MetaMask real, eliminar mock data
   
   // Estados para manejar la detección asíncrona de MetaMask
   const [ethereumReady, setEthereumReady] = useState(false)
@@ -165,12 +165,9 @@ export function useNetworkIntegration() {
     }
   }, [ethereumReady])
 
-  // Mock mejorado que usa datos reales de MetaMask cuando estén disponibles
-  const mockMetamask = isTestMode ? {
-    // Primero el objeto original
-    ...metamask,
-    
-    // Usar detección asíncrona - priorizar datos reales de MetaMask
+  // USAR METAMASK REAL - Sin datos mock
+  const realMetamask = {
+    // Usar datos reales de MetaMask detectados asincrónamente
     isMetaMaskInstalled: ethereumReady,
     isConnected: isConnected,
     chainId: currentChainId || '0x1',
@@ -201,10 +198,7 @@ export function useNetworkIntegration() {
           return false
         }
       }
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🧪 MetaMask connect (simulated)')
-      }
-      return true
+      return false // No simular, devolver false si no hay MetaMask
     },
     disconnect: () => {
       setIsConnected(false)
@@ -224,20 +218,20 @@ export function useNetworkIntegration() {
           throw error
         }
       }
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🧪 Switch to ${chainId} (simulated)`)
-      }
-      return true
+      throw new Error('MetaMask no disponible')
     },
     addNetwork: async (network: any) => {
-      console.log('Add network function available')
-      return true
+      if (window.ethereum) {
+        console.log('Add network function available')
+        return true
+      }
+      return false
     }
-  } : metamask
+  }
   
   // Debug silencioso - solo en desarrollo
   if (process.env.NODE_ENV === 'development') {
-    console.log('🔍 MetaMask Status:', {
+    console.log('🔍 MetaMask Status (REAL):', {
       ready: ethereumReady,
       connected: isConnected,
       chainId: currentChainId
@@ -256,7 +250,7 @@ export function useNetworkIntegration() {
 
   // Función simplificada para detectar redes en MetaMask
   const detectMetamaskNetworks = useCallback(async () => {
-    if (!mockMetamask.isMetaMaskInstalled) {
+    if (!realMetamask.isMetaMaskInstalled) {
       return []
     }
 
@@ -264,7 +258,7 @@ export function useNetworkIntegration() {
       // Obtener la red actual de MetaMask
       const currentChainId = window.ethereum ? 
         await window.ethereum.request({ method: 'eth_chainId' }) : 
-        mockMetamask.chainId
+        realMetamask.chainId
       
       // Verificar redes implementadas usando un método más simple
       const detectedNetworks = []
@@ -284,11 +278,11 @@ export function useNetworkIntegration() {
       console.error('Error detectando redes de MetaMask:', error)
       return []
     }
-  }, [mockMetamask.isMetaMaskInstalled, mockMetamask.chainId])
+  }, [realMetamask.isMetaMaskInstalled, realMetamask.chainId])
 
   // Función para agregar red a MetaMask
   const addNetworkToMetamask = useCallback(async (chainId: string) => {
-    if (!mockMetamask.isMetaMaskInstalled || !window.ethereum) {
+    if (!realMetamask.isMetaMaskInstalled || !window.ethereum) {
       throw new Error('MetaMask no está instalado')
     }
 
@@ -351,11 +345,11 @@ export function useNetworkIntegration() {
       console.error('Detalle del error:', errorMessage)
       throw new Error(errorMessage)
     }
-  }, [mockMetamask.isMetaMaskInstalled])
+  }, [realMetamask.isMetaMaskInstalled])
 
   // Función para cambiar a una red específica
   const switchToNetwork = useCallback(async (chainId: string) => {
-    if (!mockMetamask.isMetaMaskInstalled || !window.ethereum) {
+    if (!realMetamask.isMetaMaskInstalled || !window.ethereum) {
       throw new Error('MetaMask no está instalado')
     }
 
@@ -373,11 +367,11 @@ export function useNetworkIntegration() {
       }
       throw error
     }
-  }, [mockMetamask.isMetaMaskInstalled, addNetworkToMetamask])
+  }, [realMetamask.isMetaMaskInstalled, addNetworkToMetamask])
 
   // Función principal de análisis de integración simplificada
   const analyzeNetworkIntegration = useCallback(async () => {
-    if (systemLoading || !mockMetamask.isMetaMaskInstalled) {
+    if (systemLoading || !realMetamask.isMetaMaskInstalled) {
       return
     }
     setIsAnalyzing(true)
@@ -399,22 +393,21 @@ export function useNetworkIntegration() {
         const realSystemNetwork = systemNetwork
         
         // Verificar si es la red actual de MetaMask
-        const isCurrentMetamaskNetwork = mockMetamask.chainId === chainId
+        const isCurrentMetamaskNetwork = realMetamask.chainId === chainId
         
-        // Para efectos de UI, asumir que las redes principales ya están en MetaMask
-        // ya que el usuario las mostró en la captura de pantalla
-        const commonNetworks = ['0x1', '0x89', '0x38', '0xa4b1'] // ETH, Polygon, BSC, Arbitrum
-        const likelyInMetamask = commonNetworks.includes(chainId) || isCurrentMetamaskNetwork
+        // VERIFICACIÓN REAL - No asumir redes instaladas, verificar dinámicamente
+        // Verificar si la red actual de MetaMask coincide o usar detección real
+        const isInMetamask = isCurrentMetamaskNetwork // Solo verificación real, sin suposiciones
         
-        // Crear estado de integración REAL
+        // Crear estado de integración REAL sin mock data
         const status: NetworkIntegrationStatus = {
           chainId,
           systemNetwork: realSystemNetwork, // Usar datos reales del backend
-          metamaskNetwork: likelyInMetamask ? { ...config, chainId } : undefined,
+          metamaskNetwork: isInMetamask ? { ...config, chainId } : undefined,
           isImplemented: !!realSystemNetwork, // Solo redes realmente conectadas al sistema
-          isInMetamask: likelyInMetamask, // Basado en redes comunes + red actual
+          isInMetamask: isInMetamask, // Solo verificación real de red actual
           needsUpdate: false,
-          canBeAdded: !!realSystemNetwork && !likelyInMetamask // Solo mostrar "agregar" si está en sistema pero no en MetaMask
+          canBeAdded: !isInMetamask // Siempre permitir agregar si no es la red actual
         }
         
         statusArray.push(status)
@@ -437,7 +430,7 @@ export function useNetworkIntegration() {
     } finally {
       setIsAnalyzing(false)
     }
-  }, [systemNetworks, systemLoading, mockMetamask.isMetaMaskInstalled, mockMetamask.chainId])
+  }, [systemNetworks, systemLoading, realMetamask.isMetaMaskInstalled, realMetamask.chainId])
 
   // Función para sincronizar todas las redes
   const syncAllNetworks = useCallback(async () => {
@@ -457,21 +450,21 @@ export function useNetworkIntegration() {
   useEffect(() => {
     // Debug logs removidos
     
-    if (!systemLoading && mockMetamask.isMetaMaskInstalled && mockMetamask.isConnected) {
+    if (!systemLoading && realMetamask.isMetaMaskInstalled && realMetamask.isConnected) {
       analyzeNetworkIntegration()
     }
-  }, [systemLoading, mockMetamask.isMetaMaskInstalled, mockMetamask.isConnected, mockMetamask.chainId, systemNetworks, analyzeNetworkIntegration])
+  }, [systemLoading, realMetamask.isMetaMaskInstalled, realMetamask.isConnected, realMetamask.chainId, systemNetworks, analyzeNetworkIntegration])
 
   // Auto-refresh cada 30 segundos
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!isAnalyzing && mockMetamask.isMetaMaskInstalled && mockMetamask.isConnected && !systemLoading) {
+      if (!isAnalyzing && realMetamask.isMetaMaskInstalled && realMetamask.isConnected && !systemLoading) {
         analyzeNetworkIntegration()
       }
     }, 30000)
     
     return () => clearInterval(interval)
-  }, [isAnalyzing, mockMetamask.isMetaMaskInstalled, mockMetamask.isConnected, systemLoading, analyzeNetworkIntegration])
+  }, [isAnalyzing, realMetamask.isMetaMaskInstalled, realMetamask.isConnected, systemLoading, analyzeNetworkIntegration])
 
   return {
     // Estado
@@ -486,8 +479,8 @@ export function useNetworkIntegration() {
     syncAllNetworks,
     refresh: analyzeNetworkIntegration,
 
-    // Estado de MetaMask (usando mock en desarrollo)
-    metamask: mockMetamask,
+    // Estado de MetaMask REAL (sin mock data)
+    metamask: realMetamask,
 
     // Utilidades
     getNetworkConfig: (chainId: string) => IMPLEMENTED_NETWORKS[chainId as keyof typeof IMPLEMENTED_NETWORKS],
