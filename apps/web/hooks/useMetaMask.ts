@@ -344,7 +344,7 @@ export function useMetaMask(): UseMetaMaskReturn {
     setError(null)
     pendingRequests.current.add(chainId)
 
-    return new Promise((resolve, reject) => {
+    return new Promise<boolean>((resolve, reject) => {
       // Agregar a la cola
       requestQueue.current.push({ chainId, resolve, reject })
       
@@ -385,7 +385,7 @@ export function useMetaMask(): UseMetaMaskReturn {
       setIsLoading(false)
       pendingRequests.current.delete(chainId)
     })
-  }, [processQueue, refreshNetworks])
+  }, [processQueue])
 
   // Refrescar detección de redes
   const refreshNetworks = useCallback(async () => {
