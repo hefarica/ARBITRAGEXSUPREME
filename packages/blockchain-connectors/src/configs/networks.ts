@@ -247,7 +247,7 @@ export const TESTNET_CONFIGS: BlockchainConfig[] = [
     name: 'Polygon Mumbai',
     symbol: 'MATIC',
     rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-mumbai.g.alchemy.com/v2/demo',
-    backupRpcUrl: process.env.POLYGON_BACKUP_RPC || 'https://rpc-mumbai.maticvigil.com',
+    backupRpcUrl: process.env.POLYGON_BACKUP_RPC || 'https://polygon-testnet.public.blastapi.io',
     chainId: 80001,
     explorerUrl: 'https://mumbai.polygonscan.com',
     nativeCurrency: {
@@ -263,7 +263,7 @@ export const TESTNET_CONFIGS: BlockchainConfig[] = [
     name: 'Arbitrum Goerli',
     symbol: 'ETH',
     rpcUrl: process.env.ARBITRUM_RPC_URL || 'https://arb-goerli.g.alchemy.com/v2/demo',
-    backupRpcUrl: process.env.ARBITRUM_BACKUP_RPC || 'https://goerli-rollup.arbitrum.io/rpc',
+    backupRpcUrl: process.env.ARBITRUM_BACKUP_RPC || 'https://arbitrum-goerli.public.blastapi.io',
     chainId: 421613,
     explorerUrl: 'https://goerli.arbiscan.io',
     nativeCurrency: {
@@ -279,7 +279,7 @@ export const TESTNET_CONFIGS: BlockchainConfig[] = [
     name: 'Optimism Goerli',
     symbol: 'ETH',
     rpcUrl: process.env.OPTIMISM_RPC_URL || 'https://opt-goerli.g.alchemy.com/v2/demo',
-    backupRpcUrl: process.env.OPTIMISM_BACKUP_RPC || 'https://goerli.optimism.io',
+    backupRpcUrl: process.env.OPTIMISM_BACKUP_RPC || 'https://optimism-goerli.public.blastapi.io',
     chainId: 420,
     explorerUrl: 'https://goerli-optimism.etherscan.io',
     nativeCurrency: {
