@@ -103,9 +103,9 @@ export const SUPPORTED_NETWORKS: { [key: string]: NetworkConfig } = {
     chainId: '0xfa',
     chainName: 'Fantom Opera',
     nativeCurrency: { name: 'Fantom', symbol: 'FTM', decimals: 18 },
-    rpcUrls: ['https://rpc.ftm.tools', 'https://rpc.ankr.com/fantom'],
+    rpcUrls: ['https://rpc.ftm.tools', 'https://rpc.ankr.com/fantom', 'https://fantom-mainnet.public.blastapi.io'],
     blockExplorerUrls: ['https://ftmscan.com'],
-    iconUrls: ['https://fantom.foundation/wp-content/uploads/2020/09/logo-fantom-blue.svg'],
+    iconUrls: ['https://cryptologos.cc/logos/fantom-ftm-logo.svg'],
     wrappedToken: 'WFTM',
     color: '#1969FF',
     description: 'DAG blockchain con finalidad rápida'

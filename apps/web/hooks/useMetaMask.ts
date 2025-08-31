@@ -248,6 +248,18 @@ export function useMetaMask(): UseMetaMaskReturn {
       return false
     }
 
+    // Validar que MetaMask esté conectado
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+      if (!accounts || accounts.length === 0) {
+        setError('MetaMask no está conectado. Por favor conecta tu wallet primero.')
+        return false
+      }
+    } catch (connectError) {
+      setError('Error al verificar conexión con MetaMask')
+      return false
+    }
+
     setIsLoading(true)
     setError(null)
 
@@ -274,12 +286,22 @@ export function useMetaMask(): UseMetaMaskReturn {
     } catch (err: any) {
       console.error(`Error adding network ${networkConfig.chainName}:`, err)
       
+      // Manejar diferentes tipos de errores de MetaMask
       if (err.code === 4001) {
         setError('Usuario rechazó agregar la red')
       } else if (err.code === -32602) {
         setError('Parámetros de red inválidos')
+      } else if (err.code === -32603) {
+        setError('Error interno de MetaMask')
+      } else if (err.code === 4902) {
+        setError('Red no reconocida por MetaMask')
+      } else if (typeof err === 'object' && Object.keys(err).length === 0) {
+        // Error vacío {} - posible problema de conectividad
+        setError('Error de conexión con MetaMask. Verifica que MetaMask esté desbloqueado.')
+      } else if (err.message && typeof err.message === 'string') {
+        setError(err.message)
       } else {
-        setError(err.message || 'Error al agregar la red')
+        setError(`Error desconocido al agregar la red ${networkConfig.chainName}`)
       }
       
       return false
