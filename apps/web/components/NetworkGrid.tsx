@@ -175,7 +175,28 @@ export function NetworkGrid() {
 
   const [addingNetworkId, setAddingNetworkId] = useState<string | null>(null)
   const lastClickTime = useRef<{ [chainId: string]: number }>({})
-  const DEBOUNCE_DELAY = 2000 // 2 segundos
+  const pendingRequests = useRef<Set<string>>(new Set())
+  const DEBOUNCE_DELAY = 3000 // 3 segundos (aumentado)
+  const RETRY_DELAY = 1000 // 1 segundo entre reintentos
+
+  // Función para esperar hasta que MetaMask esté listo
+  const waitForMetaMaskReady = async (maxRetries = 5) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        // Hacer una verificación simple de estado
+        await window.ethereum.request({ method: 'eth_accounts' })
+        return true
+      } catch (error: any) {
+        if (error.code === -32002) {
+          console.log(`🔄 MetaMask ocupado, esperando... (${i + 1}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY))
+          continue
+        }
+        throw error
+      }
+    }
+    throw new Error('MetaMask está ocupado después de múltiples intentos')
+  }
 
   const handleAddNetwork = useCallback(async (chainId: string) => {
     const now = Date.now()
@@ -187,32 +208,50 @@ export function NetworkGrid() {
       return
     }
     
-    // Evitar solicitudes duplicadas
-    if (addingNetworkId === chainId) {
+    // Evitar solicitudes duplicadas globales
+    if (pendingRequests.current.has(chainId) || addingNetworkId === chainId) {
       console.log(`⚠️ Solicitud ya en proceso para ${chainId}`)
       return
     }
     
     lastClickTime.current[chainId] = now
+    pendingRequests.current.add(chainId)
     setAddingNetworkId(chainId)
     
     try {
+      console.log(`🔄 Esperando que MetaMask esté listo para ${chainId}...`)
+      
+      // Esperar hasta que MetaMask esté listo
+      await waitForMetaMaskReady()
+      
       console.log(`🔄 Iniciando agregado de red ${chainId}`)
       const success = await addNetwork(chainId)
+      
       if (success) {
         console.log(`✅ Red ${chainId} agregada exitosamente`)
-        // Refrescar la lista de redes después de agregar exitosamente
+        // Esperar un poco antes de refrescar
+        await new Promise(resolve => setTimeout(resolve, 500))
         await refreshNetworks()
       } else {
-        console.log(`❌ Falloo agregar red ${chainId}`)
+        console.log(`❌ Falló agregar red ${chainId}`)
       }
     } catch (err: any) {
       console.error(`❌ Error agregando red ${chainId}:`, err)
-      // Si es error de solicitud pendiente, mostrar mensaje informativo
-      if (err.message && err.message.includes('already pending')) {
-        console.log(`🔄 Solicitud pendiente detectada para ${chainId}`)
+      
+      // Manejo específico de errores
+      if (err.code === -32002 || (err.message && err.message.includes('already pending'))) {
+        console.log(`🔄 Solicitud pendiente detectada. Reintentando en 3 segundos...`)
+        // Reintento automático después de 3 segundos
+        setTimeout(() => {
+          if (pendingRequests.current.has(chainId)) {
+            pendingRequests.current.delete(chainId)
+            setAddingNetworkId(null)
+          }
+        }, 3000)
+        return
       }
     } finally {
+      pendingRequests.current.delete(chainId)
       setAddingNetworkId(null)
     }
   }, [addNetwork, refreshNetworks, addingNetworkId])

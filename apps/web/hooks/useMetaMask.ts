@@ -74,6 +74,39 @@ export function useMetaMask(): UseMetaMaskReturn {
     isProcessingQueue.current = false
   }, [])
 
+  // Función para verificar si MetaMask está ocupado
+  const checkMetaMaskBusy = useCallback(async (): Promise<boolean> => {
+    if (!window.ethereum) return false
+    
+    try {
+      // Hacer una verificación rápida sin solicitar nada
+      await window.ethereum.request({ method: 'eth_accounts' })
+      return false // No está ocupado
+    } catch (error: any) {
+      if (error.code === -32002) {
+        return true // Está ocupado
+      }
+      return false
+    }
+  }, [])
+
+  // Función para esperar hasta que MetaMask esté libre
+  const waitForMetaMaskFree = useCallback(async (maxWaitMs = 10000): Promise<void> => {
+    const startTime = Date.now()
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      const isBusy = await checkMetaMaskBusy()
+      if (!isBusy) {
+        return // MetaMask está libre
+      }
+      
+      console.log('🕐 MetaMask ocupado, esperando 1 segundo...')
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+    
+    throw new Error('MetaMask sigue ocupado después de esperar')
+  }, [checkMetaMaskBusy])
+
   // Función interna para agregar red sin queue
   const addNetworkDirect = useCallback(async (chainId: string): Promise<boolean> => {
     if (!window.ethereum) {
@@ -83,6 +116,13 @@ export function useMetaMask(): UseMetaMaskReturn {
     const networkConfig = getNetworkConfig(chainId)
     if (!networkConfig) {
       throw new Error('Configuración de red no encontrada')
+    }
+
+    // PASO 1: Esperar hasta que MetaMask esté libre
+    try {
+      await waitForMetaMaskFree()
+    } catch (waitError) {
+      throw new Error('MetaMask está ocupado. Inténtalo de nuevo en unos segundos.')
     }
 
     // Verificar si ya está instalada primero (método switch)
@@ -115,7 +155,7 @@ export function useMetaMask(): UseMetaMaskReturn {
 
     console.log(`✅ Red ${networkConfig.chainName} agregada exitosamente`)
     return true
-  }, [])
+  }, [waitForMetaMaskFree])
 
   // Check if MetaMask is installed
   const checkMetaMask = useCallback(() => {
