@@ -475,20 +475,29 @@ Thank you for using ArbitrageX Pro 2025 - Hybrid Arbitrage System!
     // Demo opportunity
     const demoOpportunity: ArbitrageOpportunity = {
       id: 'demo-001',
+      description: 'Demo triangular arbitrage USDC->USDT->WETH->USDC',
+      path: ['USDC', 'USDT', 'WETH'],
+      protocols: [
+        { id: 'uniswap-v2', name: 'Uniswap V2' },
+        { id: 'uniswap-v3', name: 'Uniswap V3' }
+      ],
+      chainId: 1,
+      tokenIn: 'USDC',
+      tokenOut: 'USDC',
+      blockchainFrom: 'ethereum',
+      blockchainTo: 'ethereum',
       tokenA: '0xA0b86a33E6417aB84cC5C5C60078462D3eF6CaDB', // USDC
       tokenB: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
-      tokenC: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
-      exchangeA: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D', // Uniswap V2
-      exchangeB: '0xE592427A0AEce92De3Edee1F18E0157C05861564', // Uniswap V3
-      amountIn: 10000,
-      minAmountOut: 10020,
-      expectedProfit: 25,
-      confidence: 92,
+      amountIn: '10000',
+      expectedAmountOut: '10020',
+      expectedProfit: '25',
+      confidence: 0.92,
       deadline: Date.now() + 300000,
       strategy: 'interdex-simple',
-      routeData: '0x',
       liquidity: 50000,
-      chainIds: [1, 137, 56]
+      profitAmount: '25',
+      profitPercentage: 0.25,
+      gasEstimate: 150000
     };
 
     console.log('📊 1. Analyzing profitability across all 13 strategies...');

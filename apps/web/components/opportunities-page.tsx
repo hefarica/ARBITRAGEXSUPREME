@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 // Layout removido - ahora usa el layout principal del sistema
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { type ArbitrageOpportunity, hasRequiredFields, toArbitrageOpportunity } from '@/types/arbitrage'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { 
@@ -22,17 +23,23 @@ import {
   Activity
 } from 'lucide-react'
 import { cn, formatCurrency, formatPercentage, formatTimeAgo, getNetworkColor } from '@/lib/utils'
-import { useArbitrageData } from '@/hooks/useArbitrageData'
-import { type ArbitrageOpportunity } from '@/services/arbitrageService'
+import { useArbitrageSnapshot } from '@/hooks/useArbitrageSnapshot'
 import { Pagination } from '@/components/ui/pagination'
 import { MetaMaskConnector } from '@/components/metamask-connector'
 import { useMetaMask } from '@/hooks/useMetaMask'
+import { useArbitrageExecution } from '@/hooks/useArbitrageExecution'
+
+// Interfaz movida a /types/arbitrage.ts para evitar duplicación
 
 // Enhanced Opportunities Table with filters and detailed view
 function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPageChange, onExecute, isConnected }: { 
   opportunities: ArbitrageOpportunity[], 
   isLoading: boolean,
-  pagination?: any,
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    totalItems: number;
+  },
   onPageChange: (page: number) => void,
   onExecute: (opp: ArbitrageOpportunity) => void,
   isConnected: boolean
@@ -41,6 +48,7 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'executing'>('all')
   const [filterStrategy, setFilterStrategy] = useState<string>('all')
+  const [isExecuting, setIsExecuting] = useState<boolean>(false)
 
   const handleSort = (field: keyof ArbitrageOpportunity) => {
     if (sortField === field) {
@@ -124,7 +132,7 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
             <label className="text-sm font-medium text-slate-600">Estado:</label>
             <select 
               value={filterStatus} 
-              onChange={(e) => setFilterStatus(e.target.value as any)}
+              onChange={(e) => setFilterStatus(e.target.value as 'all' | 'active' | 'executing')}
               className="px-3 py-1 border border-slate-300 rounded-md text-sm"
             >
               <option value="all">Todas</option>
@@ -143,7 +151,7 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
               <option value="all">Todas</option>
               {strategies.map(strategy => (
                 <option key={strategy} value={strategy}>
-                  {strategy.replace(/_/g, ' ').toUpperCase()}
+                  {strategy?.replace(/_/g, ' ').toUpperCase()}
                 </option>
               ))}
             </select>
@@ -197,13 +205,13 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
                       )}
                       
                       <div className="flex items-center space-x-2">
-                        <Badge variant="outline" className={getNetworkColor(opp.blockchainFrom)}>
+                        <Badge variant="outline" className={getNetworkColor(opp.blockchainFrom || '')}>
                           {opp.blockchainFrom}
                         </Badge>
                         {opp.blockchainFrom !== opp.blockchainTo && (
                           <>
                             <ArrowUpDown className="w-3 h-3" />
-                            <Badge variant="outline" className={getNetworkColor(opp.blockchainTo)}>
+                            <Badge variant="outline" className={getNetworkColor(opp.blockchainTo || '')}>
                               {opp.blockchainTo}
                             </Badge>
                           </>
@@ -217,7 +225,7 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
                       
                       {/* Mostrar información de estrategia */}
                       <div className="text-xs text-slate-500">
-                        Estrategia: {opp.strategy.replace(/_/g, ' ').toUpperCase()}
+                        Estrategia: {opp.strategy?.replace(/_/g, ' ').toUpperCase()}
                       </div>
                     </div>
                   </td>
@@ -227,11 +235,11 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
                       <div className="flex items-center space-x-2">
                         <TrendingUp className="w-4 h-4 text-emerald-600" />
                         <span className="font-bold text-emerald-600">
-                          {formatPercentage(opp.profitPercentage)}
+                          {formatPercentage(opp.profitPercentage ?? 0)}
                         </span>
                       </div>
                       <div className="text-sm text-slate-600">
-                        {formatCurrency(parseFloat(opp.profitAmount))}
+                        {formatCurrency(parseFloat(opp.profitAmount ?? '0'))}
                       </div>
                     </div>
                   </td>
@@ -239,7 +247,7 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
                   <td className="p-4">
                     <div className="text-sm">
                       <div className="font-medium text-slate-900 capitalize">
-                        {opp.strategy.replace(/_/g, ' ')}
+                        {opp.strategy?.replace(/_/g, ' ')}
                       </div>
                       <div className="text-slate-600">
                         Gas: {opp.gasEstimate} units
@@ -248,18 +256,18 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
                   </td>
                   
                   <td className="p-4">
-                    <Badge variant="outline" className={getRiskColor(opp.confidence)}>
-                      {getRiskLevel(opp.confidence)} ({Math.round(opp.confidence * 100)}%)
+                    <Badge variant="outline" className={getRiskColor(opp.confidence ?? 0)}>
+                      {getRiskLevel(opp.confidence ?? 0)} ({Math.round((opp.confidence ?? 0) * 100)}%)
                     </Badge>
                   </td>
                   
                   <td className="p-4">
                     <div className="text-sm">
                       <div className="text-slate-900">
-                        {formatTimeAgo(opp.expiresAt)}
+                        {formatTimeAgo(opp.expiresAt as string | Date)}
                       </div>
                       <div className="text-xs text-slate-500">
-                        {new Date(opp.expiresAt).toLocaleTimeString()}
+                        {new Date(opp.expiresAt as string | Date).toLocaleTimeString()}
                       </div>
                     </div>
                   </td>
@@ -280,14 +288,23 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
                       <Button 
                         size="sm" 
                         onClick={() => onExecute(opp)}
-                        disabled={!isConnected}
+                        disabled={!isConnected || isExecuting}
                         className={cn(
                           "bg-emerald-600 hover:bg-emerald-700",
-                          !isConnected && "bg-slate-400 hover:bg-slate-400 cursor-not-allowed"
+                          (!isConnected || isExecuting) && "bg-slate-400 hover:bg-slate-400 cursor-not-allowed"
                         )}
                       >
-                        <Play className="w-3 h-3 mr-1" />
-                        {isConnected ? 'Ejecutar' : 'Conectar Wallet'}
+                        {isExecuting ? (
+                          <>
+                            <Pause className="w-3 h-3 mr-1 animate-spin" />
+                            Ejecutando...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 mr-1" />
+                            {isConnected ? 'Ejecutar Real' : 'Conectar Wallet'}
+                          </>
+                        )}
                       </Button>
                       <Button size="sm" variant="outline">
                         <ExternalLink className="w-3 h-3" />
@@ -316,10 +333,10 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
         {pagination && pagination.totalPages > 1 && (
           <div className="p-4 border-t bg-slate-50">
             <Pagination
-              currentPage={pagination.page}
+              currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
               onPageChange={onPageChange}
-              showing={pagination.showing}
+              showing={(pagination as Record<string, unknown>).showing as string}
             />
           </div>
         )}
@@ -330,12 +347,12 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
 
 // Statistics Cards for Opportunities page
 function OpportunityStats({ opportunities }: { opportunities: ArbitrageOpportunity[] }) {
-  const totalProfit = opportunities.reduce((sum, opp) => sum + parseFloat(opp.profitAmount), 0)
+  const totalProfit = opportunities.reduce((sum, opp) => sum + parseFloat(opp.profitAmount ?? '0'), 0)
   const avgProfitPercentage = opportunities.length > 0 
-    ? opportunities.reduce((sum, opp) => sum + opp.profitPercentage, 0) / opportunities.length 
+    ? opportunities.reduce((sum, opp) => sum + (opp.profitPercentage ?? 0), 0) / opportunities.length 
     : 0
-  const highRiskCount = opportunities.filter(opp => opp.confidence < 0.6).length
-  const totalVolume = opportunities.reduce((sum, opp) => sum + parseFloat(opp.volume || '0'), 0)
+  const highRiskCount = opportunities.filter(opp => (opp.confidence ?? 0) < 0.6).length
+  const totalVolume = opportunities.reduce((sum, opp) => sum + parseFloat(opp.volume ?? '0'), 0)
 
   const stats = [
     {
@@ -396,7 +413,7 @@ export function RealTimeOpportunitiesPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(8) // Máximo 8 por página como solicitaste
   
-  const { opportunities, isLoading, error, refresh } = useArbitrageData()
+  const { arbitrageOpportunities: opportunities, isLoading, error, refresh } = useArbitrageSnapshot()
   
   // Calcular métricas derivadas para paginación
   const totalOpportunities = opportunities.length
@@ -406,9 +423,9 @@ export function RealTimeOpportunitiesPage() {
   
   // Breakdown por estrategia de oportunidad
   const breakdown = {
-    flashLoan: opportunities.filter(o => o.strategy.includes('flash')).length,
-    dexArbitrage: opportunities.filter(o => o.strategy.includes('dex')).length,
-    crossChain: opportunities.filter(o => o.strategy.includes('cross')).length
+    flashLoan: opportunities.filter(o => (o as unknown as Record<string, unknown>).strategy?.toString().includes('flash')).length,
+    dexArbitrage: opportunities.filter(o => (o as unknown as Record<string, unknown>).strategy?.toString().includes('dex')).length,
+    crossChain: opportunities.filter(o => (o as unknown as Record<string, unknown>).strategy?.toString().includes('cross')).length
   }
   
   // Información de paginación
@@ -418,7 +435,17 @@ export function RealTimeOpportunitiesPage() {
     totalItems: totalOpportunities,
     itemsPerPage
   }
-  const { isConnected, address, chainName } = useMetaMask()
+  const { isConnected, accounts, chainId } = useMetaMask()
+  const address = accounts[0]
+  const { 
+    executeArbitrage, 
+    isExecuting, 
+    gasEstimation, 
+    estimateGasAndProfit,
+    error: executionError,
+    canExecute,
+    clearError
+  } = useArbitrageExecution()
 
   const handleRefresh = () => {
     refresh()
@@ -429,15 +456,68 @@ export function RealTimeOpportunitiesPage() {
   }
 
   const handleExecuteArbitrage = async (opp: ArbitrageOpportunity) => {
-    if (!isConnected || !address) {
-      alert('Por favor conecta tu wallet MetaMask primero')
+    // Limpiar errores previos
+    clearError()
+
+    // Verificar si se puede ejecutar con validación flexible
+    const validation = canExecute(opp as Partial<ArbitrageOpportunity>)
+    if (!validation.canExecute) {
+      alert(`No se puede ejecutar: ${validation.reason}`)
       return
     }
 
-    if (opp.strategy === 'triangular_arbitrage') {
-      alert(`Ejecutando Triangular Arbitrage: ${opp.tokenIn} → ${opp.tokenOut}\n\nEstrategia: ${opp.strategy}\nEsto es una simulación. En producción, se ejecutarían las transacciones reales.`)
-    } else {
-      alert(`Ejecutando Arbitraje: ${opp.tokenIn} → ${opp.tokenOut}\n\nEstrategia: ${opp.strategy}\nEsto es una simulación. En producción, se ejecutarían las transacciones reales.`)
+    // Confirmar ejecución con el usuario
+    const confirmMessage = `¿Confirmar ejecución de arbitraje?
+
+Estrategia: ${opp.strategy?.replace(/_/g, ' ').toUpperCase()}
+Tokens: ${opp.tokenIn} → ${opp.tokenOut}
+Ganancia Estimada: ${opp.profitAmount ? `$${opp.profitAmount}` : 'Calculando...'}
+
+⚠️  ADVERTENCIA: Esta es una transacción real en blockchain.
+Los costos de gas se deducirán de tu wallet.
+${gasEstimation ? `\nGas Estimado: $${gasEstimation.gasCostUSD}\nGanancia Neta: $${gasEstimation.estimatedProfit}` : ''}
+
+¿Continuar?`
+
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    try {
+      // Estimar gas si no está disponible
+      if (!gasEstimation) {
+        console.log('🔍 Estimando gas para la oportunidad...')
+        await estimateGasAndProfit(opp as ArbitrageOpportunity)
+      }
+
+      // Ejecutar arbitraje
+      console.log('🚀 Ejecutando arbitraje real...', {
+        strategy: opp.strategy,
+        tokenIn: opp.tokenIn,
+        tokenOut: opp.tokenOut,
+        user: address
+      })
+
+      const result = await executeArbitrage(opp as ArbitrageOpportunity)
+
+      if (result.success) {
+        alert(`🎉 ¡Arbitraje ejecutado exitosamente!
+
+Transacción: ${result.txHash}
+Ganancia: $${result.profit || 'Calculando...'}
+Gas Usado: ${result.gasUsed || 'N/A'}
+
+${result.explorerUrl ? `Ver en explorer: ${result.explorerUrl}` : ''}`)
+      } else {
+        alert(`❌ Error ejecutando arbitraje:
+
+${result.error || 'Error desconocido'}
+
+Revisa tu conexión y saldo de wallet.`)
+      }
+    } catch (error: unknown) {
+      console.error('Error en handleExecuteArbitrage:', error)
+      alert(`❌ Error inesperado: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     }
   }
 
@@ -487,7 +567,7 @@ export function RealTimeOpportunitiesPage() {
         {/* MetaMask Connection and Statistics */}
         <div className="grid gap-6 lg:grid-cols-4">
           <div className="lg:col-span-3">
-            <OpportunityStats opportunities={opportunities} />
+            <OpportunityStats opportunities={opportunities as ArbitrageOpportunity[]} />
           </div>
           <div className="lg:col-span-1">
             <MetaMaskConnector compact={false} showDetails={true} />
@@ -513,13 +593,13 @@ export function RealTimeOpportunitiesPage() {
                 </div>
                 <div className="text-center p-4 bg-blue-50 rounded-lg">
                   <div className="text-2xl font-bold text-blue-600">
-                    {opportunities.length > 0 ? (opportunities.reduce((sum, opp) => sum + opp.profitPercentage, 0) / opportunities.length).toFixed(2) : '0.00'}%
+                    {opportunities.length > 0 ? (opportunities.reduce((sum, opp) => sum + (opp.profitPercentage ?? 0), 0) / opportunities.length).toFixed(2) : '0.00'}%
                   </div>
                   <div className="text-sm text-blue-700">Ganancia Promedio</div>
                 </div>
                 <div className="text-center p-4 bg-purple-50 rounded-lg">
                   <div className="text-2xl font-bold text-purple-600">
-                    {formatCurrency(opportunities.reduce((sum, opp) => sum + parseFloat(opp.profitAmount || '0'), 0))}
+                    {formatCurrency(opportunities.reduce((sum, opp) => sum + parseFloat((opp as any).profitAmount ?? '0'), 0))}
                   </div>
                   <div className="text-sm text-purple-700">Ganancia Potencial Total</div>
                 </div>
@@ -530,7 +610,7 @@ export function RealTimeOpportunitiesPage() {
 
         {/* Enhanced Opportunities Table */}
         <EnhancedOpportunitiesTable 
-          opportunities={currentOpportunities} 
+          opportunities={currentOpportunities as ArbitrageOpportunity[]} 
           isLoading={isLoading}
           pagination={pagination}
           onPageChange={handlePageChange}

@@ -173,6 +173,7 @@ export function useTransactions() {
   const getTransactionStats = useCallback(() => {
     const stats = {
       total: transactions.size,
+      idle: 0,
       pending: 0,
       confirming: 0,
       success: 0,

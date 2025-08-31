@@ -39,28 +39,6 @@ export function useWalletBalance(chainIds: string[] = [], metamaskConnected: boo
       const nativeAmount = parseInt(balance, 16) / Math.pow(10, 18)
       
       // Obtener precio del token para calcular valor USD
-      let usdValue = 0
-      try {
-        const symbols = {
-          '0x1': 'ETH',
-          '0x89': 'MATIC', 
-          '0x38': 'BNB',
-          '0xa4b1': 'ETH',
-          '0xa': 'ETH'
-        }
-        const symbol = symbols[chainId as keyof typeof symbols]
-        
-        const priceResponse = await fetch(`/api/arbitrage/prices/${symbol}`)
-        if (priceResponse.ok) {
-          const priceData = await priceResponse.json()
-          if (priceData.success) {
-            usdValue = nativeAmount * priceData.price
-          }
-        }
-      } catch (priceError) {
-        console.warn(`Could not fetch price for USD calculation:`, priceError)
-      }
-      
       const symbolMap = {
         '0x1': 'ETH',
         '0x89': 'MATIC', 
@@ -68,7 +46,9 @@ export function useWalletBalance(chainIds: string[] = [], metamaskConnected: boo
         '0xa4b1': 'ETH',
         '0xa': 'ETH'
       }
-      const symbol = symbolMap[chainId as keyof typeof symbolMap] || 'TOKEN'
+      const symbol = symbolMap[chainId as keyof typeof symbolMap] || 'ETH'
+      const tokenPrice = await getTokenPriceUSD(symbol)
+      const usdValue = nativeAmount * tokenPrice
       
       return {
         chainId,
@@ -83,38 +63,22 @@ export function useWalletBalance(chainIds: string[] = [], metamaskConnected: boo
     }
   }
 
-  // Función para obtener balance desde el backend de arbitraje
-  const getBackendBalance = async (chainId: string, walletAddress: string): Promise<WalletBalance | null> => {
+  // Función para obtener precio de token (simplificada)
+  const getTokenPriceUSD = async (symbol: string): Promise<number> => {
     try {
-      // CONEXIÓN REAL AL BACKEND DE ARBITRAJE
-      const response = await fetch(`/api/arbitrage/balance/${chainId}/${walletAddress}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`Backend balance error: ${response.status}`)
+      // Precios simulados para desarrollo (en producción usar API real)
+      const prices: { [key: string]: number } = {
+        'ETH': 2500,
+        'MATIC': 1.2,
+        'BNB': 300,
+        'AVAX': 35,
+        'FTM': 0.8
       }
-
-      const data = await response.json()
-      
-      if (data.success) {
-        return {
-          chainId,
-          nativeBalance: data.nativeBalance,
-          usdValue: data.usdValue,
-          formattedBalance: data.formattedBalance,
-          lastUpdated: Date.now()
-        }
-      }
+      return prices[symbol] || 0
     } catch (error) {
-      console.error(`Error fetching backend balance for ${chainId}:`, error)
+      console.warn(`Could not fetch price for ${symbol}:`, error)
+      return 0
     }
-    
-    return null
   }
 
   // Función para obtener todos los balances
@@ -127,13 +91,8 @@ export function useWalletBalance(chainIds: string[] = [], metamaskConnected: boo
         // Prioridad: 1. Backend, 2. MetaMask, 3. Error (no mock)
         let balance: WalletBalance | null = null
         
-        // Intentar obtener desde backend si hay dirección de wallet
-        if (metamaskConnected && window.ethereum?.selectedAddress) {
-          balance = await getBackendBalance(chainId, window.ethereum.selectedAddress)
-        }
-        
-        // Si el backend falla, usar balance directo de MetaMask
-        if (!balance && metamaskConnected) {
+        // Usar balance directo de MetaMask (sin backend)
+        if (metamaskConnected) {
           balance = await fetchRealBalance(chainId)
         }
         

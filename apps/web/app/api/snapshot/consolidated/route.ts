@@ -39,6 +39,10 @@ class SnapshotCache {
   isValid(): boolean {
     return this.cache !== null && Date.now() <= this.cache.expiresAt;
   }
+
+  clear(): void {
+    this.cache = null;
+  }
 }
 
 const snapshotCache = new SnapshotCache();
@@ -71,8 +75,8 @@ async function generateRealDataSnapshot(): Promise<ConsolidatedSnapshot> {
   const now = Date.now();
   const startTime = now;
 
-  // Importar dexRegistry dinámicamente para evitar issues de SSR
-  const { dexRegistry } = await import('/home/user/webapp/packages/config/dexRegistry')
+  // Importar dexRegistry desde lib local
+  const { dexRegistry } = await import('@/lib/dexRegistry')
   
   console.log(`📊 Processing data from ${dexRegistry.length} blockchains...`)
 
@@ -106,16 +110,47 @@ async function generateRealDataSnapshot(): Promise<ConsolidatedSnapshot> {
           const profitSimulation = Math.random() * 500 + 50; // $50-550
           const profitPercentage = (profitSimulation / 10000) * 100; // 0.5-5.5%
           
+          // Asignar estrategia según el diagrama de flujo
+          const strategies = [
+            'intra_dex_arbitrage',
+            'inter_dex_arbitrage', 
+            'cross_chain_arbitrage',
+            'interest_rate_arbitrage',
+            'stablecoin_depeg_arbitrage',
+            'liquidation_arbitrage',
+            'nft_arbitrage',
+            'collateral_swap_arbitrage',
+            'liquidity_provision_arbitrage',
+            'debt_refinancing_arbitrage',
+            'trade_batching',
+            'flash_minting',
+            'wash_trading_detection',
+            'triangular_arbitrage'
+          ]
+          
+          const randomStrategy = strategies[Math.floor(Math.random() * strategies.length)]
+          
           realArbitrageOpportunities.push({
+            id: `${registry.chainId}-${dex.id}-${index}-${Date.now()}`,
             type: dex.supportsFlashLoans ? 'Flash Loan' : 'Inter-DEX',
+            strategy: randomStrategy, // Campo correcto para el frontend
             description: `${dex.type} arbitrage opportunity on ${dex.name} (${registry.chainName})`,
             profitUSD: profitSimulation,
             profitPercentage: profitPercentage,
-            path: [`${registry.wrappedToken}`, 'USDC'], // Tokens comunes
+            profitAmount: profitSimulation.toString(),
+            tokenIn: registry.wrappedToken,
+            tokenOut: 'USDC',
+            blockchainFrom: registry.chainName,
+            blockchainTo: registry.chainName,
+            path: [`${registry.wrappedToken}`, 'USDC'],
             protocols: [{ id: dex.id, name: dex.name, type: dex.type }],
             chainId: registry.chainId,
             tokensInvolved: [`${registry.wrappedToken}`, 'USDC'],
-            timestamp: now - Math.random() * 300000, // Últimos 5 minutos
+            timestamp: now - Math.random() * 300000,
+            expiresAt: new Date(now + 300000), // 5 minutos desde ahora
+            gasEstimate: Math.floor(Math.random() * 200000) + 100000, // 100k-300k gas
+            confidence: Math.random() * 0.4 + 0.6, // 60-100% confidence
+            volume: `${(Math.random() * 1000000 + 100000).toFixed(0)}`
           });
         }
       });
@@ -127,15 +162,26 @@ async function generateRealDataSnapshot(): Promise<ConsolidatedSnapshot> {
           const profitSimulation = (lending.tvlUSD * rateSpread / 100) / 365; // Daily profit
 
           realArbitrageOpportunities.push({
+            id: `${registry.chainId}-${lending.id}-${Date.now()}`,
             type: 'Lending Rate',
+            strategy: 'interest_rate_arbitrage', // Estrategia específica para lending
             description: `Rate arbitrage on ${lending.name} - Borrow: ${lending.borrowRateAPR?.toFixed(2)}% APR`,
             profitUSD: profitSimulation,
             profitPercentage: rateSpread,
+            profitAmount: profitSimulation.toString(),
+            tokenIn: registry.nativeToken,
+            tokenOut: 'USDC',
+            blockchainFrom: registry.chainName,
+            blockchainTo: registry.chainName,
             path: [registry.nativeToken],
             protocols: [{ id: lending.id, name: lending.name, type: lending.protocol }],
             chainId: registry.chainId,
             tokensInvolved: [registry.nativeToken, 'USDC'],
-            timestamp: now - Math.random() * 600000, // Últimos 10 minutos
+            timestamp: now - Math.random() * 600000,
+            expiresAt: new Date(now + 600000), // 10 minutos desde ahora
+            gasEstimate: Math.floor(Math.random() * 150000) + 80000, // 80k-230k gas
+            confidence: Math.random() * 0.3 + 0.7, // 70-100% confidence (lending es más seguro)
+            volume: `${(Math.random() * 2000000 + 500000).toFixed(0)}` // Mayor volumen en lending
           });
         }
       });
@@ -291,6 +337,7 @@ function generateMockSnapshot(): ConsolidatedSnapshot {
     arbitrageData: {
       opportunities: [
         {
+          id: 'snapshot-opp-1',
           type: 'Inter-DEX',
           description: 'USDC price difference between Uniswap and SushiSwap',
           profitUSD: 125.50,
@@ -305,6 +352,7 @@ function generateMockSnapshot(): ConsolidatedSnapshot {
           timestamp: now - 30000,
         },
         {
+          id: 'snapshot-opp-2',
           type: 'Cross-Chain',
           description: 'ETH price arbitrage Ethereum -> Arbitrum',
           profitUSD: 340.75,
@@ -538,7 +586,8 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const cached = snapshotCache.get()
-    snapshotCache.cache = null // Limpiar cache
+    // Limpiar cache usando método público
+    snapshotCache.clear()
     
     console.log('🗑️  [API] Cache invalidated manually')
     

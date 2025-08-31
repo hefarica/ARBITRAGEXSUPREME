@@ -751,17 +751,6 @@ export class HybridSystemIntegration {
     console.log('📡 Monitoring Cosmos for arbitrage opportunities...');
     // TODO: Implementar integración completa con contrato CosmWasm
   }
-}
-
-// Interfaces adicionales
-interface ChainMetrics {
-  opportunities: number;
-  executed: number;
-  profit: number;
-  gasSpent: number;
-  averageGasPrice: number;
-  successRate: number;
-}
 
   /**
    * Detecta oportunidades de arbitraje en EVM chains usando JavaScript

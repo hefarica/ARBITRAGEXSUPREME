@@ -25,6 +25,7 @@ import { useNetworkIntegration, type NetworkIntegrationStatus, IMPLEMENTED_NETWO
 import { useCryptoPrices } from '@/hooks/useCryptoPrices'
 import { useWalletBalance } from '@/hooks/useWalletBalance'
 import { useDashboardData } from '@/hooks/useDashboardData'
+import { useArbitrageSnapshot } from '@/hooks/useArbitrageSnapshot'
 import { BlockchainLogo } from '@/components/BlockchainLogos'
 
 // Componente para mostrar el estado de una red individual
@@ -343,6 +344,14 @@ export function NetworkIntegrationPanel() {
     refresh: refreshDashboard
   } = useDashboardData()
 
+  // Hook para datos reales del snapshot consolidado
+  const { 
+    blockchainSummaries, 
+    isLoading: snapshotLoading,
+    totalOpportunities,
+    getTotalTVL
+  } = useArbitrageSnapshot()
+
   // Hook para obtener precios de criptomonedas (ahora conectado al backend real)
   const chainIds = integrationStatus.map(status => status.chainId)
   const { prices, isLoading: pricesLoading, error: pricesError } = useCryptoPrices(chainIds)
@@ -350,8 +359,16 @@ export function NetworkIntegrationPanel() {
   // Hook para obtener balances de wallet (ahora conectado al backend real)
   const { balances, isLoading: balancesLoading, formatUsdBalance, getTotalUsdBalance } = useWalletBalance(chainIds, metamask.isConnected)
 
-  // Estado del panel de integración
-  const syncPercentage = getSyncPercentage()
+  // Estado del panel de integración usando datos reales
+  const realStats = {
+    totalImplemented: 20, // Sabemos que tenemos 20 blockchains
+    matched: blockchainSummaries.length, // Redes realmente conectadas
+    missing: Math.max(0, 20 - blockchainSummaries.length),
+    needsUpdate: 0
+  }
+  const realSyncPercentage = realStats.totalImplemented > 0 
+    ? Math.round((realStats.matched / realStats.totalImplemented) * 100) 
+    : 0
 
   if (!metamask.isMetaMaskInstalled) {
     return (
@@ -440,10 +457,10 @@ export function NetworkIntegrationPanel() {
 
       {/* Panel de estadísticas INTEGRADO CON DATOS REALES DEL DASHBOARD */}
       <SyncStatsPanel
-        stats={syncStats}
-        syncPercentage={dashboardData?.networkIntegration?.syncPercentage || syncPercentage}
+        stats={realStats}
+        syncPercentage={realSyncPercentage}
         onSyncAll={syncAllNetworks}
-        isLoading={isLoading || dashboardLoading}
+        isLoading={isLoading || dashboardLoading || snapshotLoading}
         dashboardData={dashboardData}
         formatUsdBalance={formatUsdBalance}
         getTotalUsdBalance={getTotalUsdBalance}

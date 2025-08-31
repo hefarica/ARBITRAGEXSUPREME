@@ -27,16 +27,18 @@ interface MetaMaskConnectorProps {
 export function MetaMaskConnector({ className, showDetails = true, compact = false }: MetaMaskConnectorProps) {
   const {
     isConnected,
-    address,
-    chainName,
+    accounts,
+    chainId,
     balance,
     isLoading,
     error,
-    isMetaMaskInstalled,
+    isInstalled: isMetaMaskInstalled,
     connect,
     disconnect,
-    refresh
+    refreshNetworks
   } = useMetaMask()
+
+  const address = accounts[0]
 
   const copyAddress = () => {
     if (address) {
@@ -218,7 +220,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
                   <div className="font-montserrat uppercase text-xs text-slate-500 tracking-wider">RED</div>
                   <div className="flex items-center space-x-2">
                     <Network className="w-4 h-4 text-slate-600" />
-                    <span className="font-montserrat uppercase text-sm tracking-wide">{chainName}</span>
+                    <span className="font-montserrat uppercase text-sm tracking-wide">{chainId ? `Chain ${chainId}` : 'Unknown'}</span>
                   </div>
                 </div>
               </div>
@@ -233,7 +235,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={refresh}
+                    onClick={refreshNetworks}
                     className="h-8 w-8 p-0 hover:bg-gray-100 rounded-lg"
                   >
                     <RefreshCw className="w-3 h-3" />
@@ -246,7 +248,7 @@ export function MetaMaskConnector({ className, showDetails = true, compact = fal
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={refresh}
+                  onClick={refreshNetworks}
                   disabled={isLoading}
                   className="flex-1 rounded-xl border-gray-200 hover:bg-gray-50 transition-all duration-200"
                 >

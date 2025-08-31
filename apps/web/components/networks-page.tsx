@@ -25,7 +25,8 @@ import {
 import { cn, formatTimeAgo } from '@/lib/utils'
 import { useNetworkStatus } from '@/hooks/useArbitrageData'
 import { type NetworkStatus } from '@/services/arbitrageService'
-import { NetworkIntegrationPanel } from './NetworkIntegrationPanel'
+import { SimpleNetworkPanel } from './SimpleNetworkPanel'
+import { NetworkGrid } from './NetworkGrid'
 
 // Network Status Card Component
 function NetworkCard({ network }: { network: NetworkStatus }) {
@@ -345,9 +346,14 @@ export function NetworksPage() {
         {/* Connection Summary */}
         <ConnectionSummary networks={networks} />
 
-        {/* Network Integration Panel */}
+        {/* Network Integration Panel - Resumen */}
         <div>
-          <NetworkIntegrationPanel />
+          <SimpleNetworkPanel />
+        </div>
+
+        {/* Network Grid - 20 Cards Inteligentes */}
+        <div>
+          <NetworkGrid />
         </div>
 
         {/* Networks Grid */}

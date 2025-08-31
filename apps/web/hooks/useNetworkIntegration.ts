@@ -273,8 +273,8 @@ export function useNetworkIntegration() {
         // Simplemente agregar la red como disponible si está implementada
         // La verificación real se hará cuando el usuario intente agregarla
         detectedNetworks.push({ 
-          chainId, 
           ...config,
+          chainId,
           isCurrentNetwork: chainId === currentChainId
         })
       }
@@ -410,7 +410,7 @@ export function useNetworkIntegration() {
         const status: NetworkIntegrationStatus = {
           chainId,
           systemNetwork: realSystemNetwork, // Usar datos reales del backend
-          metamaskNetwork: likelyInMetamask ? { chainId, ...config } : undefined,
+          metamaskNetwork: likelyInMetamask ? { ...config, chainId } : undefined,
           isImplemented: !!realSystemNetwork, // Solo redes realmente conectadas al sistema
           isInMetamask: likelyInMetamask, // Basado en redes comunes + red actual
           needsUpdate: false,

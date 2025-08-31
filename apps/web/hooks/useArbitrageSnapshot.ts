@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ConsolidatedSnapshot, BlockchainSummary, ArbitrageOpportunity } from '@/types/defi'
+import { ConsolidatedSnapshot, BlockchainSummary } from '@/types/defi'
+import type { ArbitrageOpportunity } from '@/types/arbitrage'
 
 interface SnapshotState {
   data: ConsolidatedSnapshot | null
@@ -23,6 +24,7 @@ export function useArbitrageSnapshot() {
     setState(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
+      console.log('🔍 [DEBUG] Fetching snapshot from /api/snapshot/consolidated...')
       const response = await fetch('/api/snapshot/consolidated', {
         method: 'GET',
         headers: {
@@ -36,6 +38,12 @@ export function useArbitrageSnapshot() {
       }
 
       const result = await response.json()
+      console.log('📊 [DEBUG] Snapshot result:', {
+        success: result.success,
+        totalOpportunities: result.data?.totalOpportunities,
+        blockchains: result.data?.blockchainSummaries?.length,
+        version: result.data?.systemHealth?.version
+      })
 
       if (result.success) {
         setState({
@@ -44,11 +52,12 @@ export function useArbitrageSnapshot() {
           error: null,
           lastUpdated: Date.now()
         })
+        console.log('✅ [DEBUG] State updated successfully with data')
       } else {
         throw new Error(result.message || 'Failed to fetch snapshot')
       }
     } catch (error) {
-      console.error('Error fetching arbitrage snapshot:', error)
+      console.error('❌ [DEBUG] Error fetching arbitrage snapshot:', error)
       setState(prev => ({
         ...prev,
         isLoading: false,
@@ -94,7 +103,7 @@ export function useArbitrageSnapshot() {
     if (!state.data?.arbitrageData?.opportunities) return []
     
     return [...state.data.arbitrageData.opportunities]
-      .sort((a, b) => b.profitUSD - a.profitUSD)
+      .sort((a, b) => (b.profitUSD ?? 0) - (a.profitUSD ?? 0))
       .slice(0, 10)
   }, [state.data])
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { ArbitrageOpportunity, LiveOpportunityResponse } from '@/types/arbitrage';
 
-const generateLiveOpportunities = () => {
+const generateLiveOpportunities = (): ArbitrageOpportunity[] => {
   const tokens = [
     'USDC', 'USDT', 'DAI', 'WETH', 'BNB', 'MATIC', 'WBTC', 'LINK', 'UNI', 'AAVE',
     'CRV', 'COMP', 'SUSHI', 'BAL', '1INCH', 'YFI', 'SNX', 'MKR'
@@ -25,7 +26,7 @@ const generateLiveOpportunities = () => {
     'sandwich_attack'
   ];
 
-  const opportunities = [];
+  const opportunities: ArbitrageOpportunity[] = [];
   const now = new Date();
   const numOpportunities = 5 + Math.floor(Math.random() * 15); // 5-20 oportunidades
 
@@ -64,14 +65,25 @@ const generateLiveOpportunities = () => {
     const gasEstimate = 80000 + Math.floor(Math.random() * 400000); // 80k - 480k
     const expiresIn = 30 + Math.random() * 600; // 30 segundos - 10 minutos
 
-    opportunities.push({
+    const opportunity: ArbitrageOpportunity = {
       id: `live-${Date.now()}-${i}`,
+      description: `${tokenIn}/${tokenOut} arbitrage on ${chainFrom} → ${chainTo}`,
+      path: [tokenIn, tokenOut],
+      protocols: [
+        { id: 'uniswap', name: 'Uniswap V2' },
+        { id: 'sushiswap', name: 'SushiSwap' }
+      ],
+      chainId: 1, // Default to Ethereum mainnet
+      tokensInvolved: [tokenIn, tokenOut],
+      timestamp: now.getTime(),
       tokenIn,
       tokenOut,
       blockchainFrom: chainFrom,
       blockchainTo: chainTo,
       profitPercentage: parseFloat(profitPercentage.toFixed(4)),
       profitAmount,
+      profitUSD: parseFloat(profitAmount),
+      amount: volumeBase.toString(),
       strategy: strategies[Math.floor(Math.random() * strategies.length)],
       confidence: Math.max(0.1, Math.min(0.99, parseFloat(confidence.toFixed(3)))),
       gasEstimate,
@@ -82,11 +94,13 @@ const generateLiveOpportunities = () => {
       priority: profitPercentage > 2 ? 'high' : profitPercentage > 1 ? 'medium' : 'low',
       source: Math.random() > 0.5 ? 'uniswap' : 'sushiswap',
       destination: Math.random() > 0.5 ? 'pancakeswap' : '1inch'
-    });
+    };
+    
+    opportunities.push(opportunity);
   }
 
   // Ordenar por ganancia potencial descendente
-  return opportunities.sort((a, b) => b.profitPercentage - a.profitPercentage);
+  return opportunities.sort((a, b) => (b.profitPercentage ?? 0) - (a.profitPercentage ?? 0));
 };
 
 export async function GET(request: NextRequest) {
@@ -96,13 +110,15 @@ export async function GET(request: NextRequest) {
 
     const opportunities = generateLiveOpportunities();
     
-    return NextResponse.json({
+    const response: LiveOpportunityResponse = {
       opportunities,
       count: opportunities.length,
       timestamp: new Date().toISOString(),
       status: 'success',
       scan_time_ms: Math.floor(50 + Math.random() * 150)
-    });
+    };
+    
+    return NextResponse.json(response);
 
   } catch (error) {
     console.error('Error fetching live opportunities:', error);

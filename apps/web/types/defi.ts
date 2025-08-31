@@ -22,20 +22,9 @@ export interface ProtocolSnapshot {
   details: any; // Raw details from the original DexInfo or LendingInfo
 }
 
-// Represents a detected arbitrage opportunity
-export interface ArbitrageOpportunity {
-  id?: string; // Unique ID for the opportunity (optional, might be generated on frontend)
-  type: 'Intra-DEX' | 'Inter-DEX' | 'Cross-Chain' | 'Lending Rate' | 'Flash Loan' | 'Perpetual' | 'MEV' | 'Options' | 'Synthetic' | 'Governance' | 'Insurance' | 'Statistical' | 'Intra-Chain DEX Trade Simulation' | 'Lending Rate Arbitrage Analysis';
-  description: string;
-  profitUSD: number; // Estimated profit in USD
-  profitPercentage?: number; // Estimated profit percentage
-  path: string[]; // Sequence of token addresses or protocol actions
-  protocols: { id: string; name: string; type?: string; }[]; // Protocols involved
-  chainId: number;
-  tokensInvolved: string[]; // Addresses of tokens involved
-  timestamp: number; // When the opportunity was detected/last updated
-  details?: any; // Additional raw data or specific parameters for execution
-}
+// Import the unified ArbitrageOpportunity interface from arbitrage.ts to avoid conflicts
+import type { ArbitrageOpportunity } from './arbitrage'
+export type { ArbitrageOpportunity } from './arbitrage'
 
 // Financial metrics for a chain or globally
 export interface FinancialMetric {

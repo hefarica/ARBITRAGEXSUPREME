@@ -191,7 +191,7 @@ export function useIntegratedWallets() {
       const metamaskWallet = createMetaMaskWallet()
       if (metamaskWallet) {
         // Verificar si MetaMask ya existe en la API
-        const existsInApi = apiWalletsData.some(wallet => 
+        const existsInApi = apiWalletsData.some((wallet: { address: string }) => 
           wallet.address.toLowerCase() === metamaskWallet.address.toLowerCase()
         )
 

@@ -1,6 +1,24 @@
 'use client'
 
 import React from 'react'
+
+// Tipos seguros
+interface NetworkItem {
+  id: string;
+  name: string;
+  connected: boolean;
+}
+
+interface DashboardMetrics {
+  real_time_metrics?: {
+    live_scanning?: boolean;
+    opportunities_per_minute?: string;
+  };
+  blockchain?: {
+    total_volume_24h?: string;
+    successful_arbitrages_24h?: string;
+  };
+}
 // import { DashboardLayout } from './dashboard-layout' // Archivo no encontrado
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -203,8 +221,8 @@ export function RealTimeDashboard() {
     )
   }
 
-  const activeNetworks = networks.filter((n: any) => n.connected)
-  const inactiveNetworks = networks.filter((n: any) => !n.connected)
+  const activeNetworks = networks.filter((n: NetworkItem) => n.connected)
+  const inactiveNetworks = networks.filter((n: NetworkItem) => !n.connected)
 
   return (
     <div className="space-y-6 p-6">
@@ -220,8 +238,9 @@ export function RealTimeDashboard() {
           {isLoading ? 'Actualizando...' : 'Actualizar'}
         </button>
       </div>
-        {/* Top Grid: 3 Main Cards + MetaMask */}
-        <div className="grid gap-6 lg:grid-cols-4">
+
+      {/* Top Grid: 3 Main Cards + MetaMask */}
+      <div className="grid gap-6 lg:grid-cols-4">
           {/* Redes Blockchain Card */}
           <Card className="backdrop-blur-md bg-white/90 border rounded-2xl shadow-sm">
             <CardContent className="p-6">
@@ -236,7 +255,7 @@ export function RealTimeDashboard() {
                   </Badge>
                 </div>
                 
-                {activeNetworks.slice(0, 3).map((network: any) => (
+                {activeNetworks.slice(0, 3).map((network: NetworkItem) => (
                   <div key={network.id} className="flex items-center space-x-2 p-2 bg-emerald-50 rounded-lg">
                     <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
                     <span className="font-montserrat uppercase text-sm font-medium text-slate-800 tracking-wide">{network.name}</span>
@@ -297,8 +316,10 @@ export function RealTimeDashboard() {
         </div>
 
         {/* Full Width Opportunities Table */}
-        <RealTimeOpportunitiesTable opportunities={opportunities} />
-      </div>
+        {/* <RealTimeOpportunitiesTable opportunities={opportunities} /> */}
+        <div className="p-8 text-center text-gray-500">
+          Tabla de oportunidades en tiempo real (temporalmente deshabilitada)
+        </div>
     </div>
   )
 }

@@ -27,7 +27,7 @@ export class Web3Service {
     if (!this.provider) {
       // Lazy loading dinámico de ethers solo cuando se necesita
       const { ethers } = await import('ethers')
-      this.provider = new ethers.BrowserProvider(window.ethereum)
+      this.provider = new ethers.providers.Web3Provider(window.ethereum)
     }
 
     return this.provider
@@ -55,7 +55,7 @@ export class Web3Service {
       const { ethers } = await import('ethers')
       
       const balance = await provider.getBalance(address)
-      return ethers.formatEther(balance)
+      return ethers.utils.formatEther(balance)
     } catch (error) {
       console.error('Error getting balance:', error)
       throw error
@@ -173,7 +173,7 @@ export class Web3Service {
   async formatAddress(address: string): Promise<string> {
     try {
       const { ethers } = await import('ethers')
-      return ethers.getAddress(address)
+      return ethers.utils.getAddress(address)
     } catch (error) {
       console.error('Error formatting address:', error)
       return address

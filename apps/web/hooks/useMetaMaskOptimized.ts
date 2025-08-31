@@ -14,7 +14,7 @@ interface EthereumProvider {
 
 declare global {
   interface Window {
-    ethereum?: EthereumProvider
+    ethereum?: EthereumProvider | any
   }
 }
 
@@ -259,8 +259,8 @@ export function useMetaMaskOptimized() {
               symbol: networkConfig.symbol,
               decimals: networkConfig.decimals
             },
-            rpcUrls: networkConfig.rpcUrls,
-            blockExplorerUrls: networkConfig.blockExplorerUrls
+            rpcUrls: [...networkConfig.rpcUrls],
+            blockExplorerUrls: [...networkConfig.blockExplorerUrls]
           })
         }
       }

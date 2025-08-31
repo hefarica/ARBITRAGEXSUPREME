@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { ArbitrageOpportunity } from '@/types/arbitrage';
+import type { NetworkItem } from '@/types/network';
+import type { DashboardMetrics } from '@/types/api';
 
 // Datos simulados realistas para desarrollo
 // En producción, estos datos vendrían del backend real
-const mockNetworks = [
+const mockNetworks: NetworkItem[] = [
   { 
     id: '1', 
     name: 'Ethereum', 
@@ -58,7 +61,7 @@ const mockNetworks = [
   },
 ];
 
-const generateMockOpportunities = () => {
+const generateMockOpportunities = (): ArbitrageOpportunity[] => {
   const tokens = ['USDC', 'USDT', 'WETH', 'BNB', 'MATIC', 'DAI', 'WBTC'];
   const chains = ['Ethereum', 'Polygon', 'BSC', 'Arbitrum', 'Optimism'];
   const strategies = [
@@ -70,7 +73,7 @@ const generateMockOpportunities = () => {
     'statistical_arbitrage'
   ];
 
-  const opportunities = [];
+  const opportunities: ArbitrageOpportunity[] = [];
   const now = new Date();
 
   for (let i = 0; i < 8; i++) {
@@ -92,14 +95,24 @@ const generateMockOpportunities = () => {
     const gasEstimate = 120000 + Math.floor(Math.random() * 200000); // 120k - 320k
     const expiresIn = 2 + Math.random() * 8; // 2-10 minutos
 
-    opportunities.push({
+    const opportunity: ArbitrageOpportunity = {
       id: `opp-${i + 1}`,
+      description: `${tokenIn}/${tokenOut} arbitrage on ${chainFrom} → ${chainTo}`,
+      path: [tokenIn, tokenOut],
+      protocols: [
+        { id: 'uniswap', name: 'Uniswap V2' },
+        { id: 'sushiswap', name: 'SushiSwap' }
+      ],
+      chainId: 1, // Default chainId
+      tokensInvolved: [tokenIn, tokenOut],
+      timestamp: now.getTime(),
       tokenIn,
       tokenOut,
       blockchainFrom: chainFrom,
       blockchainTo: chainTo,
       profitPercentage: parseFloat(profitPercentage.toFixed(3)),
       profitAmount,
+      profitUSD: parseFloat(profitAmount),
       strategy: strategies[Math.floor(Math.random() * strategies.length)],
       confidence: parseFloat(confidence.toFixed(3)),
       gasEstimate,
@@ -107,13 +120,15 @@ const generateMockOpportunities = () => {
       priceFrom: 100 + Math.random() * 200,
       priceTo: 100 + Math.random() * 200,
       volume: (Math.random() * 50 + 1).toFixed(1)
-    });
+    };
+    
+    opportunities.push(opportunity);
   }
 
-  return opportunities.sort((a, b) => b.profitPercentage - a.profitPercentage);
+  return opportunities.sort((a, b) => (b.profitPercentage ?? 0) - (a.profitPercentage ?? 0));
 };
 
-const mockMetrics = {
+const mockMetrics: DashboardMetrics = {
   blockchain: {
     total_volume_24h: 2750000 + Math.floor(Math.random() * 500000),
     successful_arbitrages_24h: 156 + Math.floor(Math.random() * 50),

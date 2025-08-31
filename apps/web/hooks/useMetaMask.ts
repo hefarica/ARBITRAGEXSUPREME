@@ -2,21 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { arbitrageService } from '@/services/arbitrageService'
+import { getNetworkConfig, getMissingNetworks, isNetworkInstalled, ALL_SUPPORTED_NETWORKS } from '@/lib/networkConfigs'
+import type { NetworkConfig, MetaMaskState } from '@/types/network'
 
-export interface MetaMaskState {
-  isInstalled: boolean
-  isConnected: boolean
-  accounts: string[]
-  chainId: string | null
-  balance: string | null
-  networkName: string | null
-}
+// Interface moved to /types/network.ts
 
 export interface UseMetaMaskReturn extends MetaMaskState {
   connect: () => Promise<void>
   disconnect: () => void
   switchNetwork: (chainId: string) => Promise<void>
+  addNetwork: (chainId: string) => Promise<boolean>
   signTransaction: (transaction: any) => Promise<string>
+  refreshNetworks: () => Promise<void>
+  isNetworkMissing: (chainId: string) => boolean
   isLoading: boolean
   error: string | null
 }
@@ -33,28 +31,17 @@ export function useMetaMask(): UseMetaMaskReturn {
     isConnected: false,
     accounts: [],
     chainId: null,
-    balance: null,
-    networkName: null
+    address: null,
+    balance: undefined, // balance es opcional (string | undefined)
+    installedNetworks: [],
+    missingNetworks: ALL_SUPPORTED_NETWORKS,
+    supportedNetworks: ALL_SUPPORTED_NETWORKS
   })
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Network mapping
-  const getNetworkName = (chainId: string): string => {
-    const networks: { [key: string]: string } = {
-      '0x1': 'Ethereum Mainnet',
-      '0xaa36a7': 'Ethereum Sepolia',
-      '0x38': 'BSC Mainnet',
-      '0x61': 'BSC Testnet',
-      '0x89': 'Polygon Mainnet',
-      '0x13881': 'Polygon Mumbai',
-      '0xa4b1': 'Arbitrum One',
-      '0xa': 'Optimism',
-      '0x2105': 'Base'
-    }
-    return networks[chainId] || `Unknown Network (${chainId})`
-  }
+  // Network mapping removed - using chainId directly now
 
   // Check if MetaMask is installed
   const checkMetaMask = useCallback(() => {
@@ -67,9 +54,9 @@ export function useMetaMask(): UseMetaMaskReturn {
   }, [])
 
   // Get account balance
-  const getBalance = useCallback(async (account: string): Promise<string | null> => {
+  const getBalance = useCallback(async (account: string): Promise<string | undefined> => {
     try {
-      if (!window.ethereum) return null
+      if (!window.ethereum) return undefined
       
       const balance = await window.ethereum.request({
         method: 'eth_getBalance',
@@ -81,7 +68,7 @@ export function useMetaMask(): UseMetaMaskReturn {
       return balanceInEth.toFixed(4)
     } catch (err) {
       console.error('Error getting balance:', err)
-      return null
+      return undefined
     }
   }, [])
 
@@ -92,30 +79,42 @@ export function useMetaMask(): UseMetaMaskReturn {
         ...prev,
         isConnected: false,
         accounts: [],
-        balance: null
+        address: null,
+        balance: undefined
       }))
       return
     }
 
     const chainId = await window.ethereum.request({ method: 'eth_chainId' })
     const balance = await getBalance(accounts[0])
-    const networkName = getNetworkName(chainId)
 
     setState(prev => ({
       ...prev,
       isConnected: true,
       accounts,
-      chainId,
-      balance,
-      networkName
+      chainId: parseInt(chainId as string, 16),
+      address: accounts[0],
+      balance
     }))
 
     // Notify backend about wallet connection
     try {
+      // Derive network name from chainId for service compatibility
+      const getNetworkNameFromChainId = (chainId: string): string => {
+        const networks: { [key: string]: string } = {
+          '0x1': 'Ethereum Mainnet',
+          '0x38': 'BSC Mainnet',
+          '0x89': 'Polygon Mainnet',
+          '0xa4b1': 'Arbitrum One',
+          '0xa': 'Optimism'
+        }
+        return networks[chainId] || `Unknown Network (${chainId})`
+      }
+
       await arbitrageService.connectWallet({
         address: accounts[0],
-        chainId,
-        networkName
+        chainId: chainId as string,
+        networkName: getNetworkNameFromChainId(chainId as string)
       })
     } catch (err) {
       console.error('Error notifying backend about wallet connection:', err)
@@ -154,8 +153,8 @@ export function useMetaMask(): UseMetaMaskReturn {
       isConnected: false,
       accounts: [],
       chainId: null,
-      balance: null,
-      networkName: null
+      address: null,
+      balance: undefined
     }))
     
     // Notify backend about wallet disconnection
@@ -210,6 +209,111 @@ export function useMetaMask(): UseMetaMaskReturn {
     }
   }, [state.isConnected])
 
+  // Detectar redes instaladas en MetaMask
+  const detectInstalledNetworks = useCallback(async (): Promise<string[]> => {
+    if (!window.ethereum) return []
+
+    const installedChainIds: string[] = []
+
+    // Intentar detectar redes probando cada una
+    for (const network of ALL_SUPPORTED_NETWORKS) {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: network.chainId }]
+        })
+        installedChainIds.push(network.chainId)
+      } catch (err: any) {
+        // Red no instalada o error al cambiar
+        if (err.code === 4902) {
+          // Red no agregada aún
+          continue
+        }
+      }
+    }
+
+    return installedChainIds
+  }, [])
+
+  // Agregar red a MetaMask
+  const addNetwork = useCallback(async (chainId: string): Promise<boolean> => {
+    if (!window.ethereum) {
+      setError('MetaMask is not installed')
+      return false
+    }
+
+    const networkConfig = getNetworkConfig(chainId)
+    if (!networkConfig) {
+      setError('Network configuration not found')
+      return false
+    }
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      // Intentar agregar la red
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: networkConfig.chainId,
+          chainName: networkConfig.chainName,
+          nativeCurrency: networkConfig.nativeCurrency,
+          rpcUrls: networkConfig.rpcUrls,
+          blockExplorerUrls: networkConfig.blockExplorerUrls,
+          iconUrls: networkConfig.iconUrls
+        }]
+      })
+
+      // Actualizar estado de redes después de agregar
+      await refreshNetworks()
+      
+      console.log(`✅ Red ${networkConfig.chainName} agregada exitosamente`)
+      return true
+
+    } catch (err: any) {
+      console.error(`Error adding network ${networkConfig.chainName}:`, err)
+      
+      if (err.code === 4001) {
+        setError('Usuario rechazó agregar la red')
+      } else if (err.code === -32602) {
+        setError('Parámetros de red inválidos')
+      } else {
+        setError(err.message || 'Error al agregar la red')
+      }
+      
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // Refrescar detección de redes
+  const refreshNetworks = useCallback(async () => {
+    if (!window.ethereum) return
+
+    try {
+      const installedChainIds = await detectInstalledNetworks()
+      const missingNetworks = getMissingNetworks(installedChainIds)
+
+      setState(prev => ({
+        ...prev,
+        installedNetworks: installedChainIds,
+        missingNetworks
+      }))
+
+      console.log(`📡 Redes detectadas: ${installedChainIds.length}/20 instaladas`)
+      
+    } catch (err) {
+      console.error('Error refreshing networks:', err)
+    }
+  }, [detectInstalledNetworks])
+
+  // Verificar si una red específica falta
+  const isNetworkMissing = useCallback((chainId: string): boolean => {
+    return !isNetworkInstalled(chainId, state.installedNetworks)
+  }, [state.installedNetworks])
+
   // Initialize MetaMask connection
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -226,6 +330,9 @@ export function useMetaMask(): UseMetaMaskReturn {
         })
         .catch(console.error)
 
+      // Detectar redes instaladas al inicio
+      refreshNetworks()
+
       // Listen for account changes
       const handleAccountsChanged = (accounts: string[]) => {
         updateAccountInfo(accounts)
@@ -235,8 +342,7 @@ export function useMetaMask(): UseMetaMaskReturn {
       const handleChainChanged = (chainId: string) => {
         setState(prev => ({
           ...prev,
-          chainId,
-          networkName: getNetworkName(chainId)
+          chainId: parseInt(chainId, 16)
         }))
         
         // Reload balance for new network
@@ -258,14 +364,17 @@ export function useMetaMask(): UseMetaMaskReturn {
         }
       }
     }
-  }, [checkMetaMask, updateAccountInfo, getBalance, state.accounts])
+  }, [checkMetaMask, updateAccountInfo, getBalance, state.accounts, refreshNetworks])
 
   return {
     ...state,
     connect,
     disconnect,
     switchNetwork,
+    addNetwork,
     signTransaction,
+    refreshNetworks,
+    isNetworkMissing,
     isLoading,
     error
   }

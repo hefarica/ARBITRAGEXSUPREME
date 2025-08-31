@@ -89,10 +89,11 @@ function ArbitrageOpportunitiesTable() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {blockchainSummaries.map((chain, index) => {
-                const opportunities = opportunitiesByChain[chain.chainId] || []
-                const totalProfit = opportunities.reduce((sum, opp) => sum + opp.profitUSD, 0)
+                const chainKey = String(chain.chainId || '')
+                const opportunities = (opportunitiesByChain as any)[chainKey] || []
+                const totalProfit = opportunities.reduce((sum: number, opp: any) => sum + (opp.profitUSD ?? 0), 0)
                 const avgROI = opportunities.length > 0 
-                  ? opportunities.reduce((sum, opp) => sum + (opp.profitPercentage || 0), 0) / opportunities.length 
+                  ? opportunities.reduce((sum: number, opp: any) => sum + (opp.profitPercentage ?? 0), 0) / opportunities.length 
                   : 0
 
                 return (
@@ -159,8 +160,9 @@ function ArbitrageOpportunitiesTable() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-indigo-600">
-                {blockchainSummaries.reduce((sum, chain) => {
-                  const opportunities = opportunitiesByChain[chain.chainId] || []
+                {blockchainSummaries.reduce((sum: number, chain: any) => {
+                  const chainKey = String(chain.chainId || '')
+                  const opportunities = (opportunitiesByChain as any)[chainKey] || []
                   return sum + opportunities.length
                 }, 0)}
               </div>
@@ -168,9 +170,9 @@ function ArbitrageOpportunitiesTable() {
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-emerald-600">
-                {formatCurrency(blockchainSummaries.reduce((sum, chain) => {
-                  const opportunities = opportunitiesByChain[chain.chainId] || []
-                  return sum + opportunities.reduce((chainSum, opp) => chainSum + opp.profitUSD, 0)
+                {formatCurrency(blockchainSummaries.reduce((sum: number, chain: any) => {
+                  const opportunities = ((opportunitiesByChain as any)[String(chain.chainId || '')] || [])
+                  return sum + opportunities.reduce((chainSum: number, opp: any) => chainSum + (opp.profitUSD ?? 0), 0)
                 }, 0))}
               </div>
               <div className="text-sm text-gray-600">Profit Total Potencial</div>
@@ -475,6 +477,17 @@ export function EnhancedArbitrageDashboard() {
     formatCurrency,
     isDataFresh
   } = useArbitrageSnapshot()
+
+  // Debug logs
+  React.useEffect(() => {
+    console.log('🎯 [DEBUG] Dashboard data updated:', {
+      hasData: !!data,
+      totalOpportunities,
+      profitableOpportunities,
+      isLoading,
+      error
+    })
+  }, [data, totalOpportunities, profitableOpportunities, isLoading, error])
 
   if (error) {
     return (
