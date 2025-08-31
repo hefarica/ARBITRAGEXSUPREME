@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { memo, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,13 +14,128 @@ import {
   BarChart3
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useBlockchainTables } from '@/hooks/useBlockchainTables'
+import { useBlockchainTables, DexSummary, LendingSummary } from '@/hooks/useBlockchainTables'
 
 // ============================================================================
-// COMPONENTE PRINCIPAL BLOCKCHAIN TABLES
+// COMPONENTES MEMOIZADOS PARA EVITAR RE-RENDERS
 // ============================================================================
 
-export function BlockchainTables() {
+// Componente de fila DEX memoizado
+const DexRow = memo(({ dex, isLast }: { dex: DexSummary; isLast: boolean }) => {
+  return (
+    <tr 
+      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+    >
+      <td className="px-4 py-3">
+        <span className="font-medium text-gray-900">{dex.blockchain}</span>
+      </td>
+      <td className="px-4 py-3">
+        <div>
+          <span className="font-medium text-gray-900">{dex.dex}</span>
+          <div className="text-xs text-gray-500">
+            {dex.type} • ${(dex.tvlUSD / 1000000).toFixed(1)}M
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <Badge 
+          variant={dex.flashLoan ? "default" : "secondary"}
+          className={cn(
+            "text-xs",
+            dex.flashLoan 
+              ? "bg-green-100 text-green-700 border-green-200" 
+              : "bg-gray-100 text-gray-600 border-gray-200"
+          )}
+        >
+          {dex.flashLoan ? (
+            <>
+              <Zap className="h-3 w-3 mr-1" />
+              Sí
+            </>
+          ) : (
+            "No"
+          )}
+        </Badge>
+      </td>
+      <td className="px-4 py-3 text-right font-mono text-gray-900">
+        {dex.opportunities.toLocaleString()}
+      </td>
+    </tr>
+  );
+});
+
+DexRow.displayName = 'DexRow';
+
+// Componente de fila Lending memoizado
+const LendingRow = memo(({ lending, isLast }: { lending: LendingSummary; isLast: boolean }) => {
+  return (
+    <tr 
+      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+    >
+      <td className="px-4 py-3">
+        <span className="font-medium text-gray-900">{lending.blockchain}</span>
+      </td>
+      <td className="px-4 py-3">
+        <div>
+          <span className="font-medium text-gray-900">{lending.lending}</span>
+          <div className="text-xs text-gray-500">
+            {lending.protocol} • ${(lending.tvlUSD / 1000000).toFixed(1)}M
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-center">
+        <Badge 
+          variant={lending.flashLoan ? "default" : "secondary"}
+          className={cn(
+            "text-xs",
+            lending.flashLoan 
+              ? "bg-green-100 text-green-700 border-green-200" 
+              : "bg-gray-100 text-gray-600 border-gray-200"
+          )}
+        >
+          {lending.flashLoan ? (
+            <>
+              <Zap className="h-3 w-3 mr-1" />
+              Sí
+            </>
+          ) : (
+            "No"
+          )}
+        </Badge>
+      </td>
+      <td className="px-4 py-3 text-right font-mono text-gray-900">
+        {lending.opportunities.toLocaleString()}
+      </td>
+    </tr>
+  );
+});
+
+LendingRow.displayName = 'LendingRow';
+
+// Componente de subtotal memoizado
+const SubtotalRow = memo(({ blockchain, count, type }: { blockchain: string; count: number; type: 'dex' | 'lending' }) => {
+  const bgColor = type === 'dex' ? 'bg-blue-50 border-b-2 border-blue-200' : 'bg-green-50 border-b-2 border-green-200';
+  const textColor = type === 'dex' ? 'text-blue-900' : 'text-green-900';
+  
+  return (
+    <tr className={bgColor}>
+      <td className={`px-4 py-2 font-semibold ${textColor}`} colSpan={3}>
+        Subtotal {blockchain}
+      </td>
+      <td className={`px-4 py-2 text-right font-bold ${textColor} font-mono`}>
+        {count.toLocaleString()}
+      </td>
+    </tr>
+  );
+});
+
+SubtotalRow.displayName = 'SubtotalRow';
+
+// ============================================================================
+// COMPONENTE PRINCIPAL BLOCKCHAIN TABLES (OPTIMIZADO)
+// ============================================================================
+
+const BlockchainTablesComponent = memo(() => {
   const { 
     dexSummary,
     lendingSummary,
@@ -36,7 +151,29 @@ export function BlockchainTables() {
     getSubtotalsByBlockchain
   } = useBlockchainTables();
 
-  const subtotals = getSubtotalsByBlockchain();
+  // ============================================================================
+  // DATOS MEMOIZADOS PARA EVITAR RE-COMPUTACIÓN INNECESARIA
+  // ============================================================================
+  
+  const subtotals = useMemo(() => getSubtotalsByBlockchain(), [getSubtotalsByBlockchain]);
+  
+  // Agrupar DEX por blockchain (memoizado)
+  const dexByBlockchain = useMemo(() => {
+    return dexSummary.reduce((groups, dex) => {
+      if (!groups[dex.blockchain]) groups[dex.blockchain] = [];
+      groups[dex.blockchain].push(dex);
+      return groups;
+    }, {} as { [key: string]: typeof dexSummary });
+  }, [dexSummary]);
+  
+  // Agrupar Lending por blockchain (memoizado)
+  const lendingByBlockchain = useMemo(() => {
+    return lendingSummary.reduce((groups, lending) => {
+      if (!groups[lending.blockchain]) groups[lending.blockchain] = [];
+      groups[lending.blockchain].push(lending);
+      return groups;
+    }, {} as { [key: string]: typeof lendingSummary });
+  }, [lendingSummary]);
 
   if (hasError) {
     return (
@@ -118,17 +255,11 @@ export function BlockchainTables() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(
-                      dexSummary.reduce((groups, dex) => {
-                        if (!groups[dex.blockchain]) groups[dex.blockchain] = [];
-                        groups[dex.blockchain].push(dex);
-                        return groups;
-                      }, {} as { [key: string]: typeof dexSummary })
-                    ).map(([blockchain, dexes], blockchainIndex) => (
-                      <React.Fragment key={blockchain}>
+                    {Object.entries(dexByBlockchain).map(([blockchain, dexes]) => (
+                      <React.Fragment key={`dex-group-${blockchain}`}>
                         {dexes.map((dex, dexIndex) => (
                           <tr 
-                            key={`${dex.blockchain}-${dex.dex}`}
+                            key={`dex-${blockchain}-${dex.dex}`}
                             className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                           >
                             <td className="px-4 py-3">
@@ -172,15 +303,13 @@ export function BlockchainTables() {
                           </tr>
                         ))}
                         
-                        {/* Subtotal por blockchain */}
-                        <tr className="bg-blue-50 border-b-2 border-blue-200">
-                          <td className="px-4 py-2 font-semibold text-blue-900" colSpan={3}>
-                            Subtotal {blockchain}
-                          </td>
-                          <td className="px-4 py-2 text-right font-bold text-blue-900 font-mono">
-                            {subtotals[blockchain]?.dex?.toLocaleString() || '0'}
-                          </td>
-                        </tr>
+                        {/* Subtotal por blockchain (optimizado) */}
+                        <SubtotalRow 
+                          key={`dex-subtotal-${blockchain}`}
+                          blockchain={blockchain}
+                          count={subtotals[blockchain]?.dex || 0}
+                          type="dex"
+                        />
                       </React.Fragment>
                     ))}
                     
@@ -235,17 +364,11 @@ export function BlockchainTables() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(
-                      lendingSummary.reduce((groups, lending) => {
-                        if (!groups[lending.blockchain]) groups[lending.blockchain] = [];
-                        groups[lending.blockchain].push(lending);
-                        return groups;
-                      }, {} as { [key: string]: typeof lendingSummary })
-                    ).map(([blockchain, lendings]) => (
-                      <React.Fragment key={blockchain}>
+                    {Object.entries(lendingByBlockchain).map(([blockchain, lendings]) => (
+                      <React.Fragment key={`lending-group-${blockchain}`}>
                         {lendings.map((lending, lendingIndex) => (
                           <tr 
-                            key={`${lending.blockchain}-${lending.lending}`}
+                            key={`lending-${blockchain}-${lending.lending}`}
                             className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                           >
                             <td className="px-4 py-3">
@@ -289,15 +412,13 @@ export function BlockchainTables() {
                           </tr>
                         ))}
                         
-                        {/* Subtotal por blockchain */}
-                        <tr className="bg-green-50 border-b-2 border-green-200">
-                          <td className="px-4 py-2 font-semibold text-green-900" colSpan={3}>
-                            Subtotal {blockchain}
-                          </td>
-                          <td className="px-4 py-2 text-right font-bold text-green-900 font-mono">
-                            {subtotals[blockchain]?.lending?.toLocaleString() || '0'}
-                          </td>
-                        </tr>
+                        {/* Subtotal por blockchain (optimizado) */}
+                        <SubtotalRow 
+                          key={`lending-subtotal-${blockchain}`}
+                          blockchain={blockchain}
+                          count={subtotals[blockchain]?.lending || 0}
+                          type="lending"
+                        />
                       </React.Fragment>
                     ))}
                     
@@ -363,4 +484,8 @@ export function BlockchainTables() {
       </div>
     </div>
   );
-}
+});
+
+BlockchainTablesComponent.displayName = 'BlockchainTables';
+
+export { BlockchainTablesComponent as BlockchainTables };

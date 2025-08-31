@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // ============================================================================
 // TIPOS PARA TABLAS CONTABLES
@@ -100,14 +100,58 @@ export function useBlockchainTables(): UseBlockchainTablesReturn {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   // ============================================================================
-  // FUNCIÓN PARA CARGAR DATOS DE TABLAS
+  // CACHE REFS PARA DIFFING INTELIGENTE
+  // ============================================================================
+  
+  const previousDataRef = useRef<BlockchainTablesData | null>(null);
+  const isInitialLoadRef = useRef(true);
+
+  // ============================================================================
+  // FUNCIÓN DE DIFFING INTELIGENTE
+  // ============================================================================
+  
+  const hasDataChanged = useCallback((newData: BlockchainTablesData): boolean => {
+    if (!previousDataRef.current) return true;
+    
+    const prev = previousDataRef.current;
+    
+    // Comparar longitudes de arrays
+    if (prev.dexSummary.length !== newData.dexSummary.length ||
+        prev.lendingSummary.length !== newData.lendingSummary.length) {
+      return true;
+    }
+    
+    // Comparar totales (cambios más críticos)
+    if (prev.totals.dex.totalOpportunities !== newData.totals.dex.totalOpportunities ||
+        prev.totals.lending.totalOpportunities !== newData.totals.lending.totalOpportunities) {
+      return true;
+    }
+    
+    // Comparar oportunidades de protocolos individuales (cambios frecuentes)
+    for (let i = 0; i < prev.dexSummary.length; i++) {
+      if (prev.dexSummary[i].opportunities !== newData.dexSummary[i].opportunities) {
+        return true;
+      }
+    }
+    
+    for (let i = 0; i < prev.lendingSummary.length; i++) {
+      if (prev.lendingSummary[i].opportunities !== newData.lendingSummary[i].opportunities) {
+        return true;
+      }
+    }
+    
+    return false;
+  }, []);
+
+  // ============================================================================
+  // FUNCIÓN PARA CARGAR DATOS DE TABLAS (OPTIMIZADA ANTI-PARPADEO)
   // ============================================================================
 
   const loadTablesData = useCallback(async (showRefreshIndicator = false) => {
     try {
       if (showRefreshIndicator) {
         setIsRefreshing(true);
-      } else {
+      } else if (isInitialLoadRef.current) {
         setIsLoading(true);
       }
       
@@ -133,12 +177,28 @@ export function useBlockchainTables(): UseBlockchainTablesReturn {
       if (result.success && result.data) {
         const data: BlockchainTablesData = result.data;
         
-        // Update all states
-        setDexSummary(data.dexSummary);
-        setLendingSummary(data.lendingSummary);
-        setTotals(data.totals);
-        setByBlockchain(data.byBlockchain);
+        // ============================================================================
+        // DIFFING INTELIGENTE: Solo actualizar si hay cambios reales
+        // ============================================================================
         
+        const dataHasChanged = hasDataChanged(data);
+        
+        if (dataHasChanged || isInitialLoadRef.current) {
+          // Update states solo cuando hay cambios reales
+          setDexSummary(data.dexSummary);
+          setLendingSummary(data.lendingSummary);
+          setTotals(data.totals);
+          setByBlockchain(data.byBlockchain);
+          
+          // Almacenar data actual como referencia para próxima comparación
+          previousDataRef.current = data;
+          
+          if (isInitialLoadRef.current) {
+            isInitialLoadRef.current = false;
+          }
+        }
+        
+        // Actualizar timestamp siempre (para indicador de "última actualización")
         setLastUpdate(new Date());
         
         console.log('✅ [Hook] Blockchain tables data loaded successfully:', {
