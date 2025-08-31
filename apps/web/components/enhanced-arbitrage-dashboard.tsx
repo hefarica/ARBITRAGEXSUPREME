@@ -475,7 +475,8 @@ export function EnhancedArbitrageDashboard() {
     averageProfitability,
     executionTime,
     formatCurrency,
-    isDataFresh
+    isDataFresh,
+    lastUpdated
   } = useArbitrageSnapshot()
 
   // Debug logs
@@ -485,9 +486,12 @@ export function EnhancedArbitrageDashboard() {
       totalOpportunities,
       profitableOpportunities,
       isLoading,
-      error
+      error,
+      lastUpdated: lastUpdated ? new Date(lastUpdated).toLocaleString('es-ES') : 'null',
+      dataTimestamp: data?.timestamp ? new Date(data.timestamp).toLocaleString('es-ES') : 'null',
+      isDataFresh
     })
-  }, [data, totalOpportunities, profitableOpportunities, isLoading, error])
+  }, [data, totalOpportunities, profitableOpportunities, isLoading, error, lastUpdated, isDataFresh])
 
   if (error) {
     return (
@@ -550,7 +554,13 @@ export function EnhancedArbitrageDashboard() {
             <div className="flex items-center space-x-2 text-sm text-gray-500">
               <Clock className="w-4 h-4" />
               <span className={cn(isDataFresh ? "text-emerald-600" : "text-orange-600")}>
-                {data ? new Date(data.timestamp).toLocaleTimeString('es-ES') : '--:--'}
+                {lastUpdated ? new Date(lastUpdated).toLocaleString('es-ES', {
+                  hour: '2-digit',
+                  minute: '2-digit', 
+                  second: '2-digit',
+                  day: 'numeric',
+                  month: 'short'
+                }) : '--:--:--'}
               </span>
             </div>
 
