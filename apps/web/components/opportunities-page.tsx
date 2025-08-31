@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 // Layout removido - ahora usa el layout principal del sistema
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { type ArbitrageOpportunity, hasRequiredFields, toArbitrageOpportunity } from '@/types/arbitrage'
@@ -31,6 +31,145 @@ import { useArbitrageExecution } from '@/hooks/useArbitrageExecution'
 
 // Interfaz movida a /types/arbitrage.ts para evitar duplicación
 
+// Memoized Opportunity Row Component for anti-flicker optimization
+const OpportunityRowOptimized = React.memo(({ 
+  opportunity, 
+  isConnected, 
+  isExecuting, 
+  onExecute 
+}: {
+  opportunity: ArbitrageOpportunity;
+  isConnected: boolean;
+  isExecuting: boolean;
+  onExecute: (opp: ArbitrageOpportunity) => void;
+}) => {
+  const getRiskColor = (confidence: number) => {
+    if (confidence >= 0.8) return 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    if (confidence >= 0.6) return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+    return 'bg-red-100 text-red-800 border-red-200'
+  }
+
+  const getRiskLevel = (confidence: number) => {
+    if (confidence >= 0.8) return 'Bajo'
+    if (confidence >= 0.6) return 'Medio'
+    return 'Alto'
+  }
+
+  return (
+    <tr className="border-b hover:bg-slate-50 transition-colors">
+      <td className="p-4">
+        <div className="space-y-1">
+          <div className="font-medium text-slate-900">
+            {opportunity.tokenIn} → {opportunity.tokenOut}
+          </div>
+          <div className="flex items-center space-x-2 text-sm">
+            <Badge 
+              variant="outline" 
+              className={`${getNetworkColor(opportunity.blockchainFrom || '')} text-xs`}
+            >
+              {opportunity.blockchainFrom}
+            </Badge>
+            <span className="text-slate-500">→</span>
+            <Badge 
+              variant="outline" 
+              className={`${getNetworkColor(opportunity.blockchainTo || '')} text-xs`}
+            >
+              {opportunity.blockchainTo}
+            </Badge>
+          </div>
+        </div>
+      </td>
+      <td className="p-4">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <span className="font-medium text-slate-900">
+              {formatPercentage(opportunity.profitPercentage ?? 0)}
+            </span>
+            {(opportunity.profitPercentage ?? 0) > 5 ? (
+              <TrendingUp className="w-4 h-4 text-emerald-500" />
+            ) : (
+              <TrendingDown className="w-4 h-4 text-slate-400" />
+            )}
+          </div>
+          <div className="text-sm text-slate-600">
+            {opportunity.profitAmount ? formatCurrency(parseFloat(opportunity.profitAmount)) : 'Calculando...'}
+          </div>
+        </div>
+      </td>
+      <td className="p-4">
+        <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
+          {opportunity.strategy?.replace(/_/g, ' ').toUpperCase() || 'N/A'}
+        </Badge>
+      </td>
+      <td className="p-4">
+        <Badge 
+          variant="outline" 
+          className={`${getRiskColor(opportunity.confidence ?? 0)} text-xs`}
+        >
+          {getRiskLevel(opportunity.confidence ?? 0)}
+        </Badge>
+        <div className="text-xs text-slate-500 mt-1">
+          {formatPercentage((opportunity.confidence ?? 0) * 100)} confianza
+        </div>
+      </td>
+      <td className="p-4">
+        <div className="text-sm text-slate-600">
+          {opportunity.expiresAt ? formatTimeAgo(new Date(opportunity.expiresAt)) : 'N/A'}
+        </div>
+        {opportunity.expiresAt && (
+          <div className="text-xs text-slate-500">
+            <Clock className="w-3 h-3 inline mr-1" />
+            Expira pronto
+          </div>
+        )}
+      </td>
+      <td className="p-4">
+        <div className="text-sm font-medium text-slate-900">
+          {opportunity.volume ? formatCurrency(parseFloat(opportunity.volume)) : 'N/A'}
+        </div>
+      </td>
+      <td className="p-4 text-right">
+        <div className="flex items-center justify-end space-x-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-8"
+            onClick={() => window.open('#', '_blank')}
+          >
+            <ExternalLink className="w-3 h-3 mr-1" />
+            Ver
+          </Button>
+          
+          {isConnected ? (
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8"
+              onClick={() => onExecute(opportunity)}
+              disabled={isExecuting}
+            >
+              {isExecuting ? (
+                <>
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1"></div>
+                  Ejecutando...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3 h-3 mr-1" />
+                  Ejecutar
+                </>
+              )}
+            </Button>
+          ) : (
+            <Badge variant="secondary" className="text-xs">
+              Conecta Wallet
+            </Badge>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+})
+
 // Enhanced Opportunities Table with filters and detailed view
 function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPageChange, onExecute, isConnected }: { 
   opportunities: ArbitrageOpportunity[], 
@@ -59,25 +198,32 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
     }
   }
 
-  // Get unique strategies for filter
-  const strategies = Array.from(new Set(opportunities.map(opp => opp.strategy)))
+  // Get unique strategies for filter - memoized
+  const strategies = useMemo(() => 
+    Array.from(new Set(opportunities.map(opp => opp.strategy))), 
+    [opportunities]
+  )
 
-  const filteredAndSortedOpportunities = opportunities
-    .filter(opp => {
-      const statusMatch = filterStatus === 'all' || opp.blockchainFrom === filterStatus
-      const strategyMatch = filterStrategy === 'all' || opp.strategy === filterStrategy
-      return statusMatch && strategyMatch
-    })
-    .sort((a, b) => {
-      const aVal = a[sortField]
-      const bVal = b[sortField]
-      const direction = sortDirection === 'asc' ? 1 : -1
-      
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return (aVal - bVal) * direction
-      }
-      return String(aVal).localeCompare(String(bVal)) * direction
-    })
+  // Memoized filtered and sorted opportunities for performance
+  const filteredAndSortedOpportunities = useMemo(() => 
+    opportunities
+      .filter(opp => {
+        const statusMatch = filterStatus === 'all' || opp.blockchainFrom === filterStatus
+        const strategyMatch = filterStrategy === 'all' || opp.strategy === filterStrategy
+        return statusMatch && strategyMatch
+      })
+      .sort((a, b) => {
+        const aVal = a[sortField]
+        const bVal = b[sortField]
+        const direction = sortDirection === 'asc' ? 1 : -1
+        
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+          return (aVal - bVal) * direction
+        }
+        return String(aVal).localeCompare(String(bVal)) * direction
+      }),
+    [opportunities, filterStatus, filterStrategy, sortField, sortDirection]
+  )
 
   const getRiskColor = (confidence: number) => {
     if (confidence >= 0.8) return 'bg-emerald-100 text-emerald-800 border-emerald-200'
@@ -191,127 +337,13 @@ function EnhancedOpportunitiesTable({ opportunities, isLoading, pagination, onPa
             </thead>
             <tbody>
               {filteredAndSortedOpportunities.map((opp) => (
-                <tr key={opp.id} className="border-b hover:bg-slate-50 transition-colors">
-                  <td className="p-4">
-                    <div className="space-y-2">
-                      {/* Mostrar par de tokens */}
-                      <div className="font-medium text-slate-900">
-                        {opp.tokenIn}/{opp.tokenOut}
-                      </div>
-                      {opp.strategy === 'triangular_arbitrage' && (
-                        <div className="text-xs text-slate-500 mt-1">
-                          Estrategia Triangular
-                        </div>
-                      )}
-                      
-                      <div className="flex items-center space-x-2">
-                        <Badge variant="outline" className={getNetworkColor(opp.blockchainFrom || '')}>
-                          {opp.blockchainFrom}
-                        </Badge>
-                        {opp.blockchainFrom !== opp.blockchainTo && (
-                          <>
-                            <ArrowUpDown className="w-3 h-3" />
-                            <Badge variant="outline" className={getNetworkColor(opp.blockchainTo || '')}>
-                              {opp.blockchainTo}
-                            </Badge>
-                          </>
-                        )}
-                        {opp.strategy === 'triangular_arbitrage' && (
-                          <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-200">
-                            Triangular
-                          </Badge>
-                        )}
-                      </div>
-                      
-                      {/* Mostrar información de estrategia */}
-                      <div className="text-xs text-slate-500">
-                        Estrategia: {opp.strategy?.replace(/_/g, ' ').toUpperCase()}
-                      </div>
-                    </div>
-                  </td>
-                  
-                  <td className="p-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <TrendingUp className="w-4 h-4 text-emerald-600" />
-                        <span className="font-bold text-emerald-600">
-                          {formatPercentage(opp.profitPercentage ?? 0)}
-                        </span>
-                      </div>
-                      <div className="text-sm text-slate-600">
-                        {formatCurrency(parseFloat(opp.profitAmount ?? '0'))}
-                      </div>
-                    </div>
-                  </td>
-                  
-                  <td className="p-4">
-                    <div className="text-sm">
-                      <div className="font-medium text-slate-900 capitalize">
-                        {opp.strategy?.replace(/_/g, ' ')}
-                      </div>
-                      <div className="text-slate-600">
-                        Gas: {opp.gasEstimate} units
-                      </div>
-                    </div>
-                  </td>
-                  
-                  <td className="p-4">
-                    <Badge variant="outline" className={getRiskColor(opp.confidence ?? 0)}>
-                      {getRiskLevel(opp.confidence ?? 0)} ({Math.round((opp.confidence ?? 0) * 100)}%)
-                    </Badge>
-                  </td>
-                  
-                  <td className="p-4">
-                    <div className="text-sm">
-                      <div className="text-slate-900">
-                        {formatTimeAgo(opp.expiresAt as string | Date)}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {new Date(opp.expiresAt as string | Date).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  </td>
-                  
-                  <td className="p-4">
-                    <div className="text-sm">
-                      <div className="font-medium text-slate-900">
-                        {opp.volume}
-                      </div>
-                      <div className="text-slate-600">
-                        Volumen total
-                      </div>
-                    </div>
-                  </td>
-                  
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <Button 
-                        size="sm" 
-                        onClick={() => onExecute(opp)}
-                        disabled={!isConnected || isExecuting}
-                        className={cn(
-                          "bg-emerald-600 hover:bg-emerald-700",
-                          (!isConnected || isExecuting) && "bg-slate-400 hover:bg-slate-400 cursor-not-allowed"
-                        )}
-                      >
-                        {isExecuting ? (
-                          <>
-                            <Pause className="w-3 h-3 mr-1 animate-spin" />
-                            Ejecutando...
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-3 h-3 mr-1" />
-                            {isConnected ? 'Ejecutar Real' : 'Conectar Wallet'}
-                          </>
-                        )}
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        <ExternalLink className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
+                <OpportunityRowOptimized 
+                  key={`opp-${opp.id}-${opp.blockchainFrom}-${opp.tokenIn}`}
+                  opportunity={opp}
+                  isConnected={isConnected}
+                  isExecuting={isExecuting}
+                  onExecute={onExecute}
+                />
               ))}
             </tbody>
           </table>

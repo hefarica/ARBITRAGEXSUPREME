@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,208 @@ import { cn } from '@/lib/utils'
 import { useArbitrageSnapshot } from '@/hooks/useArbitrageSnapshot'
 
 // ============================================================================
+// MEMOIZED COMPONENTS FOR ANTI-FLICKER OPTIMIZATION
+// ============================================================================
+
+// Memoized Arbitrage Opportunity Row Component
+const ArbitrageOpportunityRow = React.memo(({ 
+  chain, 
+  index, 
+  opportunitiesByChain, 
+  formatCurrency, 
+  formatPercentage 
+}: {
+  chain: any;
+  index: number;
+  opportunitiesByChain: any;
+  formatCurrency: (value: number) => string;
+  formatPercentage: (value: number) => string;
+}) => {
+  const chainKey = String(chain.chainId || '')
+  const opportunities = (opportunitiesByChain as any)[chainKey] || []
+  const totalProfit = opportunities.reduce((sum: number, opp: any) => sum + (opp.profitUSD ?? 0), 0)
+  const avgROI = opportunities.length > 0 
+    ? opportunities.reduce((sum: number, opp: any) => sum + (opp.profitPercentage ?? 0), 0) / opportunities.length 
+    : 0
+
+  return (
+    <tr 
+      className={cn(
+        "hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-blue-50/50 transition-all duration-200",
+        index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+      )}
+    >
+      <td className="px-6 py-4">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-indigo-100 to-blue-200 rounded-full flex items-center justify-center">
+            <Globe className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div>
+            <div className="font-semibold text-gray-900">{chain.chainName}</div>
+            <div className="text-xs text-gray-500">Chain ID: {chain.chainId}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-6 py-4 text-right">
+        <div className="font-semibold text-gray-900">{opportunities.length}</div>
+        <div className="text-xs text-gray-500">detectadas</div>
+      </td>
+      <td className="px-6 py-4 text-right">
+        <div className="font-semibold text-emerald-600">{formatCurrency(totalProfit)}</div>
+        <div className="text-xs text-gray-500">estimado</div>
+      </td>
+      <td className="px-6 py-4 text-right">
+        <div className={cn(
+          "font-semibold",
+          avgROI > 2 ? "text-emerald-600" : avgROI > 1 ? "text-yellow-600" : "text-gray-600"
+        )}>
+          {formatPercentage(avgROI)}
+        </div>
+        <div className="text-xs text-gray-500">promedio</div>
+      </td>
+      <td className="px-6 py-4 text-right">
+        <div className="font-semibold text-blue-600">{formatCurrency(chain.totalTVL)}</div>
+        <div className="text-xs text-gray-500">liquidez</div>
+      </td>
+      <td className="px-6 py-4 text-center">
+        <Badge 
+          variant={opportunities.length > 0 ? "default" : "secondary"}
+          className={cn(
+            opportunities.length > 0 
+              ? "bg-emerald-100 text-emerald-700 border-emerald-300" 
+              : "bg-gray-100 text-gray-600 border-gray-300"
+          )}
+        >
+          {opportunities.length > 0 ? 'Activo' : 'Inactivo'}
+        </Badge>
+      </td>
+    </tr>
+  );
+})
+
+// Memoized DEX Protocol Row Component
+const DEXProtocolRow = React.memo(({ 
+  chain, 
+  index, 
+  formatCurrency 
+}: {
+  chain: any;
+  index: number;
+  formatCurrency: (value: number) => string;
+}) => (
+  <tr 
+    className={cn(
+      "hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-green-50/50 transition-all duration-200",
+      index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+    )}
+  >
+    <td className="px-6 py-4">
+      <div className="flex items-center space-x-3">
+        <div className="w-8 h-8 bg-gradient-to-br from-emerald-100 to-green-200 rounded-full flex items-center justify-center">
+          <Network className="w-4 h-4 text-emerald-600" />
+        </div>
+        <div>
+          <div className="font-semibold text-gray-900">{chain.chainName}</div>
+          <div className="text-xs text-gray-500">{chain.nativeToken}</div>
+        </div>
+      </div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-gray-900">{chain.dexMetrics.totalDexes}</div>
+      <div className="text-xs text-gray-500">protocolos</div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-emerald-600">{formatCurrency(chain.dexMetrics.totalTVL)}</div>
+      <div className="text-xs text-gray-500">liquidez</div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-blue-600">{chain.dexMetrics.flashLoanSupport}</div>
+      <div className="text-xs text-gray-500">soportados</div>
+    </td>
+    <td className="px-6 py-4">
+      <div className="space-y-1">
+        {chain.dexMetrics.topDexes.slice(0, 2).map((dex: any, i: number) => (
+          <div key={`${chain.chainId}-${dex.name}-${i}`} className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">{dex.name}</span>
+            <Badge variant="outline" className="text-xs">
+              {dex.type}
+            </Badge>
+          </div>
+        ))}
+      </div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-purple-600">{formatCurrency(chain.dexMetrics.averageTVL)}</div>
+      <div className="text-xs text-gray-500">por DEX</div>
+    </td>
+  </tr>
+))
+
+// Memoized Lending Protocol Row Component
+const LendingProtocolRow = React.memo(({ 
+  chain, 
+  index, 
+  formatCurrency, 
+  formatPercentage 
+}: {
+  chain: any;
+  index: number;
+  formatCurrency: (value: number) => string;
+  formatPercentage: (value: number) => string;
+}) => (
+  <tr 
+    className={cn(
+      "hover:bg-gradient-to-r hover:from-orange-50/50 hover:to-yellow-50/50 transition-all duration-200",
+      index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+    )}
+  >
+    <td className="px-6 py-4">
+      <div className="flex items-center space-x-3">
+        <div className="w-8 h-8 bg-gradient-to-br from-orange-100 to-yellow-200 rounded-full flex items-center justify-center">
+          <Database className="w-4 h-4 text-orange-600" />
+        </div>
+        <div>
+          <div className="font-semibold text-gray-900">{chain.chainName}</div>
+          <div className="text-xs text-gray-500">{chain.nativeToken}</div>
+        </div>
+      </div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-gray-900">{chain.lendingMetrics.totalProtocols}</div>
+      <div className="text-xs text-gray-500">activos</div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-orange-600">{formatCurrency(chain.lendingMetrics.totalTVL)}</div>
+      <div className="text-xs text-gray-500">depositado</div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className={cn(
+        "font-semibold",
+        chain.lendingMetrics.averageBorrowRate > 5 ? "text-red-600" : 
+        chain.lendingMetrics.averageBorrowRate > 3 ? "text-yellow-600" : "text-green-600"
+      )}>
+        {formatPercentage(chain.lendingMetrics.averageBorrowRate)}
+      </div>
+      <div className="text-xs text-gray-500">borrow APR</div>
+    </td>
+    <td className="px-6 py-4 text-right">
+      <div className="font-semibold text-blue-600">{chain.lendingMetrics.flashLoanSupport}</div>
+      <div className="text-xs text-gray-500">soportados</div>
+    </td>
+    <td className="px-6 py-4">
+      <div className="space-y-1">
+        {chain.lendingMetrics.topProtocols.slice(0, 2).map((protocol: any, i: number) => (
+          <div key={`${chain.chainId}-${protocol.name}-${i}`} className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">{protocol.name}</span>
+            <span className="text-xs text-gray-500">{formatPercentage(protocol.borrowRate)}</span>
+          </div>
+        ))}
+      </div>
+    </td>
+  </tr>
+))
+
+// ============================================================================
 // TABLA DE OPORTUNIDADES DE ARBITRAJE POR BLOCKCHAIN
 // ============================================================================
 
@@ -44,7 +246,27 @@ function ArbitrageOpportunitiesTable() {
     isLoading 
   } = useArbitrageSnapshot()
 
-  const opportunitiesByChain = getOpportunitiesByChain()
+  // Memoized data processing for performance
+  const opportunitiesByChain = useMemo(() => getOpportunitiesByChain(), [getOpportunitiesByChain])
+  
+  // Memoized total calculations
+  const totals = useMemo(() => {
+    const totalOpportunities = blockchainSummaries.reduce((sum: number, chain: any) => {
+      const chainKey = String(chain.chainId || '')
+      const opportunities = (opportunitiesByChain as any)[chainKey] || []
+      return sum + opportunities.length
+    }, 0)
+    
+    const totalProfit = blockchainSummaries.reduce((sum: number, chain: any) => {
+      const opportunities = ((opportunitiesByChain as any)[String(chain.chainId || '')] || [])
+      return sum + opportunities.reduce((chainSum: number, opp: any) => chainSum + (opp.profitUSD ?? 0), 0)
+    }, 0)
+    
+    const totalTVL = blockchainSummaries.reduce((sum, chain) => sum + chain.totalTVL, 0)
+    const activeNetworks = blockchainSummaries.length
+    
+    return { totalOpportunities, totalProfit, totalTVL, activeNetworks }
+  }, [blockchainSummaries, opportunitiesByChain])
 
   return (
     <Card className="bg-white/95 backdrop-blur-sm border border-indigo-200/30 shadow-xl">
@@ -88,104 +310,44 @@ function ArbitrageOpportunitiesTable() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {blockchainSummaries.map((chain, index) => {
-                const chainKey = String(chain.chainId || '')
-                const opportunities = (opportunitiesByChain as any)[chainKey] || []
-                const totalProfit = opportunities.reduce((sum: number, opp: any) => sum + (opp.profitUSD ?? 0), 0)
-                const avgROI = opportunities.length > 0 
-                  ? opportunities.reduce((sum: number, opp: any) => sum + (opp.profitPercentage ?? 0), 0) / opportunities.length 
-                  : 0
-
-                return (
-                  <tr 
-                    key={chain.chainId} 
-                    className={cn(
-                      "hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-blue-50/50 transition-all duration-200",
-                      index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                    )}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-100 to-blue-200 rounded-full flex items-center justify-center">
-                          <Globe className="w-4 h-4 text-indigo-600" />
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900">{chain.chainName}</div>
-                          <div className="text-xs text-gray-500">Chain ID: {chain.chainId}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="font-semibold text-gray-900">{opportunities.length}</div>
-                      <div className="text-xs text-gray-500">detectadas</div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="font-semibold text-emerald-600">{formatCurrency(totalProfit)}</div>
-                      <div className="text-xs text-gray-500">estimado</div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className={cn(
-                        "font-semibold",
-                        avgROI > 2 ? "text-emerald-600" : avgROI > 1 ? "text-yellow-600" : "text-gray-600"
-                      )}>
-                        {formatPercentage(avgROI)}
-                      </div>
-                      <div className="text-xs text-gray-500">promedio</div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="font-semibold text-blue-600">{formatCurrency(chain.totalTVL)}</div>
-                      <div className="text-xs text-gray-500">liquidez</div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <Badge 
-                        variant={opportunities.length > 0 ? "default" : "secondary"}
-                        className={cn(
-                          opportunities.length > 0 
-                            ? "bg-emerald-100 text-emerald-700 border-emerald-300" 
-                            : "bg-gray-100 text-gray-600 border-gray-300"
-                        )}
-                      >
-                        {opportunities.length > 0 ? 'Activo' : 'Inactivo'}
-                      </Badge>
-                    </td>
-                  </tr>
-                )
-              })}
+              {blockchainSummaries.map((chain, index) => (
+                <ArbitrageOpportunityRow 
+                  key={`arbitrage-${chain.chainId}-${chain.chainName}`}
+                  chain={chain}
+                  index={index}
+                  opportunitiesByChain={opportunitiesByChain}
+                  formatCurrency={formatCurrency}
+                  formatPercentage={formatPercentage}
+                />
+              ))}
             </tbody>
           </table>
         </div>
 
-        {/* Fila de totales */}
+        {/* Fila de totales - optimizada con datos memoizados */}
         <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-t border-indigo-200/50 p-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-indigo-600">
-                {blockchainSummaries.reduce((sum: number, chain: any) => {
-                  const chainKey = String(chain.chainId || '')
-                  const opportunities = (opportunitiesByChain as any)[chainKey] || []
-                  return sum + opportunities.length
-                }, 0)}
+                {totals.totalOpportunities}
               </div>
               <div className="text-sm text-gray-600">Total Oportunidades</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-emerald-600">
-                {formatCurrency(blockchainSummaries.reduce((sum: number, chain: any) => {
-                  const opportunities = ((opportunitiesByChain as any)[String(chain.chainId || '')] || [])
-                  return sum + opportunities.reduce((chainSum: number, opp: any) => chainSum + (opp.profitUSD ?? 0), 0)
-                }, 0))}
+                {formatCurrency(totals.totalProfit)}
               </div>
               <div className="text-sm text-gray-600">Profit Total Potencial</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">
-                {formatCurrency(blockchainSummaries.reduce((sum, chain) => sum + chain.totalTVL, 0))}
+                {formatCurrency(totals.totalTVL)}
               </div>
               <div className="text-sm text-gray-600">TVL Agregado</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-purple-600">
-                {blockchainSummaries.length}
+                {totals.activeNetworks}
               </div>
               <div className="text-sm text-gray-600">Redes Activas</div>
             </div>
@@ -208,7 +370,8 @@ function DEXProtocolsTable() {
     isLoading 
   } = useArbitrageSnapshot()
 
-  const dexMetrics = getDEXMetricsByType()
+  // Memoized data processing for performance
+  const dexMetrics = useMemo(() => getDEXMetricsByType(), [getDEXMetricsByType])
 
   return (
     <Card className="bg-white/95 backdrop-blur-sm border border-emerald-200/30 shadow-xl">
@@ -253,53 +416,12 @@ function DEXProtocolsTable() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {blockchainSummaries.map((chain, index) => (
-                <tr 
-                  key={chain.chainId} 
-                  className={cn(
-                    "hover:bg-gradient-to-r hover:from-emerald-50/50 hover:to-green-50/50 transition-all duration-200",
-                    index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                  )}
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-emerald-100 to-green-200 rounded-full flex items-center justify-center">
-                        <Network className="w-4 h-4 text-emerald-600" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900">{chain.chainName}</div>
-                        <div className="text-xs text-gray-500">{chain.nativeToken}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-gray-900">{chain.dexMetrics.totalDexes}</div>
-                    <div className="text-xs text-gray-500">protocolos</div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-emerald-600">{formatCurrency(chain.dexMetrics.totalTVL)}</div>
-                    <div className="text-xs text-gray-500">liquidez</div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-blue-600">{chain.dexMetrics.flashLoanSupport}</div>
-                    <div className="text-xs text-gray-500">soportados</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="space-y-1">
-                      {chain.dexMetrics.topDexes.slice(0, 2).map((dex, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-700">{dex.name}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {dex.type}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-purple-600">{formatCurrency(chain.dexMetrics.averageTVL)}</div>
-                    <div className="text-xs text-gray-500">por DEX</div>
-                  </td>
-                </tr>
+                <DEXProtocolRow 
+                  key={`dex-${chain.chainId}-${chain.chainName}`}
+                  chain={chain}
+                  index={index}
+                  formatCurrency={formatCurrency}
+                />
               ))}
             </tbody>
           </table>
@@ -336,7 +458,8 @@ function LendingProtocolsTable() {
     isLoading 
   } = useArbitrageSnapshot()
 
-  const lendingMetrics = getLendingMetrics()
+  // Memoized data processing for performance
+  const lendingMetrics = useMemo(() => getLendingMetrics(), [getLendingMetrics])
 
   return (
     <Card className="bg-white/95 backdrop-blur-sm border border-orange-200/30 shadow-xl">
@@ -381,57 +504,13 @@ function LendingProtocolsTable() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {blockchainSummaries.map((chain, index) => (
-                <tr 
-                  key={chain.chainId} 
-                  className={cn(
-                    "hover:bg-gradient-to-r hover:from-orange-50/50 hover:to-yellow-50/50 transition-all duration-200",
-                    index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                  )}
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-orange-100 to-yellow-200 rounded-full flex items-center justify-center">
-                        <Database className="w-4 h-4 text-orange-600" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900">{chain.chainName}</div>
-                        <div className="text-xs text-gray-500">{chain.nativeToken}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-gray-900">{chain.lendingMetrics.totalProtocols}</div>
-                    <div className="text-xs text-gray-500">activos</div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-orange-600">{formatCurrency(chain.lendingMetrics.totalTVL)}</div>
-                    <div className="text-xs text-gray-500">depositado</div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className={cn(
-                      "font-semibold",
-                      chain.lendingMetrics.averageBorrowRate > 5 ? "text-red-600" : 
-                      chain.lendingMetrics.averageBorrowRate > 3 ? "text-yellow-600" : "text-green-600"
-                    )}>
-                      {formatPercentage(chain.lendingMetrics.averageBorrowRate)}
-                    </div>
-                    <div className="text-xs text-gray-500">borrow APR</div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="font-semibold text-blue-600">{chain.lendingMetrics.flashLoanSupport}</div>
-                    <div className="text-xs text-gray-500">soportados</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="space-y-1">
-                      {chain.lendingMetrics.topProtocols.slice(0, 2).map((protocol, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-700">{protocol.name}</span>
-                          <span className="text-xs text-gray-500">{formatPercentage(protocol.borrowRate)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
+                <LendingProtocolRow 
+                  key={`lending-${chain.chainId}-${chain.chainName}`}
+                  chain={chain}
+                  index={index}
+                  formatCurrency={formatCurrency}
+                  formatPercentage={formatPercentage}
+                />
               ))}
             </tbody>
           </table>

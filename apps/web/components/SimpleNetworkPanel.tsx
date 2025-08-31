@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -9,6 +9,31 @@ import { useArbitrageSnapshot } from '@/hooks/useArbitrageSnapshot'
 import { useMetaMask } from '@/hooks/useMetaMask'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
+
+// ============================================================================
+// MEMOIZED COMPONENTS FOR ANTI-FLICKER OPTIMIZATION
+// ============================================================================
+
+// Memoized Network Chain Row Component
+const NetworkChainRowOptimized = React.memo(({ 
+  chain, 
+  formatCurrency 
+}: {
+  chain: any;
+  formatCurrency: (value: number) => string;
+}) => (
+  <div className="flex items-center justify-between p-2 bg-white/50 rounded-lg border border-slate-200/30 hover:bg-white/70 transition-colors">
+    <div className="flex items-center space-x-2">
+      <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+      <span className="text-xs font-medium text-gray-700 truncate">
+        {chain.chainName.replace(' Mainnet', '').replace(' Network', '')}
+      </span>
+    </div>
+    <span className="text-xs text-gray-500">
+      {formatCurrency(chain.totalTVL)}
+    </span>
+  </div>
+))
 
 /**
  * Panel simplificado de sincronización de redes que usa datos reales
@@ -30,16 +55,25 @@ export function SimpleNetworkPanel() {
     isLoading: metamaskLoading
   } = useMetaMask()
 
-  // Estadísticas combinadas: snapshot + MetaMask
-  const stats = {
+  // Memoized statistics for performance
+  const stats = useMemo(() => ({
     totalImplemented: 20, // Total de redes soportadas
     connected: blockchainSummaries.length, // Redes con datos de arbitraje
     installedInMetaMask: installedNetworks.length, // Redes instaladas en MetaMask
     opportunities: totalOpportunities,
     totalTVL: getTotalTVL()
-  }
+  }), [blockchainSummaries.length, installedNetworks.length, totalOpportunities, getTotalTVL])
 
-  const syncPercentage = Math.round((stats.connected / stats.totalImplemented) * 100)
+  const syncPercentage = useMemo(() => 
+    Math.round((stats.connected / stats.totalImplemented) * 100),
+    [stats.connected, stats.totalImplemented]
+  )
+  
+  // Memoized top chains for performance
+  const topChains = useMemo(() => 
+    blockchainSummaries.slice(0, 8),
+    [blockchainSummaries]
+  )
 
   return (
     <Card className="bg-white/80 backdrop-blur-sm border border-slate-200/40 rounded-2xl shadow-lg shadow-slate-500/10 transition-all duration-300">
@@ -138,26 +172,17 @@ export function SimpleNetworkPanel() {
             </div>
           </div>
 
-          {/* Lista compacta de redes principales */}
+          {/* Lista compacta de redes principales - OPTIMIZADA */}
           {blockchainSummaries.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-gray-700 mb-2">Redes Principales Activas</h4>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                {blockchainSummaries.slice(0, 8).map((chain) => (
-                  <div
-                    key={chain.chainId}
-                    className="flex items-center justify-between p-2 bg-white/50 rounded-lg border border-slate-200/30 hover:bg-white/70 transition-colors"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                      <span className="text-xs font-medium text-gray-700 truncate">
-                        {chain.chainName.replace(' Mainnet', '').replace(' Network', '')}
-                      </span>
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {formatCurrency(chain.totalTVL)}
-                    </span>
-                  </div>
+                {topChains.map((chain) => (
+                  <NetworkChainRowOptimized
+                    key={`simple-network-${chain.chainId}-${chain.chainName}`}
+                    chain={chain}
+                    formatCurrency={formatCurrency}
+                  />
                 ))}
               </div>
               

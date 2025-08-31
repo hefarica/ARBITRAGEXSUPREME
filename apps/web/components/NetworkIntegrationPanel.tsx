@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,12 +28,16 @@ import { useDashboardData } from '@/hooks/useDashboardData'
 import { useArbitrageSnapshot } from '@/hooks/useArbitrageSnapshot'
 import { BlockchainLogo } from '@/components/BlockchainLogos'
 
-// Componente para mostrar el estado de una red individual
-function NetworkIntegrationCard({ 
+// ============================================================================
+// MEMOIZED COMPONENTS FOR ANTI-FLICKER OPTIMIZATION
+// ============================================================================
+
+// Memoized Network Integration Card Component
+const NetworkIntegrationCardOptimized = React.memo(({ 
   status, 
   onAddNetwork, 
   onSwitchNetwork,
-  isLoading = false,
+  isLoading,
   tokenPrice,
   walletBalance
 }: { 
@@ -43,7 +47,7 @@ function NetworkIntegrationCard({
   isLoading?: boolean
   tokenPrice?: { price: number; change24h: number; symbol: string }
   walletBalance?: { nativeBalance: number; usdValue: number; formattedBalance: string }
-}) {
+}) => {
   const [isAdding, setIsAdding] = useState(false)
   const [isSwitching, setIsSwitching] = useState(false)
   
@@ -230,11 +234,19 @@ function NetworkIntegrationCard({
         </div>
       </CardContent>
     </Card>
-  )
-}
+  );
+})
 
-// Panel de estadísticas de sincronización INTEGRADO CON DASHBOARD
-function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading, dashboardData, formatUsdBalance, getTotalUsdBalance }: {
+// Memoized Sync Stats Panel Component
+const SyncStatsPanelOptimized = React.memo(({ 
+  stats, 
+  syncPercentage, 
+  onSyncAll, 
+  isLoading, 
+  dashboardData, 
+  formatUsdBalance, 
+  getTotalUsdBalance 
+}: {
   stats: any
   syncPercentage: number
   onSyncAll: () => Promise<void>
@@ -242,7 +254,7 @@ function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading, dashboard
   dashboardData?: any
   formatUsdBalance?: (value: number) => string
   getTotalUsdBalance?: () => number
-}) {
+}) => {
   const [isSyncing, setIsSyncing] = useState(false)
 
   const handleSyncAll = async () => {
@@ -316,8 +328,12 @@ function SyncStatsPanel({ stats, syncPercentage, onSyncAll, isLoading, dashboard
         </div>
       </CardContent>
     </Card>
-  )
-}
+  );
+})
+
+
+
+
 
 // Componente principal del panel de integración - TOTALMENTE INTEGRADO CON DASHBOARD REAL
 export function NetworkIntegrationPanel() {
@@ -359,16 +375,20 @@ export function NetworkIntegrationPanel() {
   // Hook para obtener balances de wallet (ahora conectado al backend real)
   const { balances, isLoading: balancesLoading, formatUsdBalance, getTotalUsdBalance } = useWalletBalance(chainIds, metamask.isConnected)
 
-  // Estado del panel de integración usando datos reales
-  const realStats = {
+  // Memoized state calculations for performance
+  const realStats = useMemo(() => ({
     totalImplemented: 20, // Sabemos que tenemos 20 blockchains
     matched: blockchainSummaries.length, // Redes realmente conectadas
     missing: Math.max(0, 20 - blockchainSummaries.length),
     needsUpdate: 0
-  }
-  const realSyncPercentage = realStats.totalImplemented > 0 
-    ? Math.round((realStats.matched / realStats.totalImplemented) * 100) 
-    : 0
+  }), [blockchainSummaries.length])
+  
+  const realSyncPercentage = useMemo(() => 
+    realStats.totalImplemented > 0 
+      ? Math.round((realStats.matched / realStats.totalImplemented) * 100) 
+      : 0,
+    [realStats.totalImplemented, realStats.matched]
+  )
 
   if (!metamask.isMetaMaskInstalled) {
     return (
@@ -455,8 +475,8 @@ export function NetworkIntegrationPanel() {
         </div>
       </div>
 
-      {/* Panel de estadísticas INTEGRADO CON DATOS REALES DEL DASHBOARD */}
-      <SyncStatsPanel
+      {/* Panel de estadísticas INTEGRADO CON DATOS REALES DEL DASHBOARD - OPTIMIZADO */}
+      <SyncStatsPanelOptimized
         stats={realStats}
         syncPercentage={realSyncPercentage}
         onSyncAll={syncAllNetworks}
@@ -531,8 +551,8 @@ export function NetworkIntegrationPanel() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {integrationStatus.map((status) => (
-              <NetworkIntegrationCard
-                key={status.chainId}
+              <NetworkIntegrationCardOptimized
+                key={`network-${status.chainId}-${status.chainId}`}
                 status={status}
                 onAddNetwork={addNetworkToMetamask}
                 onSwitchNetwork={switchToNetwork}

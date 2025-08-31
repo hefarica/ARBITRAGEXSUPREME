@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ConsolidatedSnapshot, BlockchainSummary } from '@/types/defi'
 import type { ArbitrageOpportunity } from '@/types/arbitrage'
 
@@ -19,9 +19,65 @@ export function useArbitrageSnapshot() {
     lastUpdated: null
   })
 
-  // Función para obtener el snapshot consolidado
-  const fetchSnapshot = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }))
+  // ============================================================================
+  // CACHE REFS PARA DIFFING INTELIGENTE ANTI-PARPADEO
+  // ============================================================================
+  
+  const previousDataRef = useRef<ConsolidatedSnapshot | null>(null);
+  const isInitialLoadRef = useRef(true);
+
+  // ============================================================================
+  // FUNCIÓN DE DIFFING INTELIGENTE PARA ARBITRAGE DATA
+  // ============================================================================
+  
+  const hasArbitrageDataChanged = useCallback((newData: ConsolidatedSnapshot): boolean => {
+    if (!previousDataRef.current || isInitialLoadRef.current) return true;
+    
+    const prev = previousDataRef.current;
+    
+    // Comparar número de oportunidades
+    if (prev.totalOpportunities !== newData.totalOpportunities ||
+        prev.profitableOpportunities !== newData.profitableOpportunities) {
+      return true;
+    }
+    
+    // Comparar oportunidades individuales (cambios críticos)
+    if (prev.arbitrageData?.opportunities?.length !== newData.arbitrageData?.opportunities?.length) {
+      return true;
+    }
+    
+    // Comparar profit de las primeras 10 oportunidades (más visibles)
+    if (prev.arbitrageData?.opportunities && newData.arbitrageData?.opportunities) {
+      const prevTop10 = prev.arbitrageData.opportunities.slice(0, 10);
+      const newTop10 = newData.arbitrageData.opportunities.slice(0, 10);
+      
+      for (let i = 0; i < Math.min(prevTop10.length, newTop10.length); i++) {
+        if (prevTop10[i]?.profitUSD !== newTop10[i]?.profitUSD ||
+            prevTop10[i]?.profitPercentage !== newTop10[i]?.profitPercentage) {
+          return true;
+        }
+      }
+    }
+    
+    // Comparar métricas de rendimiento principales
+    if (prev.averageProfitability !== newData.averageProfitability ||
+        prev.totalTVL !== newData.totalTVL) {
+      return true;
+    }
+    
+    return false;
+  }, []);
+
+  // ============================================================================
+  // FUNCIÓN PARA OBTENER SNAPSHOT (OPTIMIZADA ANTI-PARPADEO)
+  // ============================================================================
+  
+  const fetchSnapshot = useCallback(async (showRefreshIndicator = false) => {
+    if (showRefreshIndicator) {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+    } else if (isInitialLoadRef.current) {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+    }
 
     try {
       console.log('🔍 [DEBUG] Fetching dashboard data from /api/dashboard/complete...')
@@ -102,13 +158,38 @@ export function useArbitrageSnapshot() {
           timestamp: new Date(result.timestamp).getTime()
         }
 
-        setState({
-          data: adaptedData,
-          isLoading: false,
-          error: null,
-          lastUpdated: Date.now()
-        })
-        console.log('✅ [DEBUG] State updated successfully with dashboard data')
+        // ============================================================================
+        // DIFFING INTELIGENTE: Solo actualizar si hay cambios reales
+        // ============================================================================
+        
+        const dataHasChanged = hasArbitrageDataChanged(adaptedData);
+        
+        if (dataHasChanged || isInitialLoadRef.current) {
+          // Update state solo cuando hay cambios reales
+          setState({
+            data: adaptedData,
+            isLoading: false,
+            error: null,
+            lastUpdated: Date.now()
+          });
+          
+          // Almacenar data actual como referencia para próxima comparación
+          previousDataRef.current = adaptedData;
+          
+          if (isInitialLoadRef.current) {
+            isInitialLoadRef.current = false;
+          }
+          
+          console.log('✅ [DEBUG] State updated with CHANGES detected in arbitrage data');
+        } else {
+          // Solo actualizar timestamp para indicar que se intentó refrescar
+          setState(prev => ({
+            ...prev,
+            isLoading: false,
+            lastUpdated: Date.now()
+          }));
+          console.log('📊 [DEBUG] No significant changes detected, keeping current state');
+        }
       } else {
         throw new Error('Dashboard API returned error status')
       }
@@ -127,16 +208,16 @@ export function useArbitrageSnapshot() {
     fetchSnapshot()
   }, [fetchSnapshot])
 
-  // Auto-refresh cada 5 segundos (matching the cache TTL)
+  // Auto-refresh cada 5 segundos con diffing inteligente (anti-parpadeo)
   useEffect(() => {
     const interval = setInterval(() => {
       if (!state.isLoading) {
-        fetchSnapshot()
+        fetchSnapshot(false); // No mostrar indicador de carga en auto-refresh
       }
-    }, 5000)
+    }, 5000);
 
-    return () => clearInterval(interval)
-  }, [state.isLoading, fetchSnapshot])
+    return () => clearInterval(interval);
+  }, [state.isLoading, fetchSnapshot]);
 
   // ============================================================================
   // FUNCIONES DERIVADAS PARA ANÁLISIS DE DATOS
@@ -245,7 +326,7 @@ export function useArbitrageSnapshot() {
     lastUpdated: state.lastUpdated,
     
     // Funciones de control
-    refresh: fetchSnapshot,
+    refresh: () => fetchSnapshot(true), // Con indicador de carga manual
     
     // Funciones derivadas de análisis
     getOpportunitiesByChain,
