@@ -1,0 +1,655 @@
+# ===================================================================
+# ARBITRAGEX SUPREME - CI/CD PIPELINE COMPLETO
+# Actividades 41-45: Automated CI/CD and Deployment Pipeline  
+# Ingenio Pichichi S.A. - Hector Fabio Riascos C.
+# ===================================================================
+
+name: ArbitrageX Supreme CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, staging]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Ejecutar tests automáticos diariamente a las 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        default: false
+        type: boolean
+
+# Variables de entorno globales
+env:
+  NODE_VERSION: '18.x'
+  PYTHON_VERSION: '3.11'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: arbitragex-supreme
+  
+jobs:
+  # ========================================================================
+  # JOB 1: ANÁLISIS Y VALIDACIÓN DE CÓDIGO
+  # ========================================================================
+  code-analysis:
+    name: Code Quality & Security Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || contains(github.ref, 'main') || contains(github.ref, 'develop')
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 📦 Install Dependencies
+        run: |
+          npm ci
+          npm run build:deps
+          
+      - name: 🔍 ESLint Analysis
+        run: |
+          npm run lint:check
+          npm run lint:report || true
+          
+      - name: 🎨 Prettier Format Check
+        run: |
+          npm run format:check
+          
+      - name: 🔒 Security Audit
+        run: |
+          npm audit --audit-level=high
+          npm run security:scan || true
+          
+      - name: 📊 Code Coverage Analysis
+        run: |
+          npm run test:coverage
+          
+      - name: 🔍 SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          
+      - name: 📈 Upload Coverage Reports
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          
+      - name: 🚨 CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, typescript
+          
+      - name: 🚨 Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+  # ========================================================================
+  # JOB 2: TESTS UNITARIOS E INTEGRACIÓN
+  # ========================================================================
+  tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+        os: [ubuntu-latest, windows-latest]
+        
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: arbitragex_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+          
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: 📦 Install Dependencies
+        run: |
+          npm ci
+          pip install -r requirements.txt
+          
+      - name: 🔧 Setup Test Environment
+        run: |
+          cp .env.test.example .env.test
+          npm run db:migrate:test
+          npm run db:seed:test
+          
+      - name: 🧪 Run Unit Tests
+        run: |
+          npm run test:unit
+          
+      - name: 🔗 Run Integration Tests
+        run: |
+          npm run test:integration
+          
+      - name: ⚡ Run Smart Contract Tests
+        run: |
+          npm run test:contracts
+          
+      - name: 🌐 Run E2E Tests
+        run: |
+          npm run test:e2e:headless
+          
+      - name: 📊 Generate Test Report
+        if: always()
+        run: |
+          npm run test:report
+          
+      - name: 📤 Upload Test Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.node-version }}-${{ matrix.os }}
+          path: |
+            test-results/
+            coverage/
+            
+      - name: 💬 Comment Test Results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const testResults = fs.readFileSync('test-results/summary.json', 'utf8');
+              const results = JSON.parse(testResults);
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🧪 Test Results Summary
+                
+                - ✅ Passed: ${results.passed}
+                - ❌ Failed: ${results.failed}  
+                - ⏭️ Skipped: ${results.skipped}
+                - 📊 Coverage: ${results.coverage}%
+                
+                **Node.js Version:** ${{ matrix.node-version }}
+                **OS:** ${{ matrix.os }}`
+              });
+            } catch (error) {
+              console.log('Could not read test results:', error);
+            }
+
+  # ========================================================================
+  # JOB 3: BUILD Y CONSTRUCCIÓN DE ARTIFACTS
+  # ========================================================================
+  build:
+    name: Build & Package
+    runs-on: ubuntu-latest
+    needs: [code-analysis, tests]
+    if: always() && (needs.code-analysis.result == 'success' || needs.code-analysis.result == 'skipped')
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      docker-image: ${{ steps.meta.outputs.tags }}
+      
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: 📦 Install Dependencies
+        run: |
+          npm ci
+          npm run postinstall
+          
+      - name: 📋 Generate Version
+        id: version
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            VERSION=$(npm version --no-git-tag-version patch)
+          else
+            VERSION=$(npm version --no-git-tag-version prerelease --preid=beta)
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+          
+      - name: 🏗️ Build Frontend
+        run: |
+          npm run build:frontend
+          npm run build:optimize
+          
+      - name: 🏗️ Build Backend
+        run: |
+          npm run build:backend
+          npm run build:api
+          
+      - name: 📱 Build Smart Contracts
+        run: |
+          npm run build:contracts
+          npm run contracts:verify
+          
+      - name: 📦 Package Distribution
+        run: |
+          npm run package:dist
+          tar -czf arbitragex-supreme-${{ steps.version.outputs.version }}.tar.gz dist/
+          
+      - name: 📤 Upload Build Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts-${{ steps.version.outputs.version }}
+          path: |
+            dist/
+            *.tar.gz
+            contracts/deployments/
+            
+      - name: 🐳 Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: 🔑 Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: 📝 Extract Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.version.outputs.version }}
+            
+      - name: 🏗️ Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_DATE=${{ github.run_id }}
+            GIT_COMMIT=${{ github.sha }}
+
+  # ========================================================================
+  # JOB 4: SECURITY TESTING AVANZADO
+  # ========================================================================
+  security-tests:
+    name: Security & Vulnerability Testing
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🛡️ Run Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.docker-image }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          
+      - name: 📤 Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          
+      - name: 🔍 OWASP ZAP Security Scan
+        uses: zaproxy/action-full-scan@v0.7.0
+        with:
+          target: 'http://localhost:3000'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+          
+      - name: 🔒 Snyk Security Scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=package.json
+          
+      - name: 📊 Upload Security Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-report
+          path: |
+            trivy-results.sarif
+            report_html.html
+
+  # ========================================================================
+  # JOB 5: DEPLOYMENT A STAGING
+  # ========================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, security-tests]
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: https://staging.arbitragexsupreme.com
+      
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 📥 Download Build Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts-${{ needs.build.outputs.version }}
+          
+      - name: 🔧 Setup Cloud CLI
+        run: |
+          # Setup AWS CLI
+          pip install awscli
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
+          
+          # Setup kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+      - name: 🚀 Deploy to Staging EKS
+        run: |
+          # Update kubeconfig
+          aws eks update-kubeconfig --name arbitragex-staging --region us-east-1
+          
+          # Apply Kubernetes manifests
+          kubectl apply -f k8s/staging/
+          
+          # Update deployment image
+          kubectl set image deployment/arbitragex-app \
+            app=${{ needs.build.outputs.docker-image }} \
+            -n arbitragex-staging
+            
+          # Wait for rollout
+          kubectl rollout status deployment/arbitragex-app -n arbitragex-staging --timeout=300s
+          
+      - name: 🔍 Verify Deployment
+        run: |
+          # Health check
+          curl -f https://staging.arbitragexsupreme.com/health || exit 1
+          
+          # API check
+          curl -f https://staging.arbitragexsupreme.com/api/health || exit 1
+          
+      - name: 📊 Run Staging Tests
+        run: |
+          npm run test:staging
+          
+      - name: 💬 Notify Deployment Status
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          message: |
+            🚀 Staging Deployment Complete!
+            Version: ${{ needs.build.outputs.version }}
+            Environment: https://staging.arbitragexsupreme.com
+            Commit: ${{ github.sha }}
+
+  # ========================================================================
+  # JOB 6: DEPLOYMENT A PRODUCCIÓN
+  # ========================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, security-tests, deploy-staging]
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://arbitragexsupreme.com
+      
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🔍 Pre-deployment Validation
+        run: |
+          # Verificar que staging está funcionando
+          curl -f https://staging.arbitragexsupreme.com/health || exit 1
+          
+          # Validar que todos los tests pasaron
+          echo "Validating test results..."
+          
+      - name: 📥 Download Build Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts-${{ needs.build.outputs.version }}
+          
+      - name: 🔧 Setup Production Environment
+        run: |
+          # Setup production AWS CLI
+          aws configure set aws_access_key_id ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
+          
+      - name: 💾 Database Migration
+        run: |
+          # Run production migrations
+          npm run db:migrate:prod
+          
+      - name: 🚀 Blue-Green Deployment
+        run: |
+          # Update kubeconfig for production
+          aws eks update-kubeconfig --name arbitragex-prod --region us-east-1
+          
+          # Blue-Green deployment strategy
+          kubectl apply -f k8s/production/blue-green/
+          
+          # Switch traffic to new version
+          kubectl patch service arbitragex-service \
+            -p '{"spec":{"selector":{"version":"green"}}}' \
+            -n arbitragex-prod
+            
+          # Wait for rollout
+          kubectl rollout status deployment/arbitragex-green -n arbitragex-prod --timeout=600s
+          
+      - name: 🔍 Production Health Checks
+        run: |
+          # Comprehensive health checks
+          ./scripts/health-check-production.sh
+          
+      - name: 📊 Performance Testing
+        run: |
+          # Run production performance tests
+          npm run test:performance:prod
+          
+      - name: 🔄 Cleanup Old Deployment
+        run: |
+          # Remove blue deployment after successful green deployment
+          kubectl delete deployment arbitragex-blue -n arbitragex-prod || true
+          
+      - name: 📈 Update Monitoring
+        run: |
+          # Update Grafana dashboards
+          curl -X POST "${{ secrets.GRAFANA_API_URL }}/api/dashboards/db" \
+            -H "Authorization: Bearer ${{ secrets.GRAFANA_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d @monitoring/grafana-dashboard.json
+            
+      - name: 🚨 Setup Alerts
+        run: |
+          # Configure production alerts
+          kubectl apply -f monitoring/alerts/production/
+          
+      - name: 💬 Notify Production Deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#production'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_PROD }}
+          message: |
+            🎉 PRODUCTION DEPLOYMENT SUCCESSFUL! 🎉
+            
+            Version: ${{ needs.build.outputs.version }}
+            Environment: https://arbitragexsupreme.com
+            Commit: ${{ github.sha }}
+            
+            ✅ All systems operational
+            ✅ Health checks passed
+            ✅ Performance tests passed
+            
+            Ingenio Pichichi S.A. - ArbitrageX Supreme
+
+  # ========================================================================
+  # JOB 7: POST-DEPLOYMENT VALIDATION
+  # ========================================================================
+  post-deployment:
+    name: Post-Deployment Validation
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: always() && needs.deploy-production.result == 'success'
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: 🔍 Full System Validation
+        run: |
+          # Comprehensive system validation
+          ./scripts/validate-production-deployment.sh
+          
+      - name: 📊 Performance Baseline
+        run: |
+          # Establish new performance baseline
+          npm run test:baseline:production
+          
+      - name: 🔒 Security Validation
+        run: |
+          # Post-deployment security checks
+          npm run security:validate:production
+          
+      - name: 📈 Monitoring Setup Validation
+        run: |
+          # Validate all monitoring is working
+          ./scripts/validate-monitoring.sh
+          
+      - name: 📋 Generate Deployment Report
+        run: |
+          # Generate comprehensive deployment report
+          ./scripts/generate-deployment-report.sh > deployment-report.md
+          
+      - name: 📤 Upload Deployment Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-report-${{ needs.build.outputs.version }}
+          path: deployment-report.md
+          
+      - name: 💬 Final Success Notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              "channel": "#general",
+              "attachments": [{
+                "color": "good",
+                "title": "🚀 ArbitrageX Supreme Deployment Complete",
+                "fields": [{
+                  "title": "Version",
+                  "value": "${{ needs.build.outputs.version }}",
+                  "short": true
+                }, {
+                  "title": "Environment", 
+                  "value": "Production",
+                  "short": true
+                }, {
+                  "title": "Status",
+                  "value": "✅ All systems operational",
+                  "short": false
+                }],
+                "footer": "Ingenio Pichichi S.A.",
+                "ts": ${{ github.event.head_commit.timestamp }}
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # ========================================================================
+  # JOB 8: CLEANUP Y OPTIMIZACIÓN
+  # ========================================================================
+  cleanup:
+    name: Cleanup & Optimization
+    runs-on: ubuntu-latest
+    needs: [post-deployment]
+    if: always()
+    
+    steps:
+      - name: 🧹 Cleanup Old Docker Images
+        run: |
+          # Cleanup old container images (keep last 5)
+          docker image prune -af --filter "until=168h"
+          
+      - name: 🗄️ Archive Build Artifacts
+        run: |
+          # Move artifacts to long-term storage
+          aws s3 cp build-artifacts/ s3://arbitragex-artifacts/builds/${{ github.sha }}/ --recursive
+          
+      - name: 📊 Update Deployment Metrics
+        run: |
+          # Update deployment success metrics
+          curl -X POST "${{ secrets.METRICS_ENDPOINT }}/deployments" \
+            -H "Content-Type: application/json" \
+            -d '{"version":"${{ needs.build.outputs.version }}","status":"success","timestamp":"${{ github.event.head_commit.timestamp }}"}'

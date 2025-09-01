@@ -1,0 +1,481 @@
+# ===================================================================
+# ARBITRAGEX SUPREME - DOCKER COMPOSE PRODUCTION
+# Actividades 41-45: Production Docker Configuration
+# Ingenio Pichichi S.A. - Hector Fabio Riascos C.
+# ===================================================================
+
+version: '3.8'
+
+networks:
+  arbitragex_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_cache:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+services:
+  # ========================================================================
+  # DATABASE SERVICES
+  # ========================================================================
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: arbitragex_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-arbitragex_prod}
+      POSTGRES_USER: ${POSTGRES_USER:-arbitragex_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/backups:/backups
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - arbitragex_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arbitragex_user} -d ${POSTGRES_DB:-arbitragex_prod}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=256MB
+        -c effective_cache_size=1GB
+        -c maintenance_work_mem=64MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  redis:
+    image: redis:7-alpine
+    container_name: arbitragex_redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - arbitragex_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # ========================================================================
+  # APPLICATION SERVICES
+  # ========================================================================
+  
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+      args:
+        NODE_ENV: production
+        BUILD_VERSION: ${BUILD_VERSION:-latest}
+    image: arbitragex-supreme:${BUILD_VERSION:-latest}
+    container_name: arbitragex_app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-arbitragex_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arbitragex_prod}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      
+      # Blockchain Configuration
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL}
+      ARBITRUM_RPC_URL: ${ARBITRUM_RPC_URL}
+      OPTIMISM_RPC_URL: ${OPTIMISM_RPC_URL}
+      BSC_RPC_URL: ${BSC_RPC_URL}
+      
+      # API Keys
+      ALCHEMY_API_KEY: ${ALCHEMY_API_KEY}
+      INFURA_API_KEY: ${INFURA_API_KEY}
+      MORALIS_API_KEY: ${MORALIS_API_KEY}
+      COINGECKO_API_KEY: ${COINGECKO_API_KEY}
+      
+      # External Services
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY}
+      
+      # Security
+      RATE_LIMIT_WINDOW: 900000
+      RATE_LIMIT_MAX: 100
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://arbitragexsupreme.com}
+      
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+      - ./cache:/app/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - arbitragex_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+
+  # ========================================================================
+  # API SERVICES
+  # ========================================================================
+  
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        NODE_ENV: production
+    image: arbitragex-api:${BUILD_VERSION:-latest}
+    container_name: arbitragex_api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-arbitragex_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arbitragex_prod}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      API_RATE_LIMIT: 1000
+      API_TIMEOUT: 30000
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - arbitragex_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 15s
+
+  # ========================================================================
+  # BLOCKCHAIN SERVICES
+  # ========================================================================
+  
+  blockchain_monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.blockchain
+    image: arbitragex-blockchain:${BUILD_VERSION:-latest}
+    container_name: arbitragex_blockchain
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL}
+      ARBITRUM_RPC_URL: ${ARBITRUM_RPC_URL}
+      MONITOR_INTERVAL: 5000
+      MAX_BLOCK_DELAY: 10
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # ========================================================================
+  # REVERSE PROXY & LOAD BALANCER
+  # ========================================================================
+  
+  nginx:
+    image: nginx:1.24-alpine
+    container_name: arbitragex_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infrastructure/ssl:/etc/nginx/ssl:ro
+      - ./public:/var/www/public:ro
+      - nginx_cache:/var/cache/nginx
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - app
+      - api
+    networks:
+      - arbitragex_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ========================================================================
+  # MONITORING SERVICES
+  # ========================================================================
+  
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: arbitragex_prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.route-prefix=/'
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: arbitragex_grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      GF_SERVER_ROOT_URL: https://monitoring.arbitragexsupreme.com
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.3'
+
+  node_exporter:
+    image: prom/node-exporter:v1.6.0
+    container_name: arbitragex_node_exporter
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: arbitragex_cadvisor
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.2'
+
+  # ========================================================================
+  # UTILITY SERVICES
+  # ========================================================================
+  
+  backup_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    image: arbitragex-backup:${BUILD_VERSION:-latest}
+    container_name: arbitragex_backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-arbitragex_prod}
+      POSTGRES_USER: ${POSTGRES_USER:-arbitragex_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${BACKUP_S3_BUCKET}
+      BACKUP_SCHEDULE: "0 2 * * *"  # Daily at 2 AM
+      BACKUP_RETENTION_DAYS: 30
+    volumes:
+      - ./backups:/backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.2'
+
+  log_aggregator:
+    image: fluent/fluent-bit:2.1
+    container_name: arbitragex_fluent_bit
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./logs:/var/log/app:ro
+      - /var/log:/var/log/host:ro
+    depends_on:
+      - app
+      - api
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+
+  # ========================================================================
+  # HEALTH CHECK SERVICE
+  # ========================================================================
+  
+  health_monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.health
+    image: arbitragex-health:${BUILD_VERSION:-latest}
+    container_name: arbitragex_health
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      CHECK_INTERVAL: 30000
+      ALERT_WEBHOOK: ${SLACK_WEBHOOK_URL}
+      SERVICES_TO_MONITOR: "app,api,postgres,redis,nginx"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logs:/app/logs
+    depends_on:
+      - app
+      - api
+      - postgres
+      - redis
+    networks:
+      - arbitragex_network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'

@@ -1,0 +1,342 @@
+# ===================================================================
+# ARBITRAGEX SUPREME - PRODUCTION DOCKERFILE
+# Actividades 41-45: Multi-stage Production Docker Build
+# Ingenio Pichichi S.A. - Hector Fabio Riascos C.
+# ===================================================================
+
+# ========================================================================
+# STAGE 1: BASE IMAGE WITH DEPENDENCIES
+# ========================================================================
+FROM node:18-alpine AS base
+
+# Install system dependencies
+RUN apk add --no-cache \
+    dumb-init \
+    curl \
+    git \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/cache/apk/*
+
+# Create app user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S arbitragex -u 1001 -G nodejs
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY turbo.json ./
+
+# Install dependencies
+RUN npm ci --only=production && \
+    npm cache clean --force && \
+    rm -rf ~/.npm
+
+# ========================================================================
+# STAGE 2: BUILD STAGE
+# ========================================================================
+FROM base AS builder
+
+# Install all dependencies (including dev)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build arguments
+ARG NODE_ENV=production
+ARG BUILD_VERSION=latest
+ARG BUILD_DATE
+ARG GIT_COMMIT
+
+# Set environment variables
+ENV NODE_ENV=${NODE_ENV}
+ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUILD_DATE=${BUILD_DATE}
+ENV GIT_COMMIT=${GIT_COMMIT}
+
+# Build the application
+RUN npm run build
+
+# Build smart contracts
+RUN npm run build:contracts
+
+# Generate optimized production bundle
+RUN npm run build:optimize
+
+# Remove development dependencies
+RUN npm prune --production
+
+# ========================================================================
+# STAGE 3: RUNTIME STAGE
+# ========================================================================
+FROM node:18-alpine AS runtime
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    dumb-init \
+    curl \
+    ca-certificates \
+    && rm -rf /var/cache/apk/*
+
+# Create app user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S arbitragex -u 1001 -G nodejs
+
+# Set working directory
+WORKDIR /app
+
+# Copy built application
+COPY --from=builder --chown=arbitragex:nodejs /app/dist ./dist
+COPY --from=builder --chown=arbitragex:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=arbitragex:nodejs /app/package.json ./
+COPY --from=builder --chown=arbitragex:nodejs /app/contracts/deployments ./contracts/deployments
+
+# Copy configuration files
+COPY --from=builder --chown=arbitragex:nodejs /app/config ./config
+COPY --from=builder --chown=arbitragex:nodejs /app/public ./public
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/cache /app/uploads && \
+    chown -R arbitragex:nodejs /app/logs /app/cache /app/uploads
+
+# Health check script
+COPY --chown=arbitragex:nodejs <<EOF /app/health-check.js
+const http = require('http');
+
+const options = {
+  hostname: 'localhost',
+  port: process.env.PORT || 3000,
+  path: '/health',
+  method: 'GET',
+  timeout: 5000
+};
+
+const req = http.request(options, (res) => {
+  if (res.statusCode === 200) {
+    process.exit(0);
+  } else {
+    console.error('Health check failed with status:', res.statusCode);
+    process.exit(1);
+  }
+});
+
+req.on('error', (err) => {
+  console.error('Health check request failed:', err.message);
+  process.exit(1);
+});
+
+req.on('timeout', () => {
+  console.error('Health check timed out');
+  req.destroy();
+  process.exit(1);
+});
+
+req.end();
+EOF
+
+# Switch to non-root user
+USER arbitragex:nodejs
+
+# Expose port
+EXPOSE 3000
+
+# Environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+
+# Labels for metadata
+LABEL org.label-schema.name="ArbitrageX Supreme" \
+      org.label-schema.description="Advanced Arbitrage Trading Platform" \
+      org.label-schema.version="${BUILD_VERSION}" \
+      org.label-schema.build-date="${BUILD_DATE}" \
+      org.label-schema.vcs-ref="${GIT_COMMIT}" \
+      org.label-schema.schema-version="1.0" \
+      maintainer="Hector Fabio Riascos C. <hector.riascos@pichichi.com>" \
+      org.label-schema.vendor="Ingenio Pichichi S.A."
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD node /app/health-check.js
+
+# Start application with dumb-init for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/server.js"]
+
+# ========================================================================
+# STAGE 4: API-ONLY BUILD (for microservices)
+# ========================================================================
+FROM runtime AS api
+
+# Copy API-specific files only
+COPY --from=builder --chown=arbitragex:nodejs /app/dist/api ./dist
+
+# Update health check for API
+COPY --chown=arbitragex:nodejs <<EOF /app/health-check.js
+const http = require('http');
+
+const options = {
+  hostname: 'localhost',
+  port: process.env.PORT || 8000,
+  path: '/api/health',
+  method: 'GET',
+  timeout: 5000
+};
+
+const req = http.request(options, (res) => {
+  if (res.statusCode === 200) {
+    process.exit(0);
+  } else {
+    console.error('API health check failed with status:', res.statusCode);
+    process.exit(1);
+  }
+});
+
+req.on('error', (err) => {
+  console.error('API health check request failed:', err.message);
+  process.exit(1);
+});
+
+req.on('timeout', () => {
+  console.error('API health check timed out');
+  req.destroy();
+  process.exit(1);
+});
+
+req.end();
+EOF
+
+# Expose API port
+EXPOSE 8000
+
+ENV PORT=8000
+
+CMD ["node", "dist/api-server.js"]
+
+# ========================================================================
+# STAGE 5: BLOCKCHAIN MONITOR BUILD
+# ========================================================================
+FROM runtime AS blockchain
+
+# Copy blockchain monitoring files
+COPY --from=builder --chown=arbitragex:nodejs /app/dist/blockchain ./dist
+COPY --from=builder --chown=arbitragex:nodejs /app/contracts ./contracts
+
+# Blockchain monitor doesn't need HTTP health check
+COPY --chown=arbitragex:nodejs <<EOF /app/health-check.js
+const fs = require('fs');
+const path = require('path');
+
+// Check if process is running by looking for PID file or log activity
+const logFile = '/app/logs/blockchain.log';
+const maxAge = 60000; // 1 minute
+
+try {
+  const stats = fs.statSync(logFile);
+  const age = Date.now() - stats.mtime.getTime();
+  
+  if (age < maxAge) {
+    console.log('Blockchain monitor is active');
+    process.exit(0);
+  } else {
+    console.error('Blockchain monitor appears inactive');
+    process.exit(1);
+  }
+} catch (err) {
+  console.error('Cannot check blockchain monitor status:', err.message);
+  process.exit(1);
+}
+EOF
+
+CMD ["node", "dist/blockchain-monitor.js"]
+
+# ========================================================================
+# STAGE 6: BACKUP SERVICE BUILD
+# ========================================================================
+FROM alpine:3.18 AS backup
+
+# Install backup dependencies
+RUN apk add --no-cache \
+    postgresql-client \
+    redis \
+    aws-cli \
+    curl \
+    bash \
+    dcron \
+    && rm -rf /var/cache/apk/*
+
+# Create backup user
+RUN addgroup -g 1001 -S backup && \
+    adduser -S backup -u 1001 -G backup
+
+WORKDIR /app
+
+# Copy backup scripts
+COPY --chown=backup:backup scripts/backup/ ./scripts/
+COPY --chown=backup:backup <<EOF ./backup.sh
+#!/bin/bash
+set -e
+
+echo "Starting ArbitrageX Supreme backup process..."
+
+# Database backup
+if [ -n "\$POSTGRES_HOST" ]; then
+  echo "Backing up PostgreSQL database..."
+  PGPASSWORD="\$POSTGRES_PASSWORD" pg_dump \
+    -h "\$POSTGRES_HOST" \
+    -U "\$POSTGRES_USER" \
+    -d "\$POSTGRES_DB" \
+    -f "/backups/postgres_\$(date +%Y%m%d_%H%M%S).sql"
+fi
+
+# Redis backup
+if [ -n "\$REDIS_HOST" ]; then
+  echo "Backing up Redis data..."
+  redis-cli -h "\$REDIS_HOST" -p 6379 --rdb "/backups/redis_\$(date +%Y%m%d_%H%M%S).rdb"
+fi
+
+# Upload to S3 if configured
+if [ -n "\$S3_BUCKET" ]; then
+  echo "Uploading backups to S3..."
+  aws s3 sync /backups/ "s3://\$S3_BUCKET/backups/\$(date +%Y/%m/%d)/"
+fi
+
+# Cleanup old backups
+find /backups -type f -mtime +\${BACKUP_RETENTION_DAYS:-30} -delete
+
+echo "Backup process completed successfully"
+EOF
+
+RUN chmod +x ./backup.sh
+
+# Setup crontab for automated backups
+RUN echo "\${BACKUP_SCHEDULE:-0 2 * * *} /app/backup.sh >> /var/log/backup.log 2>&1" | crontab -u backup -
+
+USER backup:backup
+
+CMD ["crond", "-f", "-l", "2"]
+
+# ========================================================================
+# STAGE 7: HEALTH MONITOR BUILD
+# ========================================================================
+FROM node:18-alpine AS health
+
+RUN apk add --no-cache curl docker-cli
+
+RUN addgroup -g 1001 -S health && \
+    adduser -S health -u 1001 -G health
+
+WORKDIR /app
+
+# Copy health monitoring files
+COPY --from=builder --chown=health:health /app/dist/health ./dist
+COPY --from=builder --chown=health:health /app/node_modules ./node_modules
+COPY --from=builder --chown=health:health /app/package.json ./
+
+USER health:health
+
+CMD ["node", "dist/health-monitor.js"]

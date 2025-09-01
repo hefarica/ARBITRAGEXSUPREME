@@ -1,0 +1,636 @@
+# ===================================================================
+# ARBITRAGEX SUPREME - KUBERNETES PRODUCTION DEPLOYMENT
+# Actividades 41-45: Kubernetes Production Configuration
+# Ingenio Pichichi S.A. - Hector Fabio Riascos C.
+# ===================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: arbitragex-prod
+  labels:
+    name: arbitragex-prod
+    environment: production
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arbitragex-config
+  namespace: arbitragex-prod
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  API_PORT: "8000"
+  REDIS_HOST: "redis-service"
+  POSTGRES_HOST: "postgres-service"
+  LOG_LEVEL: "info"
+  RATE_LIMIT_WINDOW: "900000"
+  RATE_LIMIT_MAX: "100"
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: arbitragex-secrets
+  namespace: arbitragex-prod
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD}"
+  JWT_SECRET: "${JWT_SECRET}"
+  ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
+  ETHEREUM_RPC_URL: "${ETHEREUM_RPC_URL}"
+  POLYGON_RPC_URL: "${POLYGON_RPC_URL}"
+  ARBITRUM_RPC_URL: "${ARBITRUM_RPC_URL}"
+  OPTIMISM_RPC_URL: "${OPTIMISM_RPC_URL}"
+  BSC_RPC_URL: "${BSC_RPC_URL}"
+  ALCHEMY_API_KEY: "${ALCHEMY_API_KEY}"
+  INFURA_API_KEY: "${INFURA_API_KEY}"
+  MORALIS_API_KEY: "${MORALIS_API_KEY}"
+  CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN}"
+  SENTRY_DSN: "${SENTRY_DSN}"
+
+---
+
+# ========================================================================
+# POSTGRESQL DATABASE
+# ========================================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: arbitragex-prod
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        env:
+        - name: POSTGRES_DB
+          value: arbitragex_prod
+        - name: POSTGRES_USER
+          value: arbitragex_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: arbitragex-secrets
+              key: POSTGRES_PASSWORD
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - arbitragex_user
+            - -d
+            - arbitragex_prod
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - arbitragex_user
+            - -d
+            - arbitragex_prod
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: arbitragex-prod
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+
+---
+
+# ========================================================================
+# REDIS CACHE
+# ========================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: arbitragex-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command:
+        - redis-server
+        - --requirepass
+        - $(REDIS_PASSWORD)
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: arbitragex-secrets
+              key: REDIS_PASSWORD
+        ports:
+        - containerPort: 6379
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: arbitragex-prod
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+
+---
+
+# ========================================================================
+# MAIN APPLICATION - BLUE/GREEN DEPLOYMENT
+# ========================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arbitragex-green
+  namespace: arbitragex-prod
+  labels:
+    app: arbitragex
+    version: green
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: arbitragex
+      version: green
+  template:
+    metadata:
+      labels:
+        app: arbitragex
+        version: green
+    spec:
+      containers:
+      - name: app
+        image: ghcr.io/ingenio-pichichi/arbitragex-supreme:latest
+        envFrom:
+        - configMapRef:
+            name: arbitragex-config
+        - secretRef:
+            name: arbitragex-secrets
+        ports:
+        - containerPort: 3000
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: logs-volume
+          mountPath: /app/logs
+        - name: cache-volume
+          mountPath: /app/cache
+      volumes:
+      - name: logs-volume
+        emptyDir: {}
+      - name: cache-volume
+        emptyDir: {}
+      initContainers:
+      - name: db-migration
+        image: ghcr.io/ingenio-pichichi/arbitragex-supreme:latest
+        command: ['npm', 'run', 'db:migrate:prod']
+        envFrom:
+        - configMapRef:
+            name: arbitragex-config
+        - secretRef:
+            name: arbitragex-secrets
+
+---
+
+# ========================================================================
+# API SERVICE
+# ========================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arbitragex-api
+  namespace: arbitragex-prod
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+  selector:
+    matchLabels:
+      app: arbitragex-api
+  template:
+    metadata:
+      labels:
+        app: arbitragex-api
+    spec:
+      containers:
+      - name: api
+        image: ghcr.io/ingenio-pichichi/arbitragex-supreme:latest
+        command: ['node', 'dist/api-server.js']
+        envFrom:
+        - configMapRef:
+            name: arbitragex-config
+        - secretRef:
+            name: arbitragex-secrets
+        env:
+        - name: PORT
+          value: "8000"
+        ports:
+        - containerPort: 8000
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+
+---
+
+# ========================================================================
+# BLOCKCHAIN MONITOR
+# ========================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockchain-monitor
+  namespace: arbitragex-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: blockchain-monitor
+  template:
+    metadata:
+      labels:
+        app: blockchain-monitor
+    spec:
+      containers:
+      - name: monitor
+        image: ghcr.io/ingenio-pichichi/arbitragex-supreme:latest
+        command: ['node', 'dist/blockchain-monitor.js']
+        envFrom:
+        - configMapRef:
+            name: arbitragex-config
+        - secretRef:
+            name: arbitragex-secrets
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+
+---
+
+# ========================================================================
+# SERVICES
+# ========================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: arbitragex-service
+  namespace: arbitragex-prod
+spec:
+  selector:
+    app: arbitragex
+    version: green  # Blue-Green deployment control
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+  type: LoadBalancer
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: arbitragex-api-service
+  namespace: arbitragex-prod
+spec:
+  selector:
+    app: arbitragex-api
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+  type: LoadBalancer
+
+---
+
+# ========================================================================
+# INGRESS CONFIGURATION
+# ========================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: arbitragex-ingress
+  namespace: arbitragex-prod
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://arbitragexsupreme.com"
+spec:
+  tls:
+  - hosts:
+    - arbitragexsupreme.com
+    - api.arbitragexsupreme.com
+    secretName: arbitragex-tls
+  rules:
+  - host: arbitragexsupreme.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: arbitragex-service
+            port:
+              number: 80
+  - host: api.arbitragexsupreme.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: arbitragex-api-service
+            port:
+              number: 80
+
+---
+
+# ========================================================================
+# HORIZONTAL POD AUTOSCALER
+# ========================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: arbitragex-hpa
+  namespace: arbitragex-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: arbitragex-green
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: arbitragex-api-hpa
+  namespace: arbitragex-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: arbitragex-api
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+
+# ========================================================================
+# POD DISRUPTION BUDGET
+# ========================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: arbitragex-pdb
+  namespace: arbitragex-prod
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: arbitragex
+
+---
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: arbitragex-api-pdb
+  namespace: arbitragex-prod
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: arbitragex-api
+
+---
+
+# ========================================================================
+# NETWORK POLICIES
+# ========================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arbitragex-network-policy
+  namespace: arbitragex-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: arbitragex
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: nginx-ingress
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - {} # Allow all outbound for external APIs
+
+---
+
+# ========================================================================
+# RESOURCE QUOTAS
+# ========================================================================
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: arbitragex-quota
+  namespace: arbitragex-prod
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "10"
+    pods: "50"
+    services: "20"
