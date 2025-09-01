@@ -32,9 +32,10 @@ import {
   Shield,
   Target
 } from 'lucide-react'
-import { useWallet, useArbitrage, useSimulation } from '@/hooks'
+import { useWeb3, formatEther, parseEther, isAddress } from '@/lib/web3'
 import { createTokenValidator, createEIP712Validator } from '@/lib/validation'
 import type { ArbitrageOpportunity, ArbitrageStrategy, ExecutionResult } from '@/types/arbitrage'
+import { toast } from 'sonner'
 
 // Types específicos del formulario
 interface ArbitrageFormData {
@@ -55,9 +56,12 @@ interface FormErrors {
 }
 
 export const ArbitrageForm = () => {
-  const { address, chainId, signer, signTypedData } = useWallet()
-  const { executeArbitrage, simulateExecution } = useArbitrage()
-  const { simulateOpportunity, estimateGas } = useSimulation()
+  const { isConnected, account, network, loading, connect, switchNetwork, web3Manager } = useWeb3()
+  
+  // Derived values for compatibility
+  const address = account
+  const chainId = network?.chainId
+  const signer = web3Manager?.getSigner()
 
   // Form state
   const [formData, setFormData] = useState<ArbitrageFormData>({
@@ -102,7 +106,7 @@ export const ArbitrageForm = () => {
     const newErrors: FormErrors = {}
 
     // Validate wallet connection
-    if (!address) {
+    if (!isConnected || !address) {
       newErrors.wallet = 'Wallet not connected'
     }
 
@@ -173,7 +177,7 @@ export const ArbitrageForm = () => {
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
-  }, [formData, address, tokenValidator])
+  }, [formData, address, tokenValidator, isConnected])
 
   // ============================================
   // FORM HANDLERS
@@ -208,54 +212,53 @@ export const ArbitrageForm = () => {
 
   const runSimulation = useCallback(async () => {
     if (!await validateForm()) return
+    if (!web3Manager?.isConnected()) {
+      toast.error('Please connect your wallet first')
+      return
+    }
 
     setIsLoading(true)
     try {
-      // Create mock opportunity for simulation
-      const mockOpportunity: ArbitrageOpportunity = {
-        id: `sim_${Date.now()}`,
-        strategy: {
-          id: `strat_${Date.now()}`,
-          type: formData.strategy as any,
-          name: `${formData.strategy} Strategy`,
-          complexity: 'Intermedia',
-          roiMin: 0.5,
-          roiExpected: [0.5, 5.0],
-          executionTime: [5, 30],
-          gasCost: formData.gasPrice,
-          riskLevel: 'Medio',
-          description: 'Simulation opportunity',
-          isActive: true
-        },
-        tokenIn: formData.tokenIn,
-        tokenOut: formData.tokenOut,
-        amountIn: parseFloat(formData.amountIn),
-        expectedAmountOut: parseFloat(formData.minAmountOut),
-        expectedProfit: 0, // Will be calculated
-        path: [formData.tokenIn, formData.tokenOut],
-        pools: [],
-        chainId: formData.blockchain,
-        gasEstimate: parseInt(formData.gasLimit),
-        confidenceScore: 85,
-        timestamp: Date.now(),
-        expiresAt: Date.now() + 300000 // 5 minutes
-      }
+      // Create strategy for simulation
+      const strategies = [{
+        id: `strat_${Date.now()}`,
+        name: `${formData.strategy} Strategy`,
+        type: formData.strategy,
+        enabled: true,
+        minProfitBps: 50, // 0.5%
+        maxSlippageBps: formData.slippageTolerance * 100,
+        gasLimit: parseInt(formData.gasLimit)
+      }]
 
-      const [simulation, gasEst] = await Promise.all([
-        simulateOpportunity(mockOpportunity),
-        estimateGas(mockOpportunity)
-      ])
+      // Simulate arbitrage using Web3Manager
+      const simulation = await web3Manager.simulateArbitrage(
+        formData.tokenIn,
+        formData.tokenOut,
+        parseEther(formData.amountIn).toString(),
+        strategies
+      )
 
       setSimulationResult(simulation)
-      setGasEstimate(gasEst)
+      setGasEstimate({
+        gasLimit: simulation.gasEstimate,
+        gasPrice: formData.gasPrice,
+        totalCost: (simulation.gasEstimate * parseFloat(formData.gasPrice)) / 1e9 // Convert to ETH
+      })
+
+      if (simulation.success) {
+        toast.success(`Simulation successful! Potential profit: ${formatEther(simulation.profitAmount)} tokens`)
+      } else {
+        toast.warning('Simulation shows no profit opportunity')
+      }
 
     } catch (error: any) {
       console.error('Simulation error:', error)
+      toast.error(`Simulation failed: ${error.message}`)
       setErrors({ simulation: error.message })
     } finally {
       setIsLoading(false)
     }
-  }, [formData, validateForm, simulateOpportunity, estimateGas])
+  }, [formData, validateForm, web3Manager])
 
   // ============================================
   // EXECUTION
@@ -263,38 +266,76 @@ export const ArbitrageForm = () => {
 
   const executeTransaction = useCallback(async () => {
     if (!await validateForm() || !simulationResult) return
-    if (!address || !signer || !eip712Validator) {
-      setErrors({ execution: 'Wallet not properly connected' })
+    if (!web3Manager?.isConnected()) {
+      toast.error('Please connect your wallet first')
+      return
+    }
+
+    if (!simulationResult.success) {
+      toast.error('Cannot execute - simulation shows no profit')
       return
     }
 
     setIsLoading(true)
     try {
-      // Create EIP-712 payload
-      const payload = {
-        opportunityId: `exec_${Date.now()}`,
-        tokenIn: formData.tokenIn,
-        tokenOut: formData.tokenOut,
-        amountIn: formData.amountIn,
-        minAmountOut: formData.minAmountOut,
-        deadline: formData.deadline,
-        recipient: address,
-        nonce: Date.now()
+      // Check token allowances first
+      const engineContract = web3Manager.getContract('arbitrageEngine')
+      if (!engineContract) {
+        throw new Error('ArbitrageEngine contract not available')
       }
 
-      // Sign payload
-      const signature = await eip712Validator.signArbitragePayload(payload, signer)
+      const allowance = await web3Manager.getAllowance(
+        formData.tokenIn,
+        network?.arbitrageEngine || ''
+      )
 
-      // Execute arbitrage (this would call the actual execution API)
-      console.log('Executing with signed payload:', { payload, signature })
+      const amountInWei = parseEther(formData.amountIn)
+      
+      // Approve if needed
+      if (BigInt(allowance) < amountInWei) {
+        toast.info('Approving token spending...')
+        await web3Manager.approveToken(
+          formData.tokenIn,
+          network?.arbitrageEngine || '',
+          amountInWei.toString()
+        )
+      }
+
+      // Create strategy for execution
+      const strategies = [{
+        id: `strat_${Date.now()}`,
+        name: `${formData.strategy} Strategy`,
+        type: formData.strategy,
+        enabled: true,
+        minProfitBps: 50, // 0.5%
+        maxSlippageBps: formData.slippageTolerance * 100,
+        gasLimit: parseInt(formData.gasLimit)
+      }]
+
+      // Execute arbitrage
+      toast.info('Executing arbitrage transaction...')
+      const txHash = await web3Manager.executeArbitrage(
+        formData.tokenIn,
+        formData.tokenOut,
+        amountInWei.toString(),
+        strategies,
+        50 // 0.5% minimum profit
+      )
+
+      toast.success(`Arbitrage executed successfully! TX: ${txHash}`)
+      
+      // Reset form after successful execution
+      setSimulationResult(null)
+      setGasEstimate(null)
 
     } catch (error: any) {
       console.error('Execution error:', error)
+      toast.error(`Execution failed: ${error.message}`)
       setErrors({ execution: error.message })
     } finally {
       setIsLoading(false)
     }
-  }, [formData, simulationResult, address, signer, eip712Validator, validateForm])
+  }, [formData, simulationResult, web3Manager, network, validateForm])
 
   // ============================================
   // RENDER
@@ -314,12 +355,31 @@ export const ArbitrageForm = () => {
 
       <CardContent className="space-y-6">
         {/* Wallet Status */}
-        {address && (
+        {!isConnected ? (
+          <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-lg">
+            <Wallet className="h-5 w-5 text-blue-600" />
+            <div className="flex-1">
+              <p className="font-medium text-blue-800">Connect Wallet</p>
+              <p className="text-sm text-blue-600">Connect your wallet to start trading</p>
+            </div>
+            <Button onClick={connect} disabled={loading}>
+              {loading ? 'Connecting...' : 'Connect'}
+            </Button>
+          </div>
+        ) : (
           <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
             <Badge variant="default" className="bg-green-600">Connected</Badge>
             <span className="text-sm text-green-800">
-              {address.slice(0, 6)}...{address.slice(-4)} on Chain {chainId}
+              {address?.slice(0, 6)}...{address?.slice(-4)} on {network?.name}
             </span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => switchNetwork(1)}
+              className="ml-auto"
+            >
+              Switch Network
+            </Button>
           </div>
         )}
 
@@ -489,7 +549,7 @@ export const ArbitrageForm = () => {
         <div className="flex gap-3">
           <Button 
             onClick={runSimulation}
-            disabled={isLoading || !address}
+            disabled={isLoading || !isConnected || !address}
             className="flex-1 flex items-center gap-2"
             variant="outline"
           >
@@ -508,7 +568,7 @@ export const ArbitrageForm = () => {
           
           <Button 
             onClick={executeTransaction}
-            disabled={isLoading || !address || !simulationResult}
+            disabled={isLoading || !isConnected || !address || !simulationResult || !simulationResult.success}
             className="flex-1 flex items-center gap-2"
           >
             {isLoading ? (
