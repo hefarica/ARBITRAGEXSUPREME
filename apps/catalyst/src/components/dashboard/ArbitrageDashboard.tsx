@@ -33,6 +33,8 @@ import {
 import { useWeb3 } from '@/lib/web3'
 import { ArbitrageForm } from '@/components/forms/ArbitrageForm'
 import { ROITable } from '@/components/tables/ROITable'
+import { AdvancedAnalytics } from '@/components/dashboard/AdvancedAnalytics'
+import { arbitrageMonitor } from '@/lib/monitoring'
 import { toast } from 'sonner'
 
 // Types para el dashboard
@@ -173,6 +175,13 @@ export const ArbitrageDashboard = () => {
     if (isConnected) {
       fetchMetrics()
       fetchSystemHealth()
+      
+      // Iniciar sistema de monitoreo
+      arbitrageMonitor.start(5000) // 5 segundos
+      
+      return () => {
+        arbitrageMonitor.stop()
+      }
     }
   }, [isConnected, fetchMetrics, fetchSystemHealth])
 
@@ -412,10 +421,11 @@ export const ArbitrageDashboard = () => {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="trading" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="trading">Trading</TabsTrigger>
             <TabsTrigger value="opportunities">Opportunities</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="advanced">ML & AI</TabsTrigger>
             <TabsTrigger value="alerts">
               Alerts {alerts.length > 0 && (
                 <Badge variant="destructive" className="ml-2 text-xs">
@@ -489,6 +499,10 @@ export const ArbitrageDashboard = () => {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="advanced" className="space-y-6">
+            <AdvancedAnalytics />
           </TabsContent>
 
           <TabsContent value="alerts" className="space-y-6">
