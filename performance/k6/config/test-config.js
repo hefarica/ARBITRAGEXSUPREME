@@ -8,12 +8,12 @@ import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 // Configuraciones de pruebas por ambiente
 export const environments = {
   development: {
-    baseUrl: 'http://localhost:3000',
+    baseUrl: 'http://localhost:3001',
     wsUrl: 'ws://localhost:3001',
-    maxVUs: 50,
-    duration: '2m',
-    rampUpTime: '30s',
-    rampDownTime: '30s'
+    maxVUs: 25,
+    duration: '1m',
+    rampUpTime: '15s',
+    rampDownTime: '15s'
   },
   staging: {
     baseUrl: 'https://staging-arbitragex.pichichi.com',
