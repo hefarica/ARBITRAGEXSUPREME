@@ -1,0 +1,375 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: configuration
+  annotations:
+    # Configuration versioning for rollback capabilities
+    config.kubernetes.io/version: "{{ .Chart.Version }}"
+    config.kubernetes.io/checksum: "{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}"
+data:
+  # Application configuration
+  NODE_ENV: {{ .Values.app.nodeEnv | quote }}
+  LOG_LEVEL: {{ .Values.app.logLevel | quote }}
+  PORT: {{ .Values.service.port | quote }}
+  HEALTH_PORT: {{ .Values.service.healthPort | quote }}
+  METRICS_PORT: {{ .Values.service.metricsPort | quote }}
+  WEBSOCKET_PORT: {{ .Values.service.wsPort | quote }}
+  GRPC_PORT: {{ .Values.service.grpcPort | quote }}
+
+  # Blockchain configuration
+  SUPPORTED_CHAINS: {{ join "," .Values.blockchain.supportedChains | quote }}
+  MAX_SLIPPAGE_PERCENTAGE: {{ .Values.blockchain.maxSlippage | quote }}
+  GAS_PRICE_MULTIPLIER: {{ .Values.blockchain.gasPriceMultiplier | quote }}
+  BLOCK_CONFIRMATION_COUNT: {{ .Values.blockchain.confirmations | quote }}
+  TRANSACTION_TIMEOUT_MS: {{ .Values.blockchain.transactionTimeout | quote }}
+  RETRY_ATTEMPTS: {{ .Values.blockchain.retryAttempts | quote }}
+  RETRY_DELAY_MS: {{ .Values.blockchain.retryDelay | quote }}
+
+  # Uniswap V3 configuration
+  UNISWAP_V3_ROUTER_ADDRESS: {{ .Values.uniswap.routerAddress | quote }}
+  UNISWAP_V3_QUOTER_ADDRESS: {{ .Values.uniswap.quoterAddress | quote }}
+  UNISWAP_V3_FACTORY_ADDRESS: {{ .Values.uniswap.factoryAddress | quote }}
+  UNISWAP_V3_POSITION_MANAGER_ADDRESS: {{ .Values.uniswap.positionManagerAddress | quote }}
+  DEFAULT_POOL_FEE: {{ .Values.uniswap.defaultPoolFee | quote }}
+  MIN_LIQUIDITY_THRESHOLD: {{ .Values.uniswap.minLiquidityThreshold | quote }}
+  MAX_PRICE_IMPACT: {{ .Values.uniswap.maxPriceImpact | quote }}
+
+  # MEV Protection configuration
+  MEV_DETECTION_ENABLED: {{ .Values.mev.detectionEnabled | quote }}
+  MEV_PROTECTION_LEVEL: {{ .Values.mev.protectionLevel | quote }}
+  FLASHBOTS_ENABLED: {{ .Values.mev.flashbotsEnabled | quote }}
+  SANDWICH_DETECTION_THRESHOLD: {{ .Values.mev.sandwichThreshold | quote }}
+  FRONTRUN_DETECTION_WINDOW_MS: {{ .Values.mev.frontrunWindow | quote }}
+  MEV_BLOCKER_ENABLED: {{ .Values.mev.blockerEnabled | quote }}
+  PRIVATE_MEMPOOL_ENABLED: {{ .Values.mev.privateMempoolEnabled | quote }}
+
+  # Arbitrage configuration
+  MIN_PROFIT_THRESHOLD_USD: {{ .Values.arbitrage.minProfitThreshold | quote }}
+  MAX_POSITION_SIZE_USD: {{ .Values.arbitrage.maxPositionSize | quote }}
+  ARBITRAGE_TIMEOUT_MS: {{ .Values.arbitrage.timeout | quote }}
+  ENABLE_CROSS_CHAIN_ARBITRAGE: {{ .Values.arbitrage.crossChainEnabled | quote }}
+  ENABLE_FLASH_LOANS: {{ .Values.arbitrage.flashLoansEnabled | quote }}
+  MAX_CONCURRENT_TRADES: {{ .Values.arbitrage.maxConcurrentTrades | quote }}
+
+  # Database configuration
+  DATABASE_TYPE: {{ .Values.database.type | quote }}
+  DATABASE_HOST: {{ .Values.database.host | quote }}
+  DATABASE_PORT: {{ .Values.database.port | quote }}
+  DATABASE_NAME: {{ .Values.database.name | quote }}
+  DATABASE_POOL_MIN: {{ .Values.database.poolMin | quote }}
+  DATABASE_POOL_MAX: {{ .Values.database.poolMax | quote }}
+  DATABASE_TIMEOUT_MS: {{ .Values.database.timeout | quote }}
+  DATABASE_SSL_ENABLED: {{ .Values.database.sslEnabled | quote }}
+
+  # Redis configuration
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  REDIS_DB: {{ .Values.redis.db | quote }}
+  REDIS_CLUSTER_ENABLED: {{ .Values.redis.clusterEnabled | quote }}
+  REDIS_SENTINEL_ENABLED: {{ .Values.redis.sentinelEnabled | quote }}
+  REDIS_TTL_SECONDS: {{ .Values.redis.ttl | quote }}
+
+  # Monitoring configuration
+  METRICS_ENABLED: {{ .Values.monitoring.metricsEnabled | quote }}
+  TRACING_ENABLED: {{ .Values.monitoring.tracingEnabled | quote }}
+  JAEGER_ENDPOINT: {{ .Values.monitoring.jaegerEndpoint | quote }}
+  PROMETHEUS_METRICS_PATH: {{ .Values.monitoring.metricsPath | quote }}
+  HEALTH_CHECK_INTERVAL_MS: {{ .Values.monitoring.healthCheckInterval | quote }}
+
+  # Security configuration
+  RATE_LIMIT_ENABLED: {{ .Values.security.rateLimitEnabled | quote }}
+  RATE_LIMIT_WINDOW_MS: {{ .Values.security.rateLimitWindow | quote }}
+  RATE_LIMIT_MAX_REQUESTS: {{ .Values.security.rateLimitMaxRequests | quote }}
+  CORS_ENABLED: {{ .Values.security.corsEnabled | quote }}
+  CORS_ORIGINS: {{ join "," .Values.security.corsOrigins | quote }}
+  JWT_ALGORITHM: {{ .Values.security.jwtAlgorithm | quote }}
+  JWT_EXPIRES_IN: {{ .Values.security.jwtExpiresIn | quote }}
+
+  # WebSocket configuration
+  WEBSOCKET_ENABLED: {{ .Values.websocket.enabled | quote }}
+  WEBSOCKET_MAX_CONNECTIONS: {{ .Values.websocket.maxConnections | quote }}
+  WEBSOCKET_HEARTBEAT_INTERVAL_MS: {{ .Values.websocket.heartbeatInterval | quote }}
+  WEBSOCKET_MESSAGE_SIZE_LIMIT: {{ .Values.websocket.messageSizeLimit | quote }}
+
+  # External API configuration
+  COINGECKO_API_ENABLED: {{ .Values.externalApis.coingecko.enabled | quote }}
+  COINGECKO_RATE_LIMIT: {{ .Values.externalApis.coingecko.rateLimit | quote }}
+  DUNE_ANALYTICS_ENABLED: {{ .Values.externalApis.dune.enabled | quote }}
+  DUNE_RATE_LIMIT: {{ .Values.externalApis.dune.rateLimit | quote }}
+  DEFILLAMA_ENABLED: {{ .Values.externalApis.defillama.enabled | quote }}
+
+  # Performance configuration
+  ENABLE_CACHING: {{ .Values.performance.cachingEnabled | quote }}
+  CACHE_TTL_SECONDS: {{ .Values.performance.cacheTtl | quote }}
+  ENABLE_COMPRESSION: {{ .Values.performance.compressionEnabled | quote }}
+  MAX_MEMORY_MB: {{ .Values.resources.limits.memory | replace "Mi" "" | quote }}
+  ENABLE_CLUSTERING: {{ .Values.performance.clusteringEnabled | quote }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-nginx
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: nginx
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+
+    events {
+        worker_connections 4096;
+        use epoll;
+        multi_accept on;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        # Logging format
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                       '$status $body_bytes_sent "$http_referer" '
+                       '"$http_user_agent" "$http_x_forwarded_for" '
+                       'rt=$request_time uct="$upstream_connect_time" '
+                       'uht="$upstream_header_time" urt="$upstream_response_time"';
+
+        access_log /var/log/nginx/access.log main;
+
+        # Performance settings
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        client_max_body_size 10M;
+
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/x-javascript
+            application/xml;
+
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=100r/m;
+        limit_req_zone $binary_remote_addr zone=ws:10m rate=50r/m;
+
+        # Upstream for ArbitrageX Supreme
+        upstream arbitragex_backend {
+            least_conn;
+            server 127.0.0.1:{{ .Values.service.port }} max_fails=3 fail_timeout=30s;
+            keepalive 32;
+        }
+
+        # WebSocket upstream
+        upstream arbitragex_websocket {
+            server 127.0.0.1:{{ .Values.service.wsPort }};
+            keepalive 32;
+        }
+
+        # Main server block
+        server {
+            listen 80;
+            server_name _;
+
+            # Health check endpoint
+            location /health {
+                access_log off;
+                proxy_pass http://127.0.0.1:{{ .Values.service.healthPort }}/health;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            # Metrics endpoint (internal only)
+            location /metrics {
+                allow 10.0.0.0/8;
+                allow 172.16.0.0/12;
+                allow 192.168.0.0/16;
+                deny all;
+                
+                proxy_pass http://127.0.0.1:{{ .Values.service.metricsPort }}/metrics;
+                proxy_set_header Host $host;
+            }
+
+            # API endpoints with rate limiting
+            location /api/ {
+                limit_req zone=api burst=20 nodelay;
+                
+                proxy_pass http://arbitragex_backend;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                # Timeouts
+                proxy_connect_timeout 5s;
+                proxy_send_timeout 60s;
+                proxy_read_timeout 60s;
+                
+                # Headers for backend
+                proxy_set_header Connection "";
+                proxy_http_version 1.1;
+            }
+
+            # WebSocket endpoints
+            location /ws/ {
+                limit_req zone=ws burst=10 nodelay;
+                
+                proxy_pass http://arbitragex_websocket;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                # WebSocket specific timeouts
+                proxy_connect_timeout 5s;
+                proxy_send_timeout 3600s;
+                proxy_read_timeout 3600s;
+            }
+
+            # Static files (if any)
+            location /static/ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+                add_header X-Content-Type-Options nosniff;
+            }
+
+            # Security headers
+            add_header X-Frame-Options DENY;
+            add_header X-Content-Type-Options nosniff;
+            add_header X-XSS-Protection "1; mode=block";
+            add_header Referrer-Policy "strict-origin-when-cross-origin";
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';";
+        }
+    }
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-blockchain-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: blockchain
+data:
+  chains.json: |
+    {
+      "ethereum": {
+        "chainId": 1,
+        "name": "Ethereum Mainnet",
+        "currency": "ETH",
+        "explorerUrl": "https://etherscan.io",
+        "uniswapV3": {
+          "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+          "quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
+          "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+        }
+      },
+      "polygon": {
+        "chainId": 137,
+        "name": "Polygon",
+        "currency": "MATIC",
+        "explorerUrl": "https://polygonscan.com",
+        "uniswapV3": {
+          "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+          "quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
+          "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+        }
+      },
+      "arbitrum": {
+        "chainId": 42161,
+        "name": "Arbitrum One",
+        "currency": "ETH",
+        "explorerUrl": "https://arbiscan.io",
+        "uniswapV3": {
+          "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+          "quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
+          "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+        }
+      },
+      "optimism": {
+        "chainId": 10,
+        "name": "Optimism",
+        "currency": "ETH",
+        "explorerUrl": "https://optimistic.etherscan.io",
+        "uniswapV3": {
+          "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+          "quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
+          "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+        }
+      },
+      "base": {
+        "chainId": 8453,
+        "name": "Base",
+        "currency": "ETH",
+        "explorerUrl": "https://basescan.org",
+        "uniswapV3": {
+          "router": "0x2626664c2603336E57B271c5C0b26F421741e481",
+          "quoter": "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+          "factory": "0x33128a8fC17869897dcE68Ed026d694621f6FDfD"
+        }
+      }
+    }
+
+  tokens.json: |
+    {
+      "ethereum": {
+        "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "USDC": "0xA0b86a33E6441b23b4c73C6f4f1c7E4eD1E9b4Ae",
+        "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "WBTC": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"
+      },
+      "polygon": {
+        "WMATIC": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+        "USDC": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+        "USDT": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+        "DAI": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+        "WETH": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619"
+      },
+      "arbitrum": {
+        "WETH": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+        "USDC": "0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8",
+        "USDT": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+        "DAI": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
+        "ARB": "0x912CE59144191C1204E64559FE8253a0e49E6548"
+      },
+      "optimism": {
+        "WETH": "0x4200000000000000000000000000000000000006",
+        "USDC": "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
+        "USDT": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+        "DAI": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
+        "OP": "0x4200000000000000000000000000000000000042"
+      },
+      "base": {
+        "WETH": "0x4200000000000000000000000000000000000006",
+        "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "DAI": "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"
+      }
+    }

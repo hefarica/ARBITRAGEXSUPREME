@@ -1,204 +1,134 @@
 /**
  * ArbitrageX Supreme - DEX Data Fetcher
  * 
- * Módulo especializado en obtención de datos en tiempo real de DEXs
- * Integra DefiLlama, The Graph y ethers.js para máxima precisión
- * 
- * Funcionalidades:
- * - Fetching de precios en tiempo real
- * - Consultas a subgrafos de The Graph
- * - Integración con DefiLlama API
- * - Cache inteligente con refresh de 5 segundos
- * - Manejo de múltiples proveedores RPC
+ * Módulo especializado para obtención de datos de DEXs y protocolos DeFi
+ * Enfoque metodico en agregación eficiente de datos multi-chain
  */
 
 import { ethers, JsonRpcProvider, Contract } from 'ethers';
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { DexHelpers } from './dexHelpers';
-import { 
-  Chain, 
-  DexInfo, 
-  TokenInfo, 
-  PriceData, 
-  LiquidityPool, 
-  SwapRoute,
-  PoolReserves,
-  GraphQLQuery,
-  DefiLlamaResponse,
-  CacheEntry
-} from '../types/defi';
+import type { Chain, TokenInfo, LiquidityPool, DexInfo, PriceData } from '../apps/web/types/defi';
+import type { 
+  FetcherConfig, 
+  SubgraphQuery, 
+  SubgraphResponse, 
+  TokenPair, 
+  PoolReserves 
+} from '../apps/web/types/backend';
 
 // ============================================================================
-// CONFIGURACIONES Y CONSTANTES
+// CONFIGURACIONES Y ABIs
 // ============================================================================
 
-const DEFI_LLAMA_BASE_URL = 'https://api.llama.fi';
-const DEFI_LLAMA_COINS_URL = 'https://coins.llama.fi';
-const THE_GRAPH_BASE_URL = 'https://api.thegraph.com/subgraphs/name';
+// ABIs esenciales para fetching de datos
+const ERC20_ABI = [
+  'function name() external view returns (string)',
+  'function symbol() external view returns (string)', 
+  'function decimals() external view returns (uint8)',
+  'function totalSupply() external view returns (uint256)',
+  'function balanceOf(address owner) external view returns (uint256)'
+];
 
-// Endpoints de The Graph por protocolo
-const GRAPH_ENDPOINTS = {
-  'uniswap-v2': {
-    ethereum: 'uniswap/uniswap-v2',
-    polygon: 'sushiswap/matic-exchange',
-    arbitrum: 'ianlapham/uniswap-arbitrum-one'
-  },
-  'uniswap-v3': {
-    ethereum: 'uniswap/uniswap-v3',
-    polygon: 'uniswap/uniswap-v3-polygon',
-    arbitrum: 'uniswap/uniswap-v3-arbitrum'
-  },
-  'sushiswap': {
-    ethereum: 'sushiswap/exchange',
-    polygon: 'sushiswap/matic-exchange',
-    arbitrum: 'sushiswap/arbitrum-exchange'
-  },
-  'curve': {
-    ethereum: 'convex-community/curve-pools',
-    polygon: 'convex-community/curve-pools-polygon',
-    arbitrum: 'convex-community/curve-pools-arbitrum'
-  },
-  'balancer': {
-    ethereum: 'balancer-labs/balancer-v2',
-    polygon: 'balancer-labs/balancer-polygon-v2',
-    arbitrum: 'balancer-labs/balancer-arbitrum-v2'
-  }
-};
-
-// RPC providers por chain
-const RPC_PROVIDERS: Record<string, string[]> = {
-  ethereum: [
-    'https://eth-mainnet.alchemyapi.io/v2/demo',
-    'https://mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
-    'https://eth-rpc.gateway.pokt.network'
-  ],
-  polygon: [
-    'https://polygon-rpc.com',
-    'https://rpc-mainnet.matic.network',
-    'https://poly-rpc.gateway.pokt.network'
-  ],
-  arbitrum: [
-    'https://arb1.arbitrum.io/rpc',
-    'https://arbitrum-mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'
-  ],
-  optimism: [
-    'https://mainnet.optimism.io',
-    'https://optimism-mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'
-  ],
-  avalanche: [
-    'https://api.avax.network/ext/bc/C/rpc',
-    'https://avalanche-mainnet.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'
-  ]
-};
-
-// ABIs esenciales para contratos
 const UNISWAP_V2_PAIR_ABI = [
-  'function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
   'function token0() external view returns (address)',
   'function token1() external view returns (address)',
-  'function totalSupply() external view returns (uint256)'
+  'function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
+  'function totalSupply() external view returns (uint256)',
+  'function balanceOf(address owner) external view returns (uint256)',
+  'function price0CumulativeLast() external view returns (uint256)',
+  'function price1CumulativeLast() external view returns (uint256)'
 ];
 
-const UNISWAP_V2_ROUTER_ABI = [
-  'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)',
-  'function getAmountsIn(uint amountOut, address[] calldata path) external view returns (uint[] memory amounts)'
+const UNISWAP_V2_FACTORY_ABI = [
+  'function getPair(address tokenA, address tokenB) external view returns (address pair)',
+  'function allPairs(uint) external view returns (address pair)',
+  'function allPairsLength() external view returns (uint)'
 ];
 
-const ERC20_ABI = [
-  'function balanceOf(address owner) view returns (uint256)',
-  'function decimals() view returns (uint8)',
-  'function symbol() view returns (string)',
-  'function name() view returns (string)'
-];
+// URLs de RPC por chain
+const RPC_URLS: Record<Chain, string> = {
+  ethereum: 'https://eth-mainnet.alchemyapi.io/v2/demo',
+  bsc: 'https://bsc-dataseed1.binance.org/',
+  polygon: 'https://polygon-rpc.com/',
+  arbitrum: 'https://arb1.arbitrum.io/rpc',
+  optimism: 'https://mainnet.optimism.io',
+  avalanche: 'https://api.avax.network/ext/bc/C/rpc',
+  base: 'https://mainnet.base.org',
+  fantom: 'https://rpc.ftm.tools/',
+  gnosis: 'https://rpc.gnosischain.com/',
+  celo: 'https://forno.celo.org',
+  moonbeam: 'https://rpc.api.moonbeam.network',
+  cronos: 'https://evm.cronos.org/',
+  aurora: 'https://mainnet.aurora.dev',
+  harmony: 'https://api.harmony.one',
+  kava: 'https://evm.kava.io',
+  metis: 'https://andromeda.metis.io/?owner=1088',
+  evmos: 'https://eth.bd.evmos.org:8545/',
+  oasis: 'https://emerald.oasis.dev/',
+  milkomeda: 'https://rpc-mainnet-cardano-evm.c1.milkomeda.com',
+  telos: 'https://mainnet.telos.net/evm'
+};
+
+// Configuraciones por defecto
+const DEFAULT_CONFIG: FetcherConfig = {
+  rpcUrl: '',
+  rateLimitMs: 200,
+  timeout: 10000,
+  retries: 3,
+  cacheTtl: 30000 // 30 segundos
+};
 
 // ============================================================================
 // CLASE PRINCIPAL - DEX DATA FETCHER
 // ============================================================================
 
 export class DexDataFetcher {
-  private httpClient: AxiosInstance;
-  private providers: Map<string, JsonRpcProvider> = new Map();
-  private cache: Map<string, CacheEntry<any>> = new Map();
-  private readonly cacheTimeout: number = 5000; // 5 segundos
-
+  private configs: Map<Chain, FetcherConfig> = new Map();
+  private providers: Map<Chain, JsonRpcProvider> = new Map();
+  private cache: Map<string, { data: unknown; timestamp: number; ttl: number }> = new Map();
+  
   constructor() {
-    // Configurar cliente HTTP con timeout y retry
-    this.httpClient = axios.create({
-      timeout: 10000,
-      retry: 3,
-      retryDelay: 1000
+    // Inicializar configuraciones por chain
+    Object.entries(RPC_URLS).forEach(([chain, rpcUrl]) => {
+      this.configs.set(chain as Chain, {
+        ...DEFAULT_CONFIG,
+        rpcUrl
+      });
     });
-
-    // Interceptor para logging de requests
-    this.httpClient.interceptors.request.use((config) => {
-      console.log(`🔄 Fetching: ${config.method?.toUpperCase()} ${config.url}`);
-      return config;
-    });
-
-    // Interceptor para manejo de errores
-    this.httpClient.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        console.error(`❌ Request failed: ${error.config?.url}`, error.message);
-        throw error;
-      }
-    );
-
-    // Inicializar providers RPC
-    this.initializeProviders();
-  }
-
-  // ============================================================================
-  // INICIALIZACIÓN Y CONFIGURACIÓN
-  // ============================================================================
-
-  /**
-   * Inicializa providers RPC para todas las chains soportadas
-   */
-  private initializeProviders(): void {
-    for (const [chain, rpcs] of Object.entries(RPC_PROVIDERS)) {
-      try {
-        // Usar el primer RPC como principal, otros como fallback
-        const provider = new JsonRpcProvider(rpcs[0]);
-        this.providers.set(chain, provider);
-        console.log(`✅ Provider initialized for ${chain}`);
-      } catch (error) {
-        console.error(`❌ Failed to initialize provider for ${chain}:`, error);
-      }
-    }
-  }
-
-  /**
-   * Obtiene provider RPC con fallback automático
-   */
-  private getProvider(chain: string): JsonRpcProvider {
-    let provider = this.providers.get(chain);
     
-    if (!provider) {
-      const rpcs = RPC_PROVIDERS[chain];
-      if (!rpcs || rpcs.length === 0) {
-        throw new Error(`No RPC endpoints configured for chain: ${chain}`);
+    // Limpiar cache periódicamente
+    setInterval(() => this.cleanExpiredCache(), 60000); // cada minuto
+  }
+
+  // ============================================================================
+  // GESTIÓN DE PROVIDERS Y CACHE
+  // ============================================================================
+
+  /**
+   * Obtiene o crea un provider para una chain
+   */
+  private getProvider(chain: Chain): JsonRpcProvider {
+    if (!this.providers.has(chain)) {
+      const config = this.configs.get(chain);
+      if (!config?.rpcUrl) {
+        throw new Error(`No RPC URL configured for chain: ${chain}`);
       }
       
-      provider = new JsonRpcProvider(rpcs[0]);
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
       this.providers.set(chain, provider);
     }
     
-    return provider;
+    return this.providers.get(chain)!;
   }
 
-  // ============================================================================
-  // SISTEMA DE CACHE
-  // ============================================================================
-
   /**
-   * Obtiene datos del cache si son válidos
+   * Obtiene datos del cache o null si no existe/expiró
    */
   private getCached<T>(key: string): T | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
     
-    const isExpired = Date.now() - entry.timestamp > this.cacheTimeout;
+    const isExpired = Date.now() - entry.timestamp > entry.ttl;
     if (isExpired) {
       this.cache.delete(key);
       return null;
@@ -210,92 +140,200 @@ export class DexDataFetcher {
   /**
    * Guarda datos en cache
    */
-  private setCached<T>(key: string, data: T): void {
+  private setCached<T>(key: string, data: T, ttl?: number): void {
     this.cache.set(key, {
       data,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ttl: ttl || DEFAULT_CONFIG.cacheTtl
     });
   }
 
   /**
-   * Limpia cache expirado
+   * Limpia entradas expiradas del cache
    */
-  private cleanCache(): void {
+  private cleanExpiredCache(): void {
     const now = Date.now();
     for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.timestamp > this.cacheTimeout) {
+      if (now - entry.timestamp > entry.ttl) {
         this.cache.delete(key);
       }
     }
   }
 
   // ============================================================================
-  // INTEGRACIÓN CON DEFI LLAMA
+  // OBTENCIÓN DE INFORMACIÓN DE TOKENS
   // ============================================================================
 
   /**
-   * Obtiene precios históricos y actuales de DefiLlama
+   * Obtiene información completa de un token
    */
-  async getDefiLlamaPrices(
-    tokens: string[],
-    timestamp?: number
-  ): Promise<DefiLlamaResponse> {
-    const cacheKey = `defillama_prices_${tokens.join(',')}_${timestamp || 'current'}`;
-    const cached = this.getCached<DefiLlamaResponse>(cacheKey);
+  async getTokenInfo(tokenAddress: string, chain: Chain): Promise<TokenInfo> {
+    const cacheKey = `token_${chain}_${tokenAddress.toLowerCase()}`;
+    const cached = this.getCached<TokenInfo>(cacheKey);
     if (cached) return cached;
 
     try {
-      const tokensParam = tokens.join(',');
-      const url = timestamp 
-        ? `${DEFI_LLAMA_COINS_URL}/prices/historical/${timestamp}/${tokensParam}`
-        : `${DEFI_LLAMA_COINS_URL}/prices/current/${tokensParam}`;
-
-      const response: AxiosResponse<DefiLlamaResponse> = await this.httpClient.get(url);
+      const provider = this.getProvider(chain);
+      const tokenContract = new Contract(tokenAddress, ERC20_ABI, provider);
       
-      this.setCached(cacheKey, response.data);
-      return response.data;
+      const [name, symbol, decimals] = await Promise.all([
+        tokenContract.name(),
+        tokenContract.symbol(),
+        tokenContract.decimals()
+      ]);
+
+      const tokenInfo: TokenInfo = {
+        address: tokenAddress,
+        name,
+        symbol,
+        decimals: Number(decimals),
+        chainId: this.getChainId(chain)
+      };
+
+      this.setCached(cacheKey, tokenInfo, 300000); // 5 minutos de cache para tokens
+      return tokenInfo;
+
     } catch (error) {
-      console.error('Error fetching DefiLlama prices:', error);
-      throw new Error(`DefiLlama API error: ${error instanceof Error ? error.message : 'Unknown'}`);
+      console.error(`Error fetching token info for ${tokenAddress} on ${chain}:`, error);
+      
+      // Fallback con información básica
+      return {
+        address: tokenAddress,
+        name: 'Unknown Token',
+        symbol: 'UNKNOWN',
+        decimals: 18,
+        chainId: this.getChainId(chain)
+      };
     }
   }
 
   /**
-   * Obtiene datos de protocolos desde DefiLlama
+   * Obtiene información de múltiples tokens en batch
    */
-  async getProtocolData(protocol: string): Promise<any> {
-    const cacheKey = `protocol_data_${protocol}`;
-    const cached = this.getCached<any>(cacheKey);
+  async getTokensInfo(tokenAddresses: string[], chain: Chain): Promise<TokenInfo[]> {
+    return Promise.all(
+      tokenAddresses.map(address => this.getTokenInfo(address, chain))
+    );
+  }
+
+  /**
+   * Obtiene el precio USD de un token (placeholder - integrar con precio APIs)
+   */
+  async getTokenPrice(tokenAddress: string, chain: Chain): Promise<PriceData | null> {
+    // TODO: Integrar con APIs de precios como CoinGecko, CMC, etc.
+    console.warn('Token price fetching not implemented yet');
+    return null;
+  }
+
+  // ============================================================================
+  // OBTENCIÓN DE DATOS DE POOLS
+  // ============================================================================
+
+  /**
+   * Obtiene las reservas de un pool Uniswap V2
+   */
+  async getPoolReserves(poolAddress: string, chain: Chain): Promise<PoolReserves> {
+    const cacheKey = `reserves_${chain}_${poolAddress.toLowerCase()}`;
+    const cached = this.getCached<PoolReserves>(cacheKey);
     if (cached) return cached;
 
     try {
-      const response = await this.httpClient.get(`${DEFI_LLAMA_BASE_URL}/protocol/${protocol}`);
+      const provider = this.getProvider(chain);
+      const poolContract = new Contract(poolAddress, UNISWAP_V2_PAIR_ABI, provider);
       
-      this.setCached(cacheKey, response.data);
-      return response.data;
+      const reserves = await poolContract.getReserves();
+      
+      const poolReserves: PoolReserves = {
+        reserve0: reserves[0],
+        reserve1: reserves[1],
+        blockTimestampLast: reserves[2]
+      };
+
+      this.setCached(cacheKey, poolReserves, 5000); // 5 segundos de cache para reservas
+      return poolReserves;
+
     } catch (error) {
-      console.error(`Error fetching protocol data for ${protocol}:`, error);
-      throw new Error(`Failed to fetch protocol data: ${error instanceof Error ? error.message : 'Unknown'}`);
+      console.error(`Error fetching pool reserves for ${poolAddress} on ${chain}:`, error);
+      throw error;
     }
   }
 
   /**
-   * Obtiene TVL de todos los protocolos
+   * Obtiene información completa de un pool
    */
-  async getAllProtocolsTVL(): Promise<any[]> {
-    const cacheKey = 'all_protocols_tvl';
-    const cached = this.getCached<any[]>(cacheKey);
-    if (cached) return cached;
-
+  async getPoolInfo(poolAddress: string, dex: DexInfo): Promise<LiquidityPool> {
     try {
-      const response = await this.httpClient.get(`${DEFI_LLAMA_BASE_URL}/protocols`);
+      const provider = this.getProvider(dex.chain);
+      const poolContract = new Contract(poolAddress, UNISWAP_V2_PAIR_ABI, provider);
       
-      this.setCached(cacheKey, response.data);
-      return response.data;
+      // Obtener información básica del pool
+      const [token0Address, token1Address, reserves, totalSupply] = await Promise.all([
+        poolContract.token0(),
+        poolContract.token1(),
+        poolContract.getReserves(),
+        poolContract.totalSupply()
+      ]);
+
+      // Obtener información de los tokens
+      const [token0Info, token1Info] = await Promise.all([
+        this.getTokenInfo(token0Address, dex.chain),
+        this.getTokenInfo(token1Address, dex.chain)
+      ]);
+
+      const pool: LiquidityPool = {
+        address: poolAddress,
+        dex: dex.name,
+        chain: dex.chain,
+        token0: token0Info,
+        token1: token1Info,
+        reserve0: reserves[0],
+        reserve1: reserves[1],
+        totalSupply,
+        fee: dex.fee,
+        reserveUSD: 0, // TODO: Calcular basado en precios
+        volume24h: 0, // TODO: Obtener de subgraph
+        txCount: 0,
+        blockTimestampLast: reserves[2]
+      };
+
+      return pool;
+
     } catch (error) {
-      console.error('Error fetching protocols TVL:', error);
-      throw new Error(`DefiLlama protocols API error: ${error instanceof Error ? error.message : 'Unknown'}`);
+      console.error(`Error fetching pool info for ${poolAddress}:`, error);
+      throw error;
     }
+  }
+
+  /**
+   * Busca pools que contengan tokens específicos
+   */
+  async findPoolsWithTokens(
+    tokenA: string,
+    tokenB: string,
+    chain: Chain,
+    dexes: DexInfo[]
+  ): Promise<LiquidityPool[]> {
+    const pools: LiquidityPool[] = [];
+
+    for (const dex of dexes.filter(d => d.chain === chain)) {
+      try {
+        const provider = this.getProvider(chain);
+        const factory = new Contract(dex.factoryAddress, UNISWAP_V2_FACTORY_ABI, provider);
+        
+        // Buscar pool directo
+        const pairAddress = await factory.getPair(tokenA, tokenB);
+        
+        if (pairAddress !== ethers.ZeroAddress) {
+          const pool = await this.getPoolInfo(pairAddress, dex);
+          pools.push(pool);
+        }
+        
+      } catch (error) {
+        console.warn(`Error searching pools in ${dex.name}:`, error);
+      }
+    }
+
+    return pools;
   }
 
   // ============================================================================
@@ -303,474 +341,227 @@ export class DexDataFetcher {
   // ============================================================================
 
   /**
-   * Ejecuta query GraphQL en The Graph
+   * Ejecuta una query en The Graph
    */
-  async executeGraphQuery<T>(
-    endpoint: string,
-    query: GraphQLQuery
-  ): Promise<T> {
-    const cacheKey = `graph_query_${endpoint}_${JSON.stringify(query)}`;
-    const cached = this.getCached<T>(cacheKey);
-    if (cached) return cached;
-
+  async querySubgraph<T = unknown>(
+    subgraphUrl: string,
+    query: SubgraphQuery
+  ): Promise<SubgraphResponse<T>> {
     try {
-      const response = await this.httpClient.post(
-        `${THE_GRAPH_BASE_URL}/${endpoint}`,
-        { query: query.query, variables: query.variables },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (response.data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(response.data.errors)}`);
-      }
-
-      this.setCached(cacheKey, response.data.data);
-      return response.data.data;
-    } catch (error) {
-      console.error(`Error executing Graph query on ${endpoint}:`, error);
-      throw new Error(`The Graph API error: ${error instanceof Error ? error.message : 'Unknown'}`);
-    }
-  }
-
-  /**
-   * Obtiene datos de pools de Uniswap V2 desde The Graph
-   */
-  async getUniswapV2Pools(
-    chain: string,
-    tokenA: string,
-    tokenB: string,
-    limit: number = 10
-  ): Promise<LiquidityPool[]> {
-    const endpoint = GRAPH_ENDPOINTS['uniswap-v2'][chain as keyof typeof GRAPH_ENDPOINTS['uniswap-v2']];
-    if (!endpoint) {
-      throw new Error(`Uniswap V2 not supported on ${chain}`);
-    }
-
-    const query: GraphQLQuery = {
-      query: `
-        query GetPools($token0: String!, $token1: String!, $limit: Int!) {
-          pairs(
-            first: $limit,
-            where: {
-              or: [
-                { token0: $token0, token1: $token1 },
-                { token0: $token1, token1: $token0 }
-              ]
-            },
-            orderBy: reserveUSD,
-            orderDirection: desc
-          ) {
-            id
-            token0 {
-              id
-              symbol
-              decimals
-            }
-            token1 {
-              id
-              symbol
-              decimals
-            }
-            reserve0
-            reserve1
-            reserveUSD
-            totalSupply
-            volumeUSD
-            txCount
-          }
-        }
-      `,
-      variables: {
-        token0: tokenA.toLowerCase(),
-        token1: tokenB.toLowerCase(),
-        limit
-      }
-    };
-
-    const result = await this.executeGraphQuery<{ pairs: any[] }>(endpoint, query);
-    
-    return result.pairs.map(pair => ({
-      address: pair.id,
-      token0: {
-        address: pair.token0.id,
-        symbol: pair.token0.symbol,
-        decimals: parseInt(pair.token0.decimals),
-        chain: chain as Chain
-      },
-      token1: {
-        address: pair.token1.id,
-        symbol: pair.token1.symbol,
-        decimals: parseInt(pair.token1.decimals),
-        chain: chain as Chain
-      },
-      reserve0: BigInt(pair.reserve0),
-      reserve1: BigInt(pair.reserve1),
-      reserveUSD: parseFloat(pair.reserveUSD),
-      totalSupply: BigInt(pair.totalSupply),
-      volume24h: parseFloat(pair.volumeUSD),
-      txCount: parseInt(pair.txCount),
-      dex: 'uniswap-v2',
-      chain: chain as Chain,
-      fee: 0.003 // 0.3%
-    }));
-  }
-
-  /**
-   * Obtiene datos de pools de Uniswap V3 desde The Graph
-   */
-  async getUniswapV3Pools(
-    chain: string,
-    tokenA: string,
-    tokenB: string,
-    limit: number = 10
-  ): Promise<LiquidityPool[]> {
-    const endpoint = GRAPH_ENDPOINTS['uniswap-v3'][chain as keyof typeof GRAPH_ENDPOINTS['uniswap-v3']];
-    if (!endpoint) {
-      throw new Error(`Uniswap V3 not supported on ${chain}`);
-    }
-
-    const query: GraphQLQuery = {
-      query: `
-        query GetV3Pools($token0: String!, $token1: String!, $limit: Int!) {
-          pools(
-            first: $limit,
-            where: {
-              or: [
-                { token0: $token0, token1: $token1 },
-                { token0: $token1, token1: $token0 }
-              ]
-            },
-            orderBy: totalValueLockedUSD,
-            orderDirection: desc
-          ) {
-            id
-            token0 {
-              id
-              symbol
-              decimals
-            }
-            token1 {
-              id
-              symbol
-              decimals
-            }
-            liquidity
-            sqrtPrice
-            tick
-            feeGrowthGlobal0X128
-            feeGrowthGlobal1X128
-            totalValueLockedUSD
-            volumeUSD
-            feeTier
-            txCount
-          }
-        }
-      `,
-      variables: {
-        token0: tokenA.toLowerCase(),
-        token1: tokenB.toLowerCase(),
-        limit
-      }
-    };
-
-    const result = await this.executeGraphQuery<{ pools: any[] }>(endpoint, query);
-    
-    return result.pools.map(pool => ({
-      address: pool.id,
-      token0: {
-        address: pool.token0.id,
-        symbol: pool.token0.symbol,
-        decimals: parseInt(pool.token0.decimals),
-        chain: chain as Chain
-      },
-      token1: {
-        address: pool.token1.id,
-        symbol: pool.token1.symbol,
-        decimals: parseInt(pool.token1.decimals),
-        chain: chain as Chain
-      },
-      liquidity: BigInt(pool.liquidity),
-      sqrtPriceX96: BigInt(pool.sqrtPrice),
-      tick: parseInt(pool.tick),
-      reserveUSD: parseFloat(pool.totalValueLockedUSD),
-      volume24h: parseFloat(pool.volumeUSD),
-      txCount: parseInt(pool.txCount),
-      dex: 'uniswap-v3',
-      chain: chain as Chain,
-      fee: parseInt(pool.feeTier) / 1000000 // Convert from basis points
-    }));
-  }
-
-  // ============================================================================
-  // INTERACCIÓN DIRECTA CON CONTRATOS
-  // ============================================================================
-
-  /**
-   * Obtiene reservas de un pool directamente del contrato
-   */
-  async getPoolReserves(
-    poolAddress: string,
-    chain: string
-  ): Promise<PoolReserves> {
-    const cacheKey = `pool_reserves_${poolAddress}_${chain}`;
-    const cached = this.getCached<PoolReserves>(cacheKey);
-    if (cached) return cached;
-
-    try {
-      const provider = this.getProvider(chain);
-      const pairContract = new Contract(poolAddress, UNISWAP_V2_PAIR_ABI, provider);
-
-      const [reserves, token0Address, token1Address] = await Promise.all([
-        pairContract.getReserves(),
-        pairContract.token0(),
-        pairContract.token1()
-      ]);
-
-      const result: PoolReserves = {
-        reserve0: reserves[0],
-        reserve1: reserves[1],
-        blockTimestampLast: reserves[2],
-        token0: token0Address,
-        token1: token1Address
-      };
-
-      this.setCached(cacheKey, result);
-      return result;
-    } catch (error) {
-      console.error(`Error fetching reserves for pool ${poolAddress}:`, error);
-      throw new Error(`Contract interaction failed: ${error instanceof Error ? error.message : 'Unknown'}`);
-    }
-  }
-
-  /**
-   * Obtiene cantidad de salida estimada usando router de DEX
-   */
-  async getAmountsOut(
-    routerAddress: string,
-    amountIn: bigint,
-    path: string[],
-    chain: string
-  ): Promise<bigint[]> {
-    const cacheKey = `amounts_out_${routerAddress}_${amountIn}_${path.join(',')}_${chain}`;
-    const cached = this.getCached<bigint[]>(cacheKey);
-    if (cached) return cached;
-
-    try {
-      const provider = this.getProvider(chain);
-      const routerContract = new Contract(routerAddress, UNISWAP_V2_ROUTER_ABI, provider);
-
-      const amounts = await routerContract.getAmountsOut(amountIn, path);
-      const result = amounts.map((amount: any) => BigInt(amount.toString()));
-
-      this.setCached(cacheKey, result);
-      return result;
-    } catch (error) {
-      console.error(`Error getting amounts out from router ${routerAddress}:`, error);
-      throw new Error(`Router query failed: ${error instanceof Error ? error.message : 'Unknown'}`);
-    }
-  }
-
-  /**
-   * Obtiene información de token desde el contrato
-   */
-  async getTokenInfo(tokenAddress: string, chain: string): Promise<TokenInfo> {
-    const cacheKey = `token_info_${tokenAddress}_${chain}`;
-    const cached = this.getCached<TokenInfo>(cacheKey);
-    if (cached) return cached;
-
-    try {
-      const provider = this.getProvider(chain);
-      const tokenContract = new Contract(tokenAddress, ERC20_ABI, provider);
-
-      const [symbol, name, decimals] = await Promise.all([
-        tokenContract.symbol(),
-        tokenContract.name(),
-        tokenContract.decimals()
-      ]);
-
-      const result: TokenInfo = {
-        address: DexHelpers.formatAddress(tokenAddress),
-        symbol,
-        name,
-        decimals: parseInt(decimals.toString()),
-        chain: chain as Chain
-      };
-
-      // Cache por más tiempo para info de tokens (no cambia frecuentemente)
-      this.cache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
+      const response = await fetch(subgraphUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(query)
       });
 
-      return result;
+      if (!response.ok) {
+        throw new Error(`Subgraph request failed: ${response.statusText}`);
+      }
+
+      return await response.json();
+      
     } catch (error) {
-      console.error(`Error fetching token info for ${tokenAddress}:`, error);
-      throw new Error(`Token info fetch failed: ${error instanceof Error ? error.message : 'Unknown'}`);
+      console.error('Subgraph query error:', error);
+      return { errors: [{ message: error instanceof Error ? error.message : 'Unknown error' }] };
     }
   }
 
+  /**
+   * Obtiene pools de Uniswap V2 usando The Graph
+   */
+  async getUniswapV2Pools(
+    chain: Chain,
+    tokenA?: string,
+    tokenB?: string,
+    limit: number = 100
+  ): Promise<LiquidityPool[]> {
+    // Placeholder - implementar integración real con The Graph
+    console.warn('Uniswap V2 subgraph integration not implemented yet');
+    return [];
+  }
+
+  /**
+   * Obtiene datos históricos de un pool
+   */
+  async getPoolHistoricalData(
+    poolAddress: string,
+    chain: Chain,
+    timeframe: '1h' | '24h' | '7d' = '24h'
+  ): Promise<Array<{ timestamp: number; price: number; volume: number; liquidity: number }>> {
+    // Placeholder - implementar integración con subgraph
+    console.warn('Historical data fetching not implemented yet');
+    return [];
+  }
+
   // ============================================================================
-  // FUNCIONES DE AGREGACIÓN DE DATOS
+  // ANÁLISIS DE PRECIOS Y ARBITRAJE
   // ============================================================================
 
   /**
-   * Obtiene precios de múltiples fuentes y los agrega
+   * Compara precios entre diferentes DEXs para un par de tokens
    */
-  async getAggregatedPrices(
-    tokenIn: TokenInfo,
-    tokenOut: TokenInfo,
-    amountIn: bigint,
+  async comparePricesAcrossDexes(
+    tokenA: string,
+    tokenB: string,
+    chain: Chain,
     dexes: DexInfo[]
-  ): Promise<PriceData[]> {
-    const results: PriceData[] = [];
+  ): Promise<Array<{ dex: string; price: number; pool: LiquidityPool }>> {
+    const priceComparisons: Array<{ dex: string; price: number; pool: LiquidityPool }> = [];
 
-    await Promise.allSettled(
-      dexes.map(async (dex) => {
-        try {
-          const priceData = await this.getDexPrice(tokenIn, tokenOut, amountIn, dex);
-          if (priceData) {
-            results.push(priceData);
-          }
-        } catch (error) {
-          console.warn(`Failed to get price from ${dex.name}:`, error);
-        }
-      })
-    );
+    for (const dex of dexes.filter(d => d.chain === chain)) {
+      try {
+        const pools = await this.findPoolsWithTokens(tokenA, tokenB, chain, [dex]);
+        
+        for (const pool of pools) {
+          const price = DexHelpers.getTokenPrice(
+            pool.token0,
+            pool.token1,
+            pool.reserve0,
+            pool.reserve1
+          );
 
-    return results.sort((a, b) => Number(b.amountOut - a.amountOut));
-  }
-
-  /**
-   * Obtiene precio de un DEX específico
-   */
-  async getDexPrice(
-    tokenIn: TokenInfo,
-    tokenOut: TokenInfo,
-    amountIn: bigint,
-    dex: DexInfo
-  ): Promise<PriceData | null> {
-    try {
-      // Para V2-style DEXs
-      if (dex.type === 'uniswap-v2' || dex.type === 'sushiswap') {
-        const amounts = await this.getAmountsOut(
-          dex.router,
-          amountIn,
-          [tokenIn.address, tokenOut.address],
-          dex.chain
-        );
-
-        if (amounts.length >= 2) {
-          return {
+          priceComparisons.push({
             dex: dex.name,
-            tokenIn: tokenIn.address,
-            tokenOut: tokenOut.address,
-            amountIn,
-            amountOut: amounts[amounts.length - 1],
-            priceImpact: 0, // Calcular si es necesario
-            liquidity: 0n, // Obtener de pool si es necesario
-            reserveIn: 0n,
-            reserveOut: 0n,
-            fee: dex.fee,
-            timestamp: Date.now()
-          };
+            price,
+            pool
+          });
+        }
+        
+      } catch (error) {
+        console.warn(`Error comparing prices on ${dex.name}:`, error);
+      }
+    }
+
+    // Ordenar por precio
+    return priceComparisons.sort((a, b) => a.price - b.price);
+  }
+
+  /**
+   * Detecta oportunidades de arbitraje simples
+   */
+  async detectSimpleArbitrage(
+    tokenA: string,
+    tokenB: string,
+    chain: Chain,
+    dexes: DexInfo[],
+    minProfitThreshold: number = 0.01 // 1%
+  ): Promise<Array<{
+    buyDex: string;
+    sellDex: string;
+    buyPrice: number;
+    sellPrice: number;
+    profitPercent: number;
+    buyPool: LiquidityPool;
+    sellPool: LiquidityPool;
+  }>> {
+    const priceComparisons = await this.comparePricesAcrossDexes(tokenA, tokenB, chain, dexes);
+    const opportunities: Array<{
+      buyDex: string;
+      sellDex: string;
+      buyPrice: number;
+      sellPrice: number;
+      profitPercent: number;
+      buyPool: LiquidityPool;
+      sellPool: LiquidityPool;
+    }> = [];
+
+    // Comparar todos los pares de precios
+    for (let i = 0; i < priceComparisons.length; i++) {
+      for (let j = i + 1; j < priceComparisons.length; j++) {
+        const lower = priceComparisons[i];
+        const higher = priceComparisons[j];
+        
+        const profitPercent = (higher.price - lower.price) / lower.price;
+        
+        if (profitPercent >= minProfitThreshold) {
+          opportunities.push({
+            buyDex: lower.dex,
+            sellDex: higher.dex,
+            buyPrice: lower.price,
+            sellPrice: higher.price,
+            profitPercent,
+            buyPool: lower.pool,
+            sellPool: higher.pool
+          });
         }
       }
-
-      // Aquí agregar lógica para V3 y otros tipos de DEX
-
-      return null;
-    } catch (error) {
-      console.error(`Error getting price from ${dex.name}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Busca las mejores rutas de arbitraje
-   */
-  async findBestRoutes(
-    tokenA: TokenInfo,
-    tokenB: TokenInfo,
-    amount: bigint,
-    dexes: DexInfo[],
-    maxHops: number = 3
-  ): Promise<SwapRoute[]> {
-    const routes: SwapRoute[] = [];
-
-    // Rutas directas (1 hop)
-    for (const dex of dexes) {
-      const priceData = await this.getDexPrice(tokenA, tokenB, amount, dex);
-      if (priceData && priceData.amountOut > 0n) {
-        routes.push({
-          path: [tokenA, tokenB],
-          dexes: [dex],
-          expectedOutput: priceData.amountOut,
-          priceImpact: priceData.priceImpact,
-          gasEstimate: 150000n,
-          confidence: 0.9
-        });
-      }
     }
 
-    // Aquí agregar lógica para rutas multi-hop si maxHops > 1
-
-    return routes.sort((a, b) => Number(b.expectedOutput - a.expectedOutput));
+    return opportunities.sort((a, b) => b.profitPercent - a.profitPercent);
   }
 
   // ============================================================================
-  // UTILIDADES Y MANTENIMIENTO
+  // UTILIDADES Y HELPERS
   // ============================================================================
 
   /**
-   * Actualiza todos los caches
+   * Convierte chain name a chainId
    */
-  async refreshAllCaches(): Promise<void> {
-    console.log('🔄 Refreshing all caches...');
-    this.cleanCache();
-    
-    // Aquí se pueden agregar operaciones específicas de refresh
-    console.log('✅ Cache refresh completed');
+  private getChainId(chain: Chain): number {
+    const chainIds: Record<Chain, number> = {
+      ethereum: 1,
+      bsc: 56,
+      polygon: 137,
+      arbitrum: 42161,
+      optimism: 10,
+      avalanche: 43114,
+      base: 8453,
+      fantom: 250,
+      gnosis: 100,
+      celo: 42220,
+      moonbeam: 1284,
+      cronos: 25,
+      aurora: 1313161554,
+      harmony: 1666600000,
+      kava: 2222,
+      metis: 1088,
+      evmos: 9001,
+      oasis: 42262,
+      milkomeda: 2001,
+      telos: 40
+    };
+
+    return chainIds[chain] || 1;
+  }
+
+  /**
+   * Verifica si una chain está soportada
+   */
+  isSupportedChain(chain: string): chain is Chain {
+    return chain in RPC_URLS;
   }
 
   /**
    * Obtiene estadísticas del cache
    */
-  getCacheStats(): {
-    totalEntries: number;
-    validEntries: number;
-    expiredEntries: number;
-    hitRate: number;
-  } {
-    const now = Date.now();
-    let validEntries = 0;
-    let expiredEntries = 0;
-
-    for (const entry of this.cache.values()) {
-      if (now - entry.timestamp <= this.cacheTimeout) {
-        validEntries++;
-      } else {
-        expiredEntries++;
-      }
-    }
-
+  getCacheStats(): { size: number; chains: string[]; keys: string[] } {
     return {
-      totalEntries: this.cache.size,
-      validEntries,
-      expiredEntries,
-      hitRate: validEntries / (validEntries + expiredEntries) || 0
+      size: this.cache.size,
+      chains: Array.from(this.providers.keys()),
+      keys: Array.from(this.cache.keys())
     };
   }
 
   /**
-   * Limpia todos los caches
+   * Limpia todo el cache
    */
-  clearAllCaches(): void {
+  clearCache(): void {
     this.cache.clear();
-    console.log('🗑️  All caches cleared');
+  }
+
+  /**
+   * Actualiza la configuración de una chain
+   */
+  updateChainConfig(chain: Chain, config: Partial<FetcherConfig>): void {
+    const currentConfig = this.configs.get(chain) || DEFAULT_CONFIG;
+    this.configs.set(chain, { ...currentConfig, ...config });
+    
+    // Recrear provider si cambió la URL
+    if (config.rpcUrl) {
+      this.providers.delete(chain);
+    }
   }
 }
 

@@ -18,8 +18,11 @@ import {
   Pause
 } from 'lucide-react'
 import { cn, formatCurrency, formatPercentage } from '@/lib/utils'
+import { AntiFlickerTable, formatters } from '@/components/ui/anti-flicker'
+import { ArbitrageOpportunity } from '../types/api'
 
-interface Opportunity {
+// Legacy interface for backward compatibility
+interface LegacyOpportunity {
   id: string
   tokenA: string
   tokenB: string
@@ -37,8 +40,12 @@ interface Opportunity {
 }
 
 interface OpportunitiesTableProps {
-  opportunities: Opportunity[]
+  opportunities?: (ArbitrageOpportunity | LegacyOpportunity)[]
+  data?: ArbitrageOpportunity[]
   className?: string
+  isLoading?: boolean
+  error?: string | null
+  onExecute?: (opportunityId: string) => void
 }
 
 function getRiskColor(risk: 'low' | 'medium' | 'high') {
@@ -70,202 +77,232 @@ function getStatusIcon(status: 'active' | 'executing' | 'completed' | 'failed') 
   }
 }
 
-export function OpportunitiesTable({ opportunities, className }: OpportunitiesTableProps) {
-  const [sortField, setSortField] = useState<keyof Opportunity>('profitPercentage')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
+export function OpportunitiesTable({ 
+  opportunities = [], 
+  data = [], 
+  className, 
+  isLoading = false,
+  error = null,
+  onExecute 
+}: OpportunitiesTableProps) {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'executing'>('all')
 
-  const handleSort = (field: keyof Opportunity) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('desc')
-    }
-  }
+  // Use new API data if available, fallback to legacy
+  const tableData = data.length > 0 ? data : opportunities
 
-  const filteredAndSortedOpportunities = opportunities
-    .filter(opp => filterStatus === 'all' || opp.status === filterStatus)
-    .sort((a, b) => {
-      const aVal = a[sortField]
-      const bVal = b[sortField]
-      const direction = sortDirection === 'asc' ? 1 : -1
-      
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return (aVal - bVal) * direction
+  // Transform API data to table format
+  const transformedData = tableData.map(opp => {
+    // Handle both API and legacy formats
+    if ('tokenSymbol' in opp) {
+      // New API format
+      return {
+        id: opp.id,
+        tokenA: opp.tokenSymbol,
+        tokenB: 'USD',
+        exchangeA: opp.executionPath?.[0] || 'DEX A',
+        exchangeB: opp.executionPath?.[1] || 'DEX B',
+        profitAmount: opp.profitUsd,
+        profitPercentage: opp.profitPercentage,
+        network: opp.blockchain,
+        timestamp: opp.createdAt,
+        strategy: opp.strategy,
+        risk: opp.riskLevel,
+        status: 'active' as const,
+        volume: parseFloat(opp.maximumAmount),
+        gasEstimate: parseInt(opp.estimatedGas) / 1000000000 // Convert to Gwei
       }
-      return String(aVal).localeCompare(String(bVal)) * direction
-    })
+    } else {
+      // Legacy format
+      return opp as LegacyOpportunity
+    }
+  })
 
-  return (
-    <Card className={cn("", className)}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-semibold">Oportunidades de Arbitraje</CardTitle>
-          <div className="flex items-center space-x-2">
-            <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
-              {filteredAndSortedOpportunities.length} activas
-            </Badge>
-            <Button variant="outline" size="sm">
-              <Filter className="w-4 h-4 mr-2" />
-              Filtros
-            </Button>
+  const filteredData = transformedData.filter(opp => 
+    filterStatus === 'all' || opp.status === filterStatus
+  )
+
+  // Define table columns with anti-flicker support
+  const columns = [
+    {
+      key: 'pair',
+      label: 'Pair',
+      render: (item: any) => (
+        <div className="flex items-center space-x-3">
+          <div>
+            <div className="text-sm font-medium text-slate-900">
+              {item.tokenA}/{item.tokenB}
+            </div>
+            <div className="text-sm text-slate-600">
+              {item.exchangeA} → {item.exchangeB}
+            </div>
           </div>
         </div>
-        
-        {/* Filter Tabs */}
-        <div className="flex space-x-2 mt-4">
-          {[
-            { key: 'all', label: 'Todas' },
-            { key: 'active', label: 'Activas' },
-            { key: 'executing', label: 'Ejecutando' }
-          ].map((filter) => (
+      )
+    },
+    {
+      key: 'strategy',
+      label: 'Estrategia',
+      render: (item: any) => (
+        <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+          {item.strategy.replace('_', ' ')}
+        </Badge>
+      )
+    },
+    {
+      key: 'profit',
+      label: 'Profit',
+      render: (item: any) => (
+        <div className="text-sm">
+          <div className="flex items-center space-x-1">
+            <TrendingUp className="w-3 h-3 text-emerald-500" />
+            <span className="font-medium text-emerald-600">
+              {formatters.percentage(item.profitPercentage)}
+            </span>
+          </div>
+          <div className="text-sm text-slate-600">
+            {formatters.currency(item.profitAmount)}
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'network',
+      label: 'Red',
+      render: (item: any) => (
+        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+          {item.network}
+        </Badge>
+      )
+    },
+    {
+      key: 'risk',
+      label: 'Riesgo',
+      render: (item: any) => (
+        <Badge variant="outline" className={getRiskColor(item.risk)}>
+          {item.risk}
+        </Badge>
+      )
+    },
+    {
+      key: 'status',
+      label: 'Estado',
+      render: (item: any) => {
+        const StatusIcon = getStatusIcon(item.status)
+        return (
+          <div className="flex items-center space-x-2">
+            <StatusIcon className="w-4 h-4" />
+            <Badge variant="outline" className={getStatusColor(item.status)}>
+              {item.status}
+            </Badge>
+          </div>
+        )
+      }
+    },
+    {
+      key: 'volume',
+      label: 'Volumen',
+      render: (item: any) => (
+        <div className="text-sm">
+          <div className="font-medium text-slate-900">
+            {formatters.currency(item.volume)}
+          </div>
+          <div className="text-slate-600">
+            Gas: {item.gasEstimate.toFixed(1)} gwei
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'actions',
+      label: 'Acciones',
+      className: 'text-right',
+      render: (item: any) => (
+        <div className="flex items-center justify-end space-x-2">
+          {item.status === 'active' && (
+            <Button 
+              size="sm" 
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => onExecute?.(item.id)}
+            >
+              <Play className="w-3 h-3 mr-1" />
+              Ejecutar
+            </Button>
+          )}
+          {item.status === 'executing' && (
+            <Button size="sm" variant="outline">
+              <Pause className="w-3 h-3 mr-1" />
+              Pausar
+            </Button>
+          )}
+          <Button size="sm" variant="outline">
+            <ExternalLink className="w-3 h-3" />
+          </Button>
+        </div>
+      )
+    }
+  ]
+
+  return (
+    <Card className={cn(
+      "bg-white/80 backdrop-blur-sm border border-slate-200/30 rounded-2xl shadow-lg",
+      className
+    )}>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center space-x-2 text-slate-800">
+            <TrendingUp className="w-5 h-5 text-emerald-600" />
+            <span>Oportunidades de Arbitraje</span>
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+              {filteredData.length}
+            </Badge>
+          </CardTitle>
+          
+          <div className="flex items-center space-x-2">
             <Button
-              key={filter.key}
-              variant={filterStatus === filter.key ? "default" : "outline"}
+              variant="outline" 
               size="sm"
-              onClick={() => setFilterStatus(filter.key as any)}
+              onClick={() => setFilterStatus('all')}
               className={cn(
-                filterStatus === filter.key && "bg-emerald-600 hover:bg-emerald-700"
+                filterStatus === 'all' && 'bg-blue-50 text-blue-700 border-blue-200'
               )}
             >
-              {filter.label}
+              Todas ({tableData.length})
             </Button>
-          ))}
+            <Button
+              variant="outline"
+              size="sm" 
+              onClick={() => setFilterStatus('active')}
+              className={cn(
+                filterStatus === 'active' && 'bg-blue-50 text-blue-700 border-blue-200'
+              )}
+            >
+              Activas ({filteredData.filter(o => o.status === 'active').length})
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFilterStatus('executing')}
+              className={cn(
+                filterStatus === 'executing' && 'bg-blue-50 text-blue-700 border-blue-200'
+              )}
+            >
+              Ejecutándose ({filteredData.filter(o => o.status === 'executing').length})
+            </Button>
+          </div>
         </div>
       </CardHeader>
       
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b">
-              <tr>
-                <th className="text-left p-4 font-medium text-slate-600">Par/Exchange</th>
-                <th 
-                  className="text-left p-4 font-medium text-slate-600 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('profitPercentage')}
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>Ganancia</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th className="text-left p-4 font-medium text-slate-600">Red</th>
-                <th className="text-left p-4 font-medium text-slate-600">Riesgo</th>
-                <th className="text-left p-4 font-medium text-slate-600">Estado</th>
-                <th 
-                  className="text-left p-4 font-medium text-slate-600 cursor-pointer hover:bg-slate-100"
-                  onClick={() => handleSort('volume')}
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>Volumen</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-                <th className="text-right p-4 font-medium text-slate-600">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAndSortedOpportunities.map((opportunity) => {
-                const StatusIcon = getStatusIcon(opportunity.status)
-                return (
-                  <tr key={opportunity.id} className="border-b hover:bg-slate-50 transition-colors">
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        <div className="font-medium text-slate-900">
-                          {opportunity.tokenA}/{opportunity.tokenB}
-                        </div>
-                        <div className="text-sm text-slate-600 flex items-center space-x-2">
-                          <span>{opportunity.exchangeA}</span>
-                          <ExternalLink className="w-3 h-3" />
-                          <span>{opportunity.exchangeB}</span>
-                        </div>
-                      </div>
-                    </td>
-                    
-                    <td className="p-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          <span className="font-semibold text-emerald-600">
-                            {formatPercentage(opportunity.profitPercentage)}
-                          </span>
-                        </div>
-                        <div className="text-sm text-slate-600">
-                          {formatCurrency(opportunity.profitAmount)}
-                        </div>
-                      </div>
-                    </td>
-                    
-                    <td className="p-4">
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                        {opportunity.network}
-                      </Badge>
-                    </td>
-                    
-                    <td className="p-4">
-                      <Badge variant="outline" className={getRiskColor(opportunity.risk)}>
-                        {opportunity.risk}
-                      </Badge>
-                    </td>
-                    
-                    <td className="p-4">
-                      <div className="flex items-center space-x-2">
-                        <StatusIcon className="w-4 h-4" />
-                        <Badge variant="outline" className={getStatusColor(opportunity.status)}>
-                          {opportunity.status}
-                        </Badge>
-                      </div>
-                    </td>
-                    
-                    <td className="p-4">
-                      <div className="text-sm">
-                        <div className="font-medium text-slate-900">
-                          {formatCurrency(opportunity.volume)}
-                        </div>
-                        <div className="text-slate-600">
-                          Gas: {opportunity.gasEstimate} gwei
-                        </div>
-                      </div>
-                    </td>
-                    
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        {opportunity.status === 'active' && (
-                          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700">
-                            <Play className="w-3 h-3 mr-1" />
-                            Ejecutar
-                          </Button>
-                        )}
-                        {opportunity.status === 'executing' && (
-                          <Button size="sm" variant="outline">
-                            <Pause className="w-3 h-3 mr-1" />
-                            Pausar
-                          </Button>
-                        )}
-                        <Button size="sm" variant="outline">
-                          <ExternalLink className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        
-        {filteredAndSortedOpportunities.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-slate-400 mb-2">
-              <Search className="w-12 h-12 mx-auto" />
-            </div>
-            <p className="text-slate-600">No se encontraron oportunidades</p>
-            <p className="text-sm text-slate-500 mt-1">
-              Ajusta los filtros o espera a que se detecten nuevas oportunidades
-            </p>
-          </div>
-        )}
+        <AntiFlickerTable
+          data={filteredData}
+          columns={columns}
+          isLoading={isLoading}
+          error={error}
+          keyExtractor={(item) => item.id}
+          onRowClick={(item) => console.log('Selected opportunity:', item)}
+          enableHighlight={true}
+          highlightDuration={2000}
+        />
       </CardContent>
     </Card>
   )

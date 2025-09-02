@@ -3,39 +3,21 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from '../../saas/auth/auth.service';
+import { 
+  LoginRequest,
+  RegisterRequest,
+  LoginResponse,
+  AuthUser,
+  ApiError,
+  RefreshTokenRequest,
+  PasswordResetRequest,
+  PasswordResetConfirmRequest,
+  ChangePasswordRequest,
+  TwoFactorSetupResponse
+} from '../../../web/types/api';
 
-interface LoginBody {
-  email: string;
-  password: string;
-  tenantSlug?: string;
-}
-
-interface RegisterBody {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  tenantSlug: string;
-  inviteToken?: string;
-}
-
-interface RefreshTokenBody {
-  refreshToken: string;
-}
-
-interface PasswordResetBody {
-  email: string;
-  tenantSlug?: string;
-}
-
-interface PasswordResetConfirmBody {
-  token: string;
-  newPassword: string;
-}
-
-interface ChangePasswordBody {
-  currentPassword: string;
-  newPassword: string;
+interface AuthenticatedRequest extends FastifyRequest {
+  user: AuthUser;
 }
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -57,7 +39,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         },
       },
     },
-  }, async (request: FastifyRequest<{ Body: LoginBody }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Body: LoginRequest }>, reply: FastifyReply) => {
     try {
       const result = await authService.authenticateWithPassword(request.body);
       
@@ -86,11 +68,13 @@ export async function authRoutes(fastify: FastifyInstance) {
         // Don't return tokens in response body for security
       };
     } catch (error) {
-      reply.code(401);
-      return {
+      const errorResponse: ApiError = {
         success: false,
         error: error instanceof Error ? error.message : 'Authentication failed',
+        code: 401
       };
+      reply.code(401);
+      return errorResponse;
     }
   });
 
@@ -113,7 +97,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         },
       },
     },
-  }, async (request: FastifyRequest<{ Body: RegisterBody }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Body: RegisterRequest }>, reply: FastifyReply) => {
     try {
       const result = await authService.register(request.body);
       

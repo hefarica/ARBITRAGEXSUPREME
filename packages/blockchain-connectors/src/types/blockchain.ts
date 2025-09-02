@@ -21,6 +21,7 @@ export interface BlockchainConfig {
   hybridBridge?: string; // Dirección del bridge híbrido
   arbitrageExecutor?: string; // Dirección del executor de arbitraje
   privateKey?: string; // Clave privada para transacciones (desarrollo)
+  gasPrice?: string | number; // Precio de gas por defecto para transacciones
 }
 
 export interface TokenBalance {

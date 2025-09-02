@@ -1,0 +1,489 @@
+# Database migration job
+{{- if .Values.jobs.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-migration-{{ .Values.jobs.migration.version | default "latest" }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: migration
+    version: {{ .Values.jobs.migration.version | default "latest" | quote }}
+  annotations:
+    # Helm hooks for proper job execution order
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.jobs.migration.backoffLimit | default 3 }}
+  completions: 1
+  parallelism: 1
+  ttlSecondsAfterFinished: {{ .Values.jobs.migration.ttlSecondsAfterFinished | default 300 }}
+  
+  template:
+    metadata:
+      labels:
+        {{- include "arbitragex-supreme.selectorLabels" . | nindent 8 }}
+        component: migration
+      annotations:
+        # Disable istio sidecar for jobs
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: {{ .Values.jobs.migration.restartPolicy | default "OnFailure" }}
+      serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+      
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      
+      containers:
+        - name: migration
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "arbitragex-supreme.imagePullPolicy" . }}
+          
+          command: {{ .Values.jobs.migration.command }}
+          args: {{ .Values.jobs.migration.args }}
+          
+          envFrom:
+            {{- include "arbitragex-supreme.envFromConfigMap" . | nindent 12 }}
+            {{- include "arbitragex-supreme.envFromSecret" . | nindent 12 }}
+          
+          env:
+            - name: JOB_TYPE
+              value: "migration"
+            - name: MIGRATION_VERSION
+              value: {{ .Values.jobs.migration.version | default "latest" | quote }}
+            - name: NODE_ENV
+              value: {{ .Values.environment }}
+          
+          resources:
+            {{- toYaml .Values.jobs.migration.resources | nindent 12 }}
+          
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          
+          volumeMounts:
+            - name: temp-storage
+              mountPath: /tmp
+            {{- if .Values.persistence.enabled }}
+            - name: migration-data
+              mountPath: /app/migrations
+              readOnly: true
+            {{- end }}
+      
+      volumes:
+        - name: temp-storage
+          emptyDir:
+            sizeLimit: 1Gi
+        {{- if .Values.persistence.enabled }}
+        - name: migration-data
+          configMap:
+            name: {{ include "arbitragex-supreme.fullname" . }}-migrations
+        {{- end }}
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+
+---
+# Data backup job
+{{- if .Values.jobs.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-backup
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: backup
+spec:
+  schedule: {{ .Values.jobs.backup.schedule | quote }}
+  timeZone: {{ .Values.jobs.backup.timeZone | default "UTC" }}
+  concurrencyPolicy: {{ .Values.jobs.backup.concurrencyPolicy | default "Forbid" }}
+  successfulJobsHistoryLimit: {{ .Values.jobs.backup.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.jobs.backup.failedJobsHistoryLimit | default 1 }}
+  startingDeadlineSeconds: {{ .Values.jobs.backup.startingDeadlineSeconds | default 300 }}
+  suspend: {{ .Values.jobs.backup.suspend | default false }}
+  
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "arbitragex-supreme.selectorLabels" . | nindent 8 }}
+        component: backup
+    spec:
+      backoffLimit: {{ .Values.jobs.backup.backoffLimit | default 2 }}
+      completions: 1
+      parallelism: 1
+      ttlSecondsAfterFinished: {{ .Values.jobs.backup.ttlSecondsAfterFinished | default 86400 }}
+      
+      template:
+        metadata:
+          labels:
+            {{- include "arbitragex-supreme.selectorLabels" . | nindent 12 }}
+            component: backup
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+          
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          
+          containers:
+            - name: backup
+              image: "{{ .Values.jobs.backup.image | default .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ include "arbitragex-supreme.imagePullPolicy" . }}
+              
+              command: {{ .Values.jobs.backup.command }}
+              args: {{ .Values.jobs.backup.args }}
+              
+              envFrom:
+                {{- include "arbitragex-supreme.envFromConfigMap" . | nindent 16 }}
+                {{- include "arbitragex-supreme.envFromSecret" . | nindent 16 }}
+              
+              env:
+                - name: JOB_TYPE
+                  value: "backup"
+                - name: BACKUP_TIMESTAMP
+                  value: "$(date +%Y%m%d-%H%M%S)"
+                - name: BACKUP_RETENTION_DAYS
+                  value: {{ .Values.jobs.backup.retentionDays | default "30" | quote }}
+              
+              resources:
+                {{- toYaml .Values.jobs.backup.resources | nindent 16 }}
+              
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backups
+                {{- if .Values.persistence.enabled }}
+                - name: app-data
+                  mountPath: /app/data
+                  readOnly: true
+                {{- end }}
+          
+          volumes:
+            - name: backup-storage
+              {{- if .Values.jobs.backup.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "arbitragex-supreme.fullname" . }}-backup
+              {{- else }}
+              emptyDir:
+                sizeLimit: {{ .Values.jobs.backup.storage.size | default "10Gi" }}
+              {{- end }}
+            {{- if .Values.persistence.enabled }}
+            - name: app-data
+              persistentVolumeClaim:
+                claimName: {{ include "arbitragex-supreme.fullname" . }}-data
+            {{- end }}
+          
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
+
+---
+# Security scan job
+{{- if .Values.jobs.securityScan.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-security-scan
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: security
+spec:
+  schedule: {{ .Values.jobs.securityScan.schedule | quote }}
+  timeZone: {{ .Values.jobs.securityScan.timeZone | default "UTC" }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  startingDeadlineSeconds: 600
+  suspend: {{ .Values.jobs.securityScan.suspend | default false }}
+  
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "arbitragex-supreme.selectorLabels" . | nindent 8 }}
+        component: security-scan
+    spec:
+      backoffLimit: 1
+      completions: 1
+      parallelism: 1
+      ttlSecondsAfterFinished: 3600
+      
+      template:
+        metadata:
+          labels:
+            {{- include "arbitragex-supreme.selectorLabels" . | nindent 12 }}
+            component: security-scan
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}-scanner
+          
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            fsGroup: 65534
+          
+          containers:
+            # Vulnerability scanner
+            - name: vulnerability-scanner
+              image: {{ .Values.jobs.securityScan.vulnerabilityScanner.image }}
+              command: {{ .Values.jobs.securityScan.vulnerabilityScanner.command }}
+              args: {{ .Values.jobs.securityScan.vulnerabilityScanner.args }}
+              
+              env:
+                - name: TARGET_IMAGE
+                  value: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+                - name: SCAN_OUTPUT_DIR
+                  value: "/scan-results"
+              
+              resources:
+                limits:
+                  cpu: 2
+                  memory: 4Gi
+                requests:
+                  cpu: 1
+                  memory: 2Gi
+              
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              
+              volumeMounts:
+                - name: scan-results
+                  mountPath: /scan-results
+                - name: cache
+                  mountPath: /tmp
+            
+            # Configuration scanner
+            - name: config-scanner
+              image: {{ .Values.jobs.securityScan.configScanner.image }}
+              command: {{ .Values.jobs.securityScan.configScanner.command }}
+              args: {{ .Values.jobs.securityScan.configScanner.args }}
+              
+              env:
+                - name: TARGET_NAMESPACE
+                  value: {{ .Values.namespace }}
+                - name: SCAN_OUTPUT_DIR
+                  value: "/scan-results"
+              
+              resources:
+                limits:
+                  cpu: 1
+                  memory: 1Gi
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+              
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              
+              volumeMounts:
+                - name: scan-results
+                  mountPath: /scan-results
+                - name: cache
+                  mountPath: /tmp
+          
+          volumes:
+            - name: scan-results
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: cache
+              emptyDir:
+                sizeLimit: 2Gi
+          
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
+
+---
+# Performance test job
+{{- if .Values.jobs.performanceTest.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-perf-test-{{ randAlphaNum 5 | lower }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: performance-test
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 1
+  completions: 1
+  parallelism: 1
+  ttlSecondsAfterFinished: 1800
+  
+  template:
+    metadata:
+      labels:
+        {{- include "arbitragex-supreme.selectorLabels" . | nindent 8 }}
+        component: performance-test
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+      
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      
+      containers:
+        - name: k6-load-test
+          image: {{ .Values.jobs.performanceTest.image }}
+          
+          command:
+            - k6
+            - run
+            - --vus={{ .Values.jobs.performanceTest.virtualUsers | default 10 }}
+            - --duration={{ .Values.jobs.performanceTest.duration | default "5m" }}
+            - --out=json=/test-results/results.json
+            - /scripts/load-test.js
+          
+          env:
+            - name: TARGET_URL
+              value: "http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}"
+            - name: API_BASE_URL
+              value: "http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}/api/v1"
+            - name: WS_URL
+              value: "ws://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.wsPort }}/ws"
+          
+          resources:
+            {{- toYaml .Values.jobs.performanceTest.resources | nindent 12 }}
+          
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          
+          volumeMounts:
+            - name: test-scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: test-results
+              mountPath: /test-results
+      
+      volumes:
+        - name: test-scripts
+          configMap:
+            name: {{ include "arbitragex-supreme.fullname" . }}-perf-test-scripts
+        - name: test-results
+          emptyDir:
+            sizeLimit: 1Gi
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+
+---
+# Blockchain sync status check job
+{{- if .Values.jobs.blockchainSync.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-blockchain-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: blockchain-sync
+spec:
+  schedule: {{ .Values.jobs.blockchainSync.schedule | default "*/5 * * * *" | quote }}
+  timeZone: "UTC"
+  concurrencyPolicy: Replace
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      completions: 1
+      parallelism: 1
+      ttlSecondsAfterFinished: 300
+      
+      template:
+        metadata:
+          labels:
+            {{- include "arbitragex-supreme.selectorLabels" . | nindent 12 }}
+            component: blockchain-sync
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+          
+          containers:
+            - name: sync-checker
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ include "arbitragex-supreme.imagePullPolicy" . }}
+              
+              command:
+                - node
+                - -e
+                - |
+                  const networks = ['ethereum', 'polygon', 'arbitrum', 'optimism', 'base'];
+                  Promise.all(networks.map(async network => {
+                    const response = await fetch(`http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}/api/v1/blockchain/${network}/sync-status`);
+                    const data = await response.json();
+                    if (!data.synced) {
+                      console.error(`${network} not synced: ${JSON.stringify(data)}`);
+                      process.exit(1);
+                    }
+                    console.log(`${network} sync status: OK`);
+                  })).then(() => console.log('All blockchains synced')).catch(err => {
+                    console.error('Sync check failed:', err);
+                    process.exit(1);
+                  });
+              
+              resources:
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+              
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+{{- end }}

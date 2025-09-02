@@ -2,7 +2,7 @@
 // Sistema completo que integra todas las 12 blockchains con detección JavaScript y ejecución en contratos inteligentes
 // ACTUALIZADO: Integra con UniversalFlashLoanArbitrage.sol para 12 tipos de arbitraje
 
-import { ethers, Contract, Wallet, providers } from 'ethers';
+import { ethers, Contract, Wallet, JsonRpcProvider } from 'ethers';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { connect, keyStores, WalletConnection } from 'near-api-js';
 import { SmartContractIntegration } from './SmartContractIntegration';
@@ -128,7 +128,7 @@ export interface CosmosConfig {
 export class HybridSystemIntegration {
   private config: HybridSystemConfig;
   private evmIntegrations: Map<string, SmartContractIntegration> = new Map();
-  private solanaConnection: Connection;
+  private solanaConnection!: Connection;
   private nearConnection: any;
   private isMonitoring: boolean = false;
 
@@ -296,7 +296,7 @@ export class HybridSystemIntegration {
       const chainConfig = this.config[chainName as keyof HybridSystemConfig] as BlockchainConfig & { universalContract: string };
       
       // Conectar al contrato universal
-      const provider = new ethers.providers.JsonRpcProvider(chainConfig.rpcUrl);
+      const provider = new JsonRpcProvider(chainConfig.rpcUrl);
       const wallet = new ethers.Wallet(chainConfig.privateKey, provider);
       const universalContract = new ethers.Contract(
         chainConfig.universalContract,
@@ -334,12 +334,12 @@ export class HybridSystemIntegration {
       const gasPrice = await provider.getGasPrice();
       const gasCost = gasEstimate.mul(gasPrice);
 
-      console.log(`💰 Gas estimate: ${ethers.utils.formatEther(gasCost)} ETH`);
+      console.log(`💰 Gas estimate: ${ethers.formatEther(gasCost)} ETH`);
 
       // Verificar que el profit esperado supere el costo de gas
-      const minProfitWei = ethers.utils.parseEther(params.minProfit);
-      if (minProfitWei.lte(gasCost.mul(2))) { // 2x gas cost minimum
-        throw new Error(`Profit too low: ${params.minProfit} ETH < ${ethers.utils.formatEther(gasCost.mul(2))} ETH (2x gas)`);
+      const minProfitWei = ethers.parseEther(params.minProfit);
+      if (minProfitWei.lte(gasCost * 2n)) { // 2x gas cost minimum
+        throw new Error(`Profit too low: ${params.minProfit} ETH < ${ethers.formatEther(gasCost * 2n)} ETH (2x gas)`);
       }
 
       // Ejecutar arbitraje
@@ -382,8 +382,8 @@ export class HybridSystemIntegration {
       const result: ExecutionResult = {
         success,
         transactionHash: tx.hash,
-        profit: ethers.utils.formatEther(profit),
-        gasCost: ethers.utils.formatEther(actualGasCost),
+        profit: ethers.formatEther(profit),
+        gasCost: ethers.formatEther(actualGasCost),
         executionTime,
         blockNumber: receipt.blockNumber,
         gasUsed: gasUsed.toString(),
@@ -391,7 +391,7 @@ export class HybridSystemIntegration {
         flashLoanProvider: FlashLoanProvider[params.provider],
         details: {
           arbitrageId: arbitrageEvent.args.arbitrageId,
-          netProfit: ethers.utils.formatEther(profit.sub(actualGasCost)),
+          netProfit: ethers.formatEther(profit - actualGasCost),
           roi: profit.gt(0) ? profit.mul(100).div(minProfitWei).toString() + '%' : '0%'
         }
       };
@@ -500,7 +500,7 @@ export class HybridSystemIntegration {
       // Preparar exchange data
       const exchangeData = opportunity.exchanges.map(exchange => {
         // Encode swap data for each exchange
-        return ethers.utils.defaultAbiCoder.encode(
+        return ethers.AbiCoder.defaultAbiCoder().encode(
           ['address', 'uint24'], 
           [exchange, 3000] // Default 0.3% fee
         );
@@ -510,7 +510,7 @@ export class HybridSystemIntegration {
         arbitrageType,
         provider,
         tokens: opportunity.tokens,
-        amounts: opportunity.amounts.map(amt => ethers.utils.parseEther(amt.toString()).toString()),
+        amounts: opportunity.amounts.map(amt => ethers.parseEther(amt.toString()).toString()),
         exchanges: opportunity.exchanges,
         exchangeData,
         swapRoutes: opportunity.tokens, // Simple route
@@ -518,7 +518,7 @@ export class HybridSystemIntegration {
         chainIds: [this.getChainId(chainName).toString()],
         bridges: [], // No cross-chain for now
         bridgeData: [],
-        minProfit: ethers.utils.parseEther((opportunity.expectedProfit * 0.8).toString()).toString(), // 80% of expected
+        minProfit: ethers.parseEther((opportunity.expectedProfit * 0.8).toString()).toString(), // 80% of expected
         maxSlippage: '500', // 5% max slippage
         deadline: (Math.floor(Date.now() / 1000) + 300).toString(), // 5 minutes
         strategyData: '0x' // No additional strategy data
@@ -583,16 +583,16 @@ export class HybridSystemIntegration {
   private updateStats(
     chainName: string,
     success: boolean,
-    profit: ethers.BigNumber,
-    gasCost: ethers.BigNumber,
+    profit: bigint,
+    gasCost: bigint,
     executionTime: number
   ): void {
     
     this.stats.totalExecuted++;
     if (success) {
-      this.stats.totalProfit += parseFloat(ethers.utils.formatEther(profit));
+      this.stats.totalProfit += parseFloat(ethers.formatEther(profit));
     }
-    this.stats.totalGasSpent += parseFloat(ethers.utils.formatEther(gasCost));
+    this.stats.totalGasSpent += parseFloat(ethers.formatEther(gasCost));
     this.stats.successRate = (this.stats.totalProfit > 0 ? 1 : 0) * 100;
     this.stats.averageExecutionTime = (this.stats.averageExecutionTime + executionTime) / 2;
     
@@ -601,9 +601,9 @@ export class HybridSystemIntegration {
     if (chainStats) {
       chainStats.executed++;
       if (success) {
-        chainStats.profit += parseFloat(ethers.utils.formatEther(profit));
+        chainStats.profit += parseFloat(ethers.formatEther(profit));
       }
-      chainStats.gasSpent += parseFloat(ethers.utils.formatEther(gasCost));
+      chainStats.gasSpent += parseFloat(ethers.formatEther(gasCost));
       chainStats.successRate = chainStats.profit > 0 ? (chainStats.profit / chainStats.executed) * 100 : 0;
     }
   }
@@ -699,7 +699,7 @@ export class HybridSystemIntegration {
   public async getUniversalContractStats(chainName: string): Promise<any> {
     try {
       const chainConfig = this.config[chainName as keyof HybridSystemConfig] as BlockchainConfig & { universalContract: string };
-      const provider = new ethers.providers.JsonRpcProvider(chainConfig.rpcUrl);
+      const provider = new JsonRpcProvider(chainConfig.rpcUrl);
       const contract = new ethers.Contract(
         chainConfig.universalContract,
         UNIVERSAL_ARBITRAGE_ABI,
@@ -714,7 +714,7 @@ export class HybridSystemIntegration {
         const [executions, profits, successRate] = await contract.getArbitrageStats(arbitrageType);
         stats[ArbitrageType[arbitrageType]] = {
           executions: executions.toString(),
-          profits: ethers.utils.formatEther(profits),
+          profits: ethers.formatEther(profits),
           successRate: successRate.toString()
         };
       }

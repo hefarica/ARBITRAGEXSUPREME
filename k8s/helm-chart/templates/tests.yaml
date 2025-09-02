@@ -1,0 +1,540 @@
+# Helm test pod for application health verification
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-health"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: health-test
+      image: curlimages/curl:latest
+      imagePullPolicy: IfNotPresent
+      
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing ArbitrageX Supreme health endpoints..."
+          
+          # Test main health endpoint
+          echo "Testing /health endpoint..."
+          if ! curl -f --max-time 30 http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.healthPort }}/health; then
+            echo "❌ Health endpoint failed"
+            exit 1
+          fi
+          echo "✅ Health endpoint OK"
+          
+          # Test API health
+          echo "Testing /api/v1/health endpoint..."
+          if ! curl -f --max-time 30 http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}/api/v1/health; then
+            echo "❌ API health endpoint failed"
+            exit 1
+          fi
+          echo "✅ API health endpoint OK"
+          
+          # Test metrics endpoint
+          echo "Testing /metrics endpoint..."
+          if ! curl -f --max-time 30 http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.metricsPort }}/metrics | grep -q "arbitragex_"; then
+            echo "❌ Metrics endpoint failed or no ArbitrageX metrics found"
+            exit 1
+          fi
+          echo "✅ Metrics endpoint OK"
+          
+          echo "🎉 All health tests passed!"
+      
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+---
+# Test pod for API functionality verification
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-api"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: api-test
+      image: curlimages/curl:latest
+      imagePullPolicy: IfNotPresent
+      
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing ArbitrageX Supreme API endpoints..."
+          
+          API_BASE="http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}/api/v1"
+          
+          # Test version endpoint
+          echo "Testing /api/v1/version endpoint..."
+          VERSION_RESPONSE=$(curl -s --max-time 30 "$API_BASE/version")
+          if [ $? -ne 0 ] || [ -z "$VERSION_RESPONSE" ]; then
+            echo "❌ Version endpoint failed"
+            exit 1
+          fi
+          echo "✅ Version endpoint OK: $VERSION_RESPONSE"
+          
+          # Test blockchain status endpoint
+          echo "Testing /api/v1/blockchain/status endpoint..."
+          BLOCKCHAIN_STATUS=$(curl -s --max-time 30 "$API_BASE/blockchain/status")
+          if [ $? -ne 0 ] || [ -z "$BLOCKCHAIN_STATUS" ]; then
+            echo "❌ Blockchain status endpoint failed"
+            exit 1
+          fi
+          echo "✅ Blockchain status endpoint OK"
+          
+          # Test trading pairs endpoint
+          echo "Testing /api/v1/trading/pairs endpoint..."
+          PAIRS_RESPONSE=$(curl -s --max-time 30 "$API_BASE/trading/pairs")
+          if [ $? -ne 0 ] || [ -z "$PAIRS_RESPONSE" ]; then
+            echo "❌ Trading pairs endpoint failed"
+            exit 1
+          fi
+          echo "✅ Trading pairs endpoint OK"
+          
+          # Test gas prices endpoint
+          echo "Testing /api/v1/blockchain/gas-prices endpoint..."
+          GAS_PRICES=$(curl -s --max-time 30 "$API_BASE/blockchain/gas-prices")
+          if [ $? -ne 0 ] || [ -z "$GAS_PRICES" ]; then
+            echo "❌ Gas prices endpoint failed"
+            exit 1
+          fi
+          echo "✅ Gas prices endpoint OK"
+          
+          echo "🎉 All API tests passed!"
+      
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+---
+# Test pod for blockchain connectivity verification
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-blockchain"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: blockchain-test
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+      imagePullPolicy: {{ include "arbitragex-supreme.imagePullPolicy" . }}
+      
+      command:
+        - node
+        - -e
+        - |
+          console.log('Testing blockchain connectivity...');
+          
+          const networks = ['ethereum', 'polygon', 'arbitrum', 'optimism', 'base'];
+          const API_BASE = 'http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}/api/v1';
+          
+          async function testBlockchainConnectivity() {
+            try {
+              for (const network of networks) {
+                console.log(`Testing ${network} connectivity...`);
+                
+                const response = await fetch(`${API_BASE}/blockchain/${network}/block-number`);
+                if (!response.ok) {
+                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                if (!data.blockNumber || data.blockNumber < 1) {
+                  throw new Error(`Invalid block number for ${network}: ${data.blockNumber}`);
+                }
+                
+                console.log(`✅ ${network} connectivity OK - Block: ${data.blockNumber}`);
+              }
+              
+              console.log('🎉 All blockchain connectivity tests passed!');
+            } catch (error) {
+              console.error('❌ Blockchain connectivity test failed:', error.message);
+              process.exit(1);
+            }
+          }
+          
+          testBlockchainConnectivity();
+      
+      envFrom:
+        {{- include "arbitragex-supreme.envFromConfigMap" . | nindent 8 }}
+        {{- include "arbitragex-supreme.envFromSecret" . | nindent 8 }}
+      
+      resources:
+        limits:
+          cpu: 200m
+          memory: 128Mi
+        requests:
+          cpu: 100m
+          memory: 64Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+---
+# Test pod for database connectivity verification
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-database"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: database-test
+      image: postgres:16-alpine
+      imagePullPolicy: IfNotPresent
+      
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing database connectivity..."
+          
+          # Test PostgreSQL connection
+          echo "Testing PostgreSQL connection..."
+          if ! pg_isready -h {{ .Values.postgresql.host }} -p {{ .Values.postgresql.port }} -U {{ .Values.postgresql.auth.username | default "arbitragex" }}; then
+            echo "❌ PostgreSQL connection failed"
+            exit 1
+          fi
+          echo "✅ PostgreSQL connection OK"
+          
+          # Test basic query
+          echo "Testing basic database query..."
+          PGPASSWORD="$DB_PASSWORD" psql -h {{ .Values.postgresql.host }} -p {{ .Values.postgresql.port }} -U "$DB_USERNAME" -d {{ .Values.postgresql.database }} -c "SELECT 1 as test;" > /dev/null
+          if [ $? -ne 0 ]; then
+            echo "❌ Database query test failed"
+            exit 1
+          fi
+          echo "✅ Database query test OK"
+          
+          echo "🎉 All database tests passed!"
+      
+      envFrom:
+        {{- include "arbitragex-supreme.envFromSecret" . | nindent 8 }}
+      
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+---
+# Test pod for Redis connectivity verification
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-redis"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: redis-test
+      image: redis:7-alpine
+      imagePullPolicy: IfNotPresent
+      
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing Redis connectivity..."
+          
+          # Test Redis connection
+          echo "Testing Redis connection..."
+          {{- if .Values.redis.auth.enabled }}
+          if ! redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} -a "$REDIS_PASSWORD" ping | grep -q "PONG"; then
+            echo "❌ Redis connection failed"
+            exit 1
+          fi
+          {{- else }}
+          if ! redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} ping | grep -q "PONG"; then
+            echo "❌ Redis connection failed"
+            exit 1
+          fi
+          {{- end }}
+          echo "✅ Redis connection OK"
+          
+          # Test basic Redis operations
+          echo "Testing Redis SET/GET operations..."
+          TEST_KEY="arbitragex:test:$(date +%s)"
+          TEST_VALUE="test-value-$(date +%s)"
+          
+          {{- if .Values.redis.auth.enabled }}
+          redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} -a "$REDIS_PASSWORD" set "$TEST_KEY" "$TEST_VALUE" > /dev/null
+          RETRIEVED_VALUE=$(redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} -a "$REDIS_PASSWORD" get "$TEST_KEY")
+          redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} -a "$REDIS_PASSWORD" del "$TEST_KEY" > /dev/null
+          {{- else }}
+          redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} set "$TEST_KEY" "$TEST_VALUE" > /dev/null
+          RETRIEVED_VALUE=$(redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} get "$TEST_KEY")
+          redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} del "$TEST_KEY" > /dev/null
+          {{- end }}
+          
+          if [ "$RETRIEVED_VALUE" != "$TEST_VALUE" ]; then
+            echo "❌ Redis SET/GET test failed"
+            exit 1
+          fi
+          echo "✅ Redis SET/GET test OK"
+          
+          echo "🎉 All Redis tests passed!"
+      
+      envFrom:
+        {{- include "arbitragex-supreme.envFromSecret" . | nindent 8 }}
+      
+      resources:
+        limits:
+          cpu: 100m
+          memory: 64Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+---
+# Performance benchmark test pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-performance"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "6"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: performance-test
+      image: grafana/k6:latest
+      imagePullPolicy: IfNotPresent
+      
+      command:
+        - k6
+        - run
+        - --vus=5
+        - --duration=30s
+        - --quiet
+        - -e
+        - TARGET_URL=http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}
+        - -
+      
+      args:
+        - |
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          
+          export default function () {
+            const baseUrl = __ENV.TARGET_URL;
+            
+            // Test health endpoint
+            let response = http.get(`${baseUrl}/health`);
+            check(response, {
+              'health status is 200': (r) => r.status === 200,
+              'health response time < 500ms': (r) => r.timings.duration < 500,
+            });
+            
+            // Test API version endpoint
+            response = http.get(`${baseUrl}/api/v1/version`);
+            check(response, {
+              'version status is 200': (r) => r.status === 200,
+              'version response time < 1000ms': (r) => r.timings.duration < 1000,
+            });
+            
+            // Test blockchain status endpoint
+            response = http.get(`${baseUrl}/api/v1/blockchain/status`);
+            check(response, {
+              'blockchain status is 200': (r) => r.status === 200,
+              'blockchain response time < 2000ms': (r) => r.timings.duration < 2000,
+            });
+            
+            sleep(1);
+          }
+      
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 250m
+          memory: 128Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+
+---
+# Security test pod for vulnerability verification
+{{- if .Values.tests.security.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-security"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "7"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  
+  containers:
+    - name: security-test
+      image: owasp/zap2docker-stable:latest
+      imagePullPolicy: IfNotPresent
+      
+      command:
+        - sh
+        - -c
+        - |
+          echo "Running security tests..."
+          
+          TARGET_URL="http://{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}"
+          
+          # Basic security headers check
+          echo "Testing security headers..."
+          RESPONSE_HEADERS=$(curl -I --max-time 30 "$TARGET_URL/health" 2>/dev/null || echo "")
+          
+          # Check for security headers
+          if echo "$RESPONSE_HEADERS" | grep -qi "x-frame-options"; then
+            echo "✅ X-Frame-Options header present"
+          else
+            echo "⚠️  X-Frame-Options header missing"
+          fi
+          
+          if echo "$RESPONSE_HEADERS" | grep -qi "x-content-type-options"; then
+            echo "✅ X-Content-Type-Options header present"
+          else
+            echo "⚠️  X-Content-Type-Options header missing"
+          fi
+          
+          # Test for common vulnerabilities (basic check)
+          echo "Testing for common vulnerabilities..."
+          
+          # SQL injection test (should return 400 or 403)
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$TARGET_URL/api/v1/version?id=1' OR '1'='1")
+          if [ "$STATUS_CODE" -eq 400 ] || [ "$STATUS_CODE" -eq 403 ]; then
+            echo "✅ SQL injection protection OK"
+          else
+            echo "⚠️  Potential SQL injection vulnerability (status: $STATUS_CODE)"
+          fi
+          
+          # XSS test (should return 400 or 403)
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$TARGET_URL/api/v1/version?q=<script>alert('xss')</script>")
+          if [ "$STATUS_CODE" -eq 400 ] || [ "$STATUS_CODE" -eq 403 ]; then
+            echo "✅ XSS protection OK"
+          else
+            echo "⚠️  Potential XSS vulnerability (status: $STATUS_CODE)"
+          fi
+          
+          echo "🔒 Security tests completed!"
+      
+      resources:
+        limits:
+          cpu: 300m
+          memory: 256Mi
+        requests:
+          cpu: 150m
+          memory: 128Mi
+      
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+{{- end }}

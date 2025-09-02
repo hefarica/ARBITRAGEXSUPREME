@@ -16,6 +16,7 @@ import { tenantRoutes } from './api/v2/tenant';
 import { arbitrageRoutes } from './api/v2/arbitrage';
 import { blockchainRoutes } from './api/v2/blockchain';
 import { billingRoutes } from './api/v2/billing';
+import { dashboardRoutes } from './api/v2/dashboard';
 import { webhookRoutes } from './api/webhooks';
 
 // Service imports
@@ -223,6 +224,7 @@ class ArbitrageXServer {
     await this.fastify.register(tenantRoutes, { prefix: '/api/v2/tenant' });
     await this.fastify.register(arbitrageRoutes, { prefix: '/api/v2/arbitrage' });
     await this.fastify.register(blockchainRoutes, { prefix: '/api/v2/blockchain' });
+    await this.fastify.register(dashboardRoutes, { prefix: '/api/v2/dashboard' });
     await this.fastify.register(billingRoutes, { prefix: '/api/v2/billing' });
 
     // Webhook routes

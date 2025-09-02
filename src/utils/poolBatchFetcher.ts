@@ -16,7 +16,7 @@ import { ethers, JsonRpcProvider, Contract } from 'ethers';
 import { DexHelpers } from './dexHelpers';
 import { poolDataFetcher } from './poolDataFetcher';
 import { dexDataFetcher } from './dexDataFetcher';
-import {
+import type {
   Chain,
   DexInfo,
   LiquidityPool,
@@ -29,7 +29,7 @@ import {
   MulticallRequest,
   BatchMetrics,
   PoolScanResult
-} from '../types/defi';
+} from '../apps/web/types/defi';
 
 // ============================================================================
 // CONFIGURACIONES BATCH Y RATE LIMITING

@@ -1,12 +1,37 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { arbitrageService, type DashboardData, type NetworkStatus, type ArbitrageOpportunity, type ArbitrageMetrics } from '@/services/arbitrageService';
+import { 
+  ArbitrageOpportunity,
+  ArbitrageExecution,
+  OpportunitiesResponse,
+  ExecutionsResponse,
+  BlockchainInfo,
+  ApiError,
+  Chain
+} from '../types/api';
+
+// Legacy types for backward compatibility
+interface NetworkStatus {
+  id: string;
+  name: string;
+  connected: boolean;
+  blockHeight: number;
+  latency: number;
+}
+
+interface ArbitrageMetrics {
+  totalOpportunities: number;
+  successRate: number;
+  averageProfit: number;
+  totalVolume: number;
+}
 
 export interface UseArbitrageDataReturn {
   // Data states
-  networks: NetworkStatus[];
+  networks: BlockchainInfo[];
   opportunities: ArbitrageOpportunity[];
+  executions: ArbitrageExecution[];
   metrics: ArbitrageMetrics | null;
   
   // Loading states
@@ -19,17 +44,19 @@ export interface UseArbitrageDataReturn {
   
   // Actions
   refresh: () => Promise<void>;
-  executeArbitrage: (opportunityId: string) => Promise<{ success: boolean; txHash?: string; error?: string }>;
+  executeArbitrage: (opportunityId: string, options?: { slippageTolerance?: number; amount?: string }) => Promise<{ success: boolean; execution?: ArbitrageExecution; error?: string }>;
+  cancelExecution: (executionId: string) => Promise<{ success: boolean; error?: string }>;
   
   // Real-time status
   isConnected: boolean;
   lastUpdate: Date | null;
 }
 
-export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageDataReturn {
+export function useArbitrageData(refreshInterval: number = 5000): UseArbitrageDataReturn {
   // Data states
-  const [networks, setNetworks] = useState<NetworkStatus[]>([]);
+  const [networks, setNetworks] = useState<BlockchainInfo[]>([]);
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
+  const [executions, setExecutions] = useState<ArbitrageExecution[]>([]);
   const [metrics, setMetrics] = useState<ArbitrageMetrics | null>(null);
   
   // Loading states
@@ -49,7 +76,7 @@ export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageD
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Función para cargar datos completos
-  const loadDashboardData = useCallback(async (showRefreshIndicator = false) => {
+  const loadArbitrageData = useCallback(async (showRefreshIndicator = false) => {
     try {
       // Cancel previous request if exists
       if (abortControllerRef.current) {
@@ -68,25 +95,66 @@ export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageD
       setHasError(false);
       setError(null);
 
-      // Fetch complete dashboard data
-      const dashboardData: DashboardData = await arbitrageService.getDashboardData();
-      
-      // Update all states
-      setNetworks(dashboardData.networks);
-      setOpportunities(dashboardData.opportunities);
-      setMetrics(dashboardData.metrics);
-      
-      setIsConnected(true);
-      setLastUpdate(new Date());
-      
-      console.log('✅ Dashboard data loaded successfully:', {
-        networks: dashboardData.networks.length,
-        opportunities: dashboardData.opportunities.length,
-        metrics: dashboardData.metrics
-      });
+      const authToken = localStorage.getItem('accessToken') || '';
+      const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      };
+
+      // Fetch opportunities, networks, and executions in parallel
+      const [opportunitiesRes, networksRes, executionsRes] = await Promise.all([
+        fetch('/api/v2/arbitrage/opportunities', { headers }),
+        fetch('/api/v2/blockchain/supported', { headers }),
+        fetch('/api/v2/arbitrage/executions', { headers })
+      ]);
+
+      if (!opportunitiesRes.ok || !networksRes.ok || !executionsRes.ok) {
+        throw new Error('Failed to fetch arbitrage data');
+      }
+
+      const [opportunitiesData, networksData, executionsData]: [
+        OpportunitiesResponse | ApiError,
+        { success: boolean; blockchains: BlockchainInfo[] } | ApiError,
+        ExecutionsResponse | ApiError
+      ] = await Promise.all([
+        opportunitiesRes.json(),
+        networksRes.json(),
+        executionsRes.json()
+      ]);
+
+      if (opportunitiesData.success && networksData.success && executionsData.success) {
+        const opps = opportunitiesData as OpportunitiesResponse;
+        const nets = networksData as { success: boolean; blockchains: BlockchainInfo[] };
+        const execs = executionsData as ExecutionsResponse;
+
+        setOpportunities(opps.opportunities);
+        setNetworks(nets.blockchains);
+        setExecutions(execs.executions);
+        
+        // Calculate metrics from the data
+        const successfulExecs = execs.executions.filter(exec => exec.status === 'SUCCESS');
+        setMetrics({
+          totalOpportunities: opps.total,
+          successRate: execs.stats.successRate,
+          averageProfit: execs.stats.totalProfitUsd / Math.max(successfulExecs.length, 1),
+          totalVolume: execs.stats.totalProfitUsd
+        });
+        
+        setIsConnected(true);
+        setLastUpdate(new Date());
+        
+        console.log('✅ Arbitrage data loaded successfully:', {
+          opportunities: opps.opportunities.length,
+          networks: nets.blockchains.length,
+          executions: execs.executions.length
+        });
+      } else {
+        throw new Error('API returned error responses');
+      }
       
     } catch (err: any) {
-      console.error('❌ Error loading dashboard data:', err);
+      console.error('❌ Error loading arbitrage data:', err);
       setHasError(true);
       setError(err.message || 'Failed to load data');
       setIsConnected(false);
@@ -98,37 +166,92 @@ export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageD
 
   // Función para refrescar datos manualmente
   const refresh = useCallback(async () => {
-    await loadDashboardData(true);
-  }, [loadDashboardData]);
+    await loadArbitrageData(true);
+  }, [loadArbitrageData]);
 
   // Función para ejecutar arbitraje
-  const executeArbitrage = useCallback(async (opportunityId: string) => {
+  const executeArbitrage = useCallback(async (
+    opportunityId: string, 
+    options?: { slippageTolerance?: number; amount?: string }
+  ) => {
     try {
-      const result = await arbitrageService.executeArbitrage(opportunityId);
+      const authToken = localStorage.getItem('accessToken') || '';
+      const response = await fetch('/api/v2/arbitrage/execute', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          opportunityId,
+          slippageTolerance: options?.slippageTolerance || 0.5,
+          amount: options?.amount
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Execution failed: ${response.status}`);
+      }
+
+      const result = await response.json();
       
       if (result.success) {
         // Refresh data after successful execution
-        await loadDashboardData(true);
+        await loadArbitrageData(true);
+        return { success: true, execution: result.execution };
+      } else {
+        return { success: false, error: result.error };
       }
-      
-      return result;
     } catch (err: any) {
       console.error('Error executing arbitrage:', err);
       return { success: false, error: err.message };
     }
-  }, [loadDashboardData]);
+  }, [loadArbitrageData]);
+
+  // Función para cancelar ejecución
+  const cancelExecution = useCallback(async (executionId: string) => {
+    try {
+      const authToken = localStorage.getItem('accessToken') || '';
+      const response = await fetch(`/api/v2/arbitrage/executions/${executionId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Cancellation failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Refresh data after cancellation
+        await loadArbitrageData(true);
+        return { success: true };
+      } else {
+        return { success: false, error: result.error };
+      }
+    } catch (err: any) {
+      console.error('Error cancelling execution:', err);
+      return { success: false, error: err.message };
+    }
+  }, [loadArbitrageData]);
 
   // Effect para carga inicial
   useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+    loadArbitrageData();
+  }, [loadArbitrageData]);
 
-  // Effect para polling de datos en tiempo real
+  // Effect para polling de datos en tiempo real (cada 5 segundos)
   useEffect(() => {
     if (refreshInterval > 0) {
       intervalRef.current = setInterval(() => {
         if (!isRefreshing && !isLoading) {
-          loadDashboardData(false);
+          loadArbitrageData(false);
         }
       }, refreshInterval);
 
@@ -138,7 +261,7 @@ export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageD
         }
       };
     }
-  }, [refreshInterval, isRefreshing, isLoading, loadDashboardData]);
+  }, [refreshInterval, isRefreshing, isLoading, loadArbitrageData]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -156,6 +279,7 @@ export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageD
     // Data
     networks,
     opportunities,
+    executions,
     metrics,
     
     // Loading states
@@ -169,6 +293,7 @@ export function useArbitrageData(refreshInterval: number = 10000): UseArbitrageD
     // Actions
     refresh,
     executeArbitrage,
+    cancelExecution,
     
     // Connection status
     isConnected,
@@ -183,8 +308,28 @@ export function useRealTimeMetrics(refreshInterval: number = 5000) {
 
   const loadMetrics = useCallback(async () => {
     try {
-      const metricsData = await arbitrageService.getMetrics();
-      setMetrics(metricsData);
+      const authToken = localStorage.getItem('accessToken') || '';
+      const response = await fetch('/api/v2/dashboard/metrics', {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          // Transform API metrics to legacy format
+          const apiMetrics = result.metrics;
+          setMetrics({
+            totalOpportunities: apiMetrics.arbitrage.totalOpportunities,
+            successRate: apiMetrics.realTime.successRate,
+            averageProfit: apiMetrics.arbitrage.averageProfitPercentage,
+            totalVolume: apiMetrics.arbitrage.totalValueLocked
+          });
+        }
+      }
     } catch (error) {
       console.error('Error loading real-time metrics:', error);
     } finally {
@@ -203,14 +348,46 @@ export function useRealTimeMetrics(refreshInterval: number = 5000) {
 }
 
 // Hook para estado de redes
-export function useNetworkStatus(refreshInterval: number = 15000) {
-  const [networks, setNetworks] = useState<NetworkStatus[]>([]);
+export function useNetworkStatus(refreshInterval: number = 5000) {
+  const [networks, setNetworks] = useState<BlockchainInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadNetworks = useCallback(async () => {
     try {
-      const networksData = await arbitrageService.getNetworkStatus();
-      setNetworks(networksData);
+      const authToken = localStorage.getItem('accessToken') || '';
+      const response = await fetch('/api/v2/blockchain/network-status', {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        }
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          // Transform network status to blockchain info format
+          const networksData = Object.entries(result.networks).map(([chainId, status]: [string, any]) => ({
+            id: chainId as Chain,
+            name: chainId.charAt(0).toUpperCase() + chainId.slice(1),
+            symbol: chainId.toUpperCase(),
+            chainId: 1, // Mock chain ID
+            status: status.connected ? 'active' : 'inactive',
+            connected: status.connected,
+            blockNumber: status.blockNumber,
+            blockTime: 2,
+            gasPrice: '1000000',
+            explorerUrl: `https://${chainId}scan.com`,
+            nativeCurrency: { name: chainId, symbol: chainId.toUpperCase(), decimals: 18 },
+            hasWebSocket: true,
+            lastCheck: status.lastCheck,
+            protocolsSupported: 25,
+            tvlUsd: 1000000000
+          } as BlockchainInfo));
+          
+          setNetworks(networksData);
+        }
+      }
     } catch (error) {
       console.error('Error loading network status:', error);
     } finally {
