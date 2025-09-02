@@ -1,0 +1,388 @@
+# ArbitrageX Supreme - Kubernetes Deployment
+# Ingenio Pichichi S.A. - Deployment template empresarial
+# TODO FUNCIONAL - Despliegue real en Kubernetes
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    app.kubernetes.io/component: main
+  annotations:
+    deployment.kubernetes.io/revision: "{{ .Release.Revision }}"
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
+    # Configuration checksums for automatic pod restarts
+    {{- include "arbitragex-supreme.configChecksum" . | nindent 4 }}
+
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  
+  strategy:
+    type: {{ .Values.deployment.strategy.type | default "RollingUpdate" }}
+    {{- if eq (.Values.deployment.strategy.type | default "RollingUpdate") "RollingUpdate" }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.deployment.strategy.rollingUpdate.maxUnavailable | default "25%" }}
+      maxSurge: {{ .Values.deployment.strategy.rollingUpdate.maxSurge | default "25%" }}
+    {{- end }}
+  
+  selector:
+    matchLabels:
+      {{- include "arbitragex-supreme.selectorLabels" . | nindent 6 }}
+  
+  template:
+    metadata:
+      annotations:
+        {{- include "arbitragex-supreme.configChecksum" . | nindent 8 }}
+        prometheus.io/scrape: "{{ .Values.monitoring.metricsEnabled }}"
+        prometheus.io/port: "{{ .Values.service.metricsPort }}"
+        prometheus.io/path: "{{ .Values.monitoring.metricsPath }}"
+        # Pod restart annotation for rolling updates
+        kubectl.kubernetes.io/restartedAt: {{ now | date "2006-01-02T15:04:05Z" | quote }}
+      labels:
+        {{- include "arbitragex-supreme.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: main
+        version: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+    
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      serviceAccountName: {{ include "arbitragex-supreme.serviceAccountName" . }}
+      
+      {{- include "arbitragex-supreme.podSecurityContext" . | nindent 6 }}
+      
+      {{- include "arbitragex-supreme.nodeSelector" . | nindent 6 }}
+      
+      {{- include "arbitragex-supreme.affinity" . | nindent 6 }}
+      
+      {{- include "arbitragex-supreme.tolerations" . | nindent 6 }}
+      
+      {{- include "arbitragex-supreme.topologySpreadConstraints" . | nindent 6 }}
+      
+      {{- include "arbitragex-supreme.priorityClassName" . | nindent 6 }}
+      
+      # Initialization containers
+      initContainers:
+        # Database readiness check
+        - name: wait-for-database
+          image: postgres:15-alpine
+          imagePullPolicy: IfNotPresent
+          {{- include "arbitragex-supreme.securityContext" . | nindent 10 }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "🔍 Waiting for database to be ready..."
+              max_attempts=30
+              attempt=0
+              
+              while [ $attempt -lt $max_attempts ]; do
+                attempt=$((attempt + 1))
+                echo "Attempt $attempt/$max_attempts..."
+                
+                if pg_isready -h {{ .Values.database.host }} -p {{ .Values.database.port }} -U {{ .Values.database.user }}; then
+                  echo "✅ Database is ready!"
+                  exit 0
+                fi
+                
+                echo "⏳ Database not ready, waiting 5 seconds..."
+                sleep 5
+              done
+              
+              echo "❌ Database readiness check failed after $max_attempts attempts"
+              exit 1
+          env:
+            - name: PGUSER
+              value: {{ .Values.database.user | quote }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+        
+        # Redis readiness check
+        - name: wait-for-redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          {{- include "arbitragex-supreme.securityContext" . | nindent 10 }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "🔍 Waiting for Redis to be ready..."
+              max_attempts=30
+              attempt=0
+              
+              while [ $attempt -lt $max_attempts ]; do
+                attempt=$((attempt + 1))
+                echo "Attempt $attempt/$max_attempts..."
+                
+                if redis-cli -h {{ .Values.redis.host }} -p {{ .Values.redis.port }} ping | grep -q PONG; then
+                  echo "✅ Redis is ready!"
+                  exit 0
+                fi
+                
+                echo "⏳ Redis not ready, waiting 5 seconds..."
+                sleep 5
+              done
+              
+              echo "❌ Redis readiness check failed after $max_attempts attempts"
+              exit 1
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+        
+        {{- if .Values.vault.enabled }}
+        # Vault authentication and secret preparation
+        - name: vault-init
+          image: {{ include "arbitragex-supreme.vaultImage" . }}
+          imagePullPolicy: IfNotPresent
+          {{- include "arbitragex-supreme.securityContext" . | nindent 10 }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "🔐 Initializing Vault authentication..."
+              
+              export VAULT_ADDR="{{ .Values.vault.address }}"
+              export VAULT_SKIP_VERIFY="{{ .Values.vault.skipVerify }}"
+              
+              # Get Kubernetes service account token
+              KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              
+              # Authenticate with Vault using Kubernetes auth method
+              echo "🔑 Authenticating with Vault..."
+              vault write -format=json auth/kubernetes/login \
+                role={{ .Values.vault.role }} \
+                jwt="$KUBE_TOKEN" > /tmp/vault-response.json
+              
+              if [ $? -eq 0 ]; then
+                # Extract client token
+                VAULT_TOKEN=$(cat /tmp/vault-response.json | grep -o '"client_token":"[^"]*' | cut -d'"' -f4)
+                
+                if [ -n "$VAULT_TOKEN" ]; then
+                  echo "✅ Vault authentication successful"
+                  echo "$VAULT_TOKEN" > /shared/vault-token
+                  
+                  # Pre-fetch critical secrets for faster startup
+                  export VAULT_TOKEN="$VAULT_TOKEN"
+                  echo "🔄 Pre-fetching critical secrets..."
+                  
+                  # Test secret access
+                  vault kv get -format=json {{ .Values.vault.secretPath }}/database > /dev/null 2>&1 || echo "⚠️  Database secrets not accessible"
+                  vault kv get -format=json {{ .Values.vault.secretPath }}/auth > /dev/null 2>&1 || echo "⚠️  Auth secrets not accessible"
+                  
+                  echo "✅ Vault initialization completed"
+                else
+                  echo "❌ Failed to extract Vault token"
+                  exit 1
+                fi
+              else
+                echo "❌ Vault authentication failed"
+                cat /tmp/vault-response.json 2>/dev/null || echo "No response from Vault"
+                exit 1
+              fi
+          volumeMounts:
+            - name: shared-data
+              mountPath: /shared
+          env:
+            - name: VAULT_ADDR
+              value: {{ .Values.vault.address | quote }}
+            - name: VAULT_SKIP_VERIFY
+              value: {{ .Values.vault.skipVerify | quote }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+        {{- end }}
+      
+      containers:
+        {{- if .Values.vault.enabled }}
+        # Vault Agent sidecar for continuous secret injection
+        - name: vault-agent
+          image: {{ include "arbitragex-supreme.vaultImage" . }}
+          imagePullPolicy: IfNotPresent
+          {{- include "arbitragex-supreme.securityContext" . | nindent 10 }}
+          args:
+            - "vault"
+            - "agent"
+            - "-config=/vault/config/agent.hcl"
+            - "-log-level={{ .Values.vault.logLevel | default "info" }}"
+          volumeMounts:
+            - name: vault-config
+              mountPath: /vault/config
+              readOnly: true
+            - name: vault-secrets
+              mountPath: /vault/secrets
+            - name: shared-data
+              mountPath: /shared
+              readOnly: true
+          env:
+            - name: VAULT_ADDR
+              value: {{ .Values.vault.address | quote }}
+            - name: VAULT_SKIP_VERIFY
+              value: {{ .Values.vault.skipVerify | quote }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          # Vault agent health check
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pgrep -f 'vault agent' > /dev/null"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+        {{- end }}
+        
+        # Main application container
+        - name: {{ .Chart.Name }}
+          image: {{ include "arbitragex-supreme.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          
+          {{- include "arbitragex-supreme.securityContext" . | nindent 10 }}
+          
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.service.healthPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+            - name: websocket
+              containerPort: {{ .Values.service.wsPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+          
+          {{- include "arbitragex-supreme.envFromConfigMap" . | nindent 10 }}
+          
+          env:
+            # Pod and node information
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            
+            # Release information
+            - name: HELM_RELEASE_NAME
+              value: {{ .Release.Name | quote }}
+            - name: HELM_RELEASE_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: HELM_CHART_VERSION
+              value: {{ .Chart.Version | quote }}
+            - name: APP_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+            
+            # Cluster information
+            - name: KUBERNETES_CLUSTER_DOMAIN
+              value: {{ .Values.clusterDomain | default "cluster.local" | quote }}
+            
+            {{- if .Values.vault.enabled }}
+            # Vault configuration
+            - name: VAULT_SECRETS_PATH
+              value: "/vault/secrets"
+            - name: VAULT_ENABLED
+              value: "true"
+            {{- end }}
+            
+            # Custom environment variables
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          
+          {{- include "arbitragex-supreme.volumeMounts" . | nindent 10 }}
+          
+          # Health probes
+          {{- include "arbitragex-supreme.startupProbe" . | nindent 10 }}
+          
+          {{- include "arbitragex-supreme.livenessProbe" . | nindent 10 }}
+          
+          {{- include "arbitragex-supreme.readinessProbe" . | nindent 10 }}
+          
+          {{- include "arbitragex-supreme.resources" . | nindent 10 }}
+          
+          # Lifecycle hooks
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "🛑 Graceful shutdown initiated..."
+                    # Give application time to finish processing
+                    sleep 15
+                    echo "✅ Graceful shutdown completed"
+      
+      {{- include "arbitragex-supreme.volumes" . | nindent 6 }}
+      
+      {{- if .Values.vault.enabled }}
+      # Additional Vault volumes
+      - name: vault-config
+        secret:
+          secretName: {{ include "arbitragex-supreme.fullname" . }}-vault-agent-config
+          defaultMode: 0644
+      - name: shared-data
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+      {{- end }}
+      
+      # Pod-level configurations
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 30 }}
+      automountServiceAccountToken: true
+      
+      # Enable service links for service discovery
+      enableServiceLinks: true
+      
+      # Share process namespace (for debugging if needed)
+      {{- if .Values.debugging.enabled }}
+      shareProcessNamespace: true
+      {{- end }}

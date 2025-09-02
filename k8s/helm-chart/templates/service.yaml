@@ -77,7 +77,7 @@ spec:
 
 ---
 # Headless service for StatefulSet components
-{{- if .Values.statefulset.enabled }}
+{{- if and .Values.statefulset .Values.statefulset.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -141,7 +141,7 @@ spec:
 
 ---
 # External service for blockchain RPC endpoints (if enabled)
-{{- if .Values.blockchain.externalRpc.enabled }}
+{{- if and .Values.blockchain .Values.blockchain.externalRpc .Values.blockchain.externalRpc.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

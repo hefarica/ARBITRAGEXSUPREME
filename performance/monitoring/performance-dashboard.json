@@ -1,0 +1,493 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "ArbitrageX Supreme - Performance Monitoring",
+    "description": "Ingenio Pichichi S.A. - Dashboard de monitoreo de rendimiento empresarial",
+    "tags": ["arbitragex", "performance", "pichichi"],
+    "style": "dark",
+    "timezone": "UTC",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "🚀 System Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "Requests/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95 Latency",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m]) * 100",
+            "legendFormat": "Error Rate %",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 80
+                },
+                {
+                  "color": "red",
+                  "value": 95
+                }
+              ]
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "📈 HTTP Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "Total Requests/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(http_requests_total{endpoint=\"trading\"}[5m])",
+            "legendFormat": "Trading API/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(http_requests_total{endpoint=\"arbitrage\"}[5m])",
+            "legendFormat": "Arbitrage API/sec",
+            "refId": "C"
+          },
+          {
+            "expr": "rate(http_requests_total{endpoint=\"websocket\"}[5m])",
+            "legendFormat": "WebSocket/sec",
+            "refId": "D"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        },
+        "yAxes": [
+          {
+            "label": "Requests/second",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "⏱️ Response Time Distribution",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P50 Latency",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P95 Latency",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "P99 Latency",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        },
+        "yAxes": [
+          {
+            "label": "Seconds",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "❌ Error Rates by Endpoint",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status=~\"5..\"}[5m]) / rate(http_requests_total[5m]) * 100",
+            "legendFormat": "Overall Error Rate",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(http_requests_total{endpoint=\"trading\", status=~\"5..\"}[5m]) / rate(http_requests_total{endpoint=\"trading\"}[5m]) * 100",
+            "legendFormat": "Trading API Errors",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(http_requests_total{endpoint=\"arbitrage\", status=~\"5..\"}[5m]) / rate(http_requests_total{endpoint=\"arbitrage\"}[5m]) * 100",
+            "legendFormat": "Arbitrage API Errors",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        },
+        "yAxes": [
+          {
+            "label": "Percentage",
+            "min": 0,
+            "max": 100
+          }
+        ],
+        "thresholds": [
+          {
+            "value": 1,
+            "colorMode": "critical",
+            "op": "gt"
+          },
+          {
+            "value": 5,
+            "colorMode": "critical",
+            "op": "gt"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "🔌 WebSocket Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "websocket_active_connections",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(websocket_messages_received[5m])",
+            "legendFormat": "Messages/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(websocket_connection_errors[5m])",
+            "legendFormat": "Connection Errors/sec",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 16
+        }
+      },
+      {
+        "id": 6,
+        "title": "⛓️ Blockchain Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"ethereum\"}[5m]))",
+            "legendFormat": "Ethereum P95",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"polygon\"}[5m]))",
+            "legendFormat": "Polygon P95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"arbitrum\"}[5m]))",
+            "legendFormat": "Arbitrum P95",
+            "refId": "C"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"optimism\"}[5m]))",
+            "legendFormat": "Optimism P95",
+            "refId": "D"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"base\"}[5m]))",
+            "legendFormat": "Base P95",
+            "refId": "E"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 24
+        },
+        "yAxes": [
+          {
+            "label": "Seconds",
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "⚡ Arbitrage Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(arbitrage_opportunities_detected[5m])",
+            "legendFormat": "Opportunities/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(arbitrage_detection_duration_seconds_bucket[5m]))",
+            "legendFormat": "Detection P95 Latency",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(arbitrage_trades_executed[5m])",
+            "legendFormat": "Executed Trades/sec",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 32
+        }
+      },
+      {
+        "id": 8,
+        "title": "🛡️ MEV Protection",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(mev_threats_detected[5m])",
+            "legendFormat": "MEV Threats/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(mev_analysis_duration_seconds_bucket[5m]))",
+            "legendFormat": "Analysis P95 Latency",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(mev_protection_triggered[5m])",
+            "legendFormat": "Protection Triggered/sec",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 32
+        }
+      },
+      {
+        "id": 9,
+        "title": "💰 Trading Volume & Profit",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(trading_volume_usd[5m])",
+            "legendFormat": "Volume USD/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(trading_profit_usd[5m])",
+            "legendFormat": "Profit USD/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(trading_fees_usd[5m])",
+            "legendFormat": "Fees USD/sec",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 40
+        }
+      },
+      {
+        "id": 10,
+        "title": "🖥️ System Resources",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+            "legendFormat": "CPU Usage %",
+            "refId": "A"
+          },
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "Memory MB",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(process_open_fds[5m])",
+            "legendFormat": "Open File Descriptors",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 48
+        }
+      },
+      {
+        "id": 11,
+        "title": "🌐 Network Latency",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"ethereum\"}[5m])) * 1000",
+            "legendFormat": "Ethereum",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"polygon\"}[5m])) * 1000",
+            "legendFormat": "Polygon",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"arbitrum\"}[5m])) * 1000",
+            "legendFormat": "Arbitrum",
+            "refId": "C"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"optimism\"}[5m])) * 1000",
+            "legendFormat": "Optimism",
+            "refId": "D"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(blockchain_request_duration_seconds_bucket{network=\"base\"}[5m])) * 1000",
+            "legendFormat": "Base",
+            "refId": "E"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 48
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 1000
+                },
+                {
+                  "color": "red",
+                  "value": 3000
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "environment",
+          "type": "custom",
+          "options": [
+            {
+              "text": "Production",
+              "value": "production"
+            },
+            {
+              "text": "Staging",
+              "value": "staging"
+            },
+            {
+              "text": "Development",
+              "value": "development"
+            }
+          ],
+          "current": {
+            "text": "Production",
+            "value": "production"
+          }
+        },
+        {
+          "name": "network",
+          "type": "query",
+          "query": "label_values(blockchain_request_duration_seconds_bucket, network)",
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          },
+          "includeAll": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Performance Tests",
+          "datasource": "prometheus",
+          "expr": "changes(k6_test_run_info[1h])",
+          "titleFormat": "Performance Test",
+          "textFormat": "{{test_type}} test completed",
+          "iconColor": "blue"
+        },
+        {
+          "name": "Deployments",
+          "datasource": "prometheus",
+          "expr": "changes(deployment_info[1h])",
+          "titleFormat": "Deployment",
+          "textFormat": "Version {{version}} deployed",
+          "iconColor": "green"
+        },
+        {
+          "name": "Incidents",
+          "datasource": "prometheus",
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "titleFormat": "Alert: {{alertname}}",
+          "textFormat": "{{summary}}",
+          "iconColor": "red"
+        }
+      ]
+    }
+  }
+}

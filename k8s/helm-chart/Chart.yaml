@@ -1,0 +1,79 @@
+# ArbitrageX Supreme - Helm Chart
+# Ingenio Pichichi S.A. - Configuración de despliegue Kubernetes
+# TODO FUNCIONAL - Despliegue real en producción
+
+apiVersion: v2
+name: arbitragex-supreme
+description: |
+  ArbitrageX Supreme - Advanced DeFi Arbitrage Trading Platform
+  Enterprise-grade Kubernetes deployment with high availability,
+  security, and monitoring capabilities.
+
+type: application
+version: 1.0.0
+appVersion: "2.0.0"
+
+# Metadata
+home: https://arbitragex.com
+sources:
+  - https://github.com/arbitragex/arbitragex-pro-2025
+maintainers:
+  - name: Hector Fabio Riascos C.
+    email: hector.riascos@pichichi.com
+    url: https://pichichi.com
+  - name: ArbitrageX Team
+    email: team@arbitragex.com
+
+# Keywords para Helm Hub
+keywords:
+  - arbitrage
+  - defi
+  - blockchain
+  - ethereum
+  - trading
+  - kubernetes
+  - enterprise
+
+# Annotations
+annotations:
+  category: Finance
+  licenses: Proprietary
+  images: |
+    - name: arbitragex-supreme
+      image: ghcr.io/arbitragex/arbitragex-pro-2025:latest
+  
+# Dependencies
+dependencies:
+  - name: postgresql
+    version: "12.1.9"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+    tags:
+      - database
+  
+  - name: redis
+    version: "17.4.3"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+    tags:
+      - cache
+  
+  - name: prometheus
+    version: "15.18.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: monitoring.prometheus.enabled
+    tags:
+      - monitoring
+  
+  - name: grafana
+    version: "6.48.1" 
+    repository: "https://grafana.github.io/helm-charts"
+    condition: monitoring.grafana.enabled
+    tags:
+      - monitoring
+
+# Engine constraints
+kubeVersion: ">=1.24.0"
+
+# Icon for Helm Hub
+icon: https://arbitragex.com/assets/icon.png

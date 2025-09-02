@@ -1,451 +1,61 @@
-# ServiceMonitor for Prometheus scraping
-{{- if .Values.monitoring.prometheus.enabled }}
+{{- if .Values.monitoring.enabled }}
+# ServiceMonitor for Prometheus monitoring
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "arbitragex-supreme.fullname" . }}
-  namespace: {{ .Values.monitoring.prometheus.namespace | default .Values.namespace }}
+  namespace: {{ .Values.namespace }}
   labels:
     {{- include "arbitragex-supreme.labels" . | nindent 4 }}
     component: monitoring
-    {{- with .Values.monitoring.prometheus.serviceMonitor.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
 spec:
   selector:
     matchLabels:
       {{- include "arbitragex-supreme.selectorLabels" . | nindent 6 }}
-  
   endpoints:
-    # Main metrics endpoint
-    - port: metrics
-      interval: {{ .Values.monitoring.prometheus.serviceMonitor.interval }}
-      scrapeTimeout: {{ .Values.monitoring.prometheus.serviceMonitor.scrapeTimeout }}
-      path: /metrics
-      scheme: http
-      {{- with .Values.monitoring.prometheus.serviceMonitor.metricRelabelings }}
-      metricRelabelings:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.monitoring.prometheus.serviceMonitor.relabelings }}
-      relabelings:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    
-    # Health metrics endpoint
-    - port: health
-      interval: {{ .Values.monitoring.prometheus.serviceMonitor.healthInterval | default "30s" }}
-      scrapeTimeout: {{ .Values.monitoring.prometheus.serviceMonitor.healthScrapeTimeout | default "10s" }}
-      path: /health/metrics
-      scheme: http
-      metricRelabelings:
-        - sourceLabels: [__name__]
-          regex: 'arbitragex_health_.*'
-          targetLabel: __tmp_health_metric
-          replacement: 'true'
-  
-  {{- with .Values.monitoring.prometheus.serviceMonitor.namespaceSelector }}
-  namespaceSelector:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
 
 ---
-# PodMonitor for detailed pod metrics
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: {{ include "arbitragex-supreme.fullname" . }}-pods
-  namespace: {{ .Values.monitoring.prometheus.namespace | default .Values.namespace }}
-  labels:
-    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
-    component: monitoring
-spec:
-  selector:
-    matchLabels:
-      {{- include "arbitragex-supreme.selectorLabels" . | nindent 6 }}
-  
-  podMetricsEndpoints:
-    - port: metrics
-      interval: {{ .Values.monitoring.prometheus.podMonitor.interval }}
-      scrapeTimeout: {{ .Values.monitoring.prometheus.podMonitor.scrapeTimeout }}
-      path: /metrics
-      scheme: http
-      
-  {{- with .Values.monitoring.prometheus.podMonitor.namespaceSelector }}
-  namespaceSelector:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-
----
-# PrometheusRule for alerting rules
+# PrometheusRule for alerting
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ include "arbitragex-supreme.fullname" . }}-rules
-  namespace: {{ .Values.monitoring.prometheus.namespace | default .Values.namespace }}
+  name: {{ include "arbitragex-supreme.fullname" . }}
+  namespace: {{ .Values.namespace }}
   labels:
     {{- include "arbitragex-supreme.labels" . | nindent 4 }}
     component: monitoring
-    {{- with .Values.monitoring.prometheus.prometheusRule.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
 spec:
   groups:
-    # Application health rules
-    - name: arbitragex-supreme.health
-      interval: 30s
-      rules:
-        - alert: ArbitrageXSupremeDown
-          expr: up{job=~".*arbitragex-supreme.*"} == 0
-          for: 1m
-          labels:
-            severity: critical
-            component: application
-          annotations:
-            summary: "ArbitrageX Supreme instance is down"
-            description: "ArbitrageX Supreme instance {{ $labels.instance }} has been down for more than 1 minute."
-            runbook_url: "https://docs.arbitragex.com/runbooks/application-down"
-        
-        - alert: ArbitrageXSupremeHealthCheckFailing
-          expr: arbitragex_health_check_status != 1
-          for: 2m
-          labels:
-            severity: warning
-            component: application
-          annotations:
-            summary: "ArbitrageX Supreme health check failing"
-            description: "Health check for {{ $labels.check_name }} is failing for instance {{ $labels.instance }}"
-        
-        - alert: ArbitrageXSupremeHighErrorRate
-          expr: rate(arbitragex_errors_total[5m]) > 0.1
-          for: 3m
-          labels:
-            severity: warning
-            component: application
-          annotations:
-            summary: "High error rate detected"
-            description: "Error rate is {{ $value | humanizePercentage }} for instance {{ $labels.instance }}"
-    
-    # Performance rules
-    - name: arbitragex-supreme.performance
-      interval: 30s
-      rules:
-        - alert: ArbitrageXSupremeHighMemoryUsage
-          expr: (container_memory_working_set_bytes{container="arbitragex-supreme"} / container_spec_memory_limit_bytes) > 0.9
-          for: 5m
-          labels:
-            severity: warning
-            component: performance
-          annotations:
-            summary: "High memory usage detected"
-            description: "Memory usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
-        
-        - alert: ArbitrageXSupremeHighCPUUsage
-          expr: rate(container_cpu_usage_seconds_total{container="arbitragex-supreme"}[5m]) / container_spec_cpu_quota * container_spec_cpu_period > 0.9
-          for: 5m
-          labels:
-            severity: warning
-            component: performance
-          annotations:
-            summary: "High CPU usage detected"
-            description: "CPU usage is {{ $value | humanizePercentage }} for pod {{ $labels.pod }}"
-        
-        - alert: ArbitrageXSupremeSlowResponseTime
-          expr: histogram_quantile(0.95, rate(arbitragex_http_request_duration_seconds_bucket[5m])) > 2
-          for: 3m
-          labels:
-            severity: warning
-            component: performance
-          annotations:
-            summary: "Slow response times detected"
-            description: "95th percentile response time is {{ $value }}s for {{ $labels.method }} {{ $labels.route }}"
-    
-    # Blockchain-specific rules
-    - name: arbitragex-supreme.blockchain
-      interval: 30s
-      rules:
-        - alert: BlockchainConnectionDown
-          expr: arbitragex_blockchain_connection_status != 1
-          for: 1m
-          labels:
-            severity: critical
-            component: blockchain
-          annotations:
-            summary: "Blockchain connection is down"
-            description: "Connection to {{ $labels.network }} blockchain is down for instance {{ $labels.instance }}"
-        
-        - alert: HighGasPriceDetected
-          expr: arbitragex_gas_price_gwei > {{ .Values.monitoring.alerts.blockchain.highGasPriceThreshold | default 100 }}
-          for: 2m
-          labels:
-            severity: warning
-            component: blockchain
-          annotations:
-            summary: "High gas price detected"
-            description: "Gas price on {{ $labels.network }} is {{ $value }} Gwei"
-        
-        - alert: MEVAttackDetected
-          expr: increase(arbitragex_mev_attacks_detected_total[1m]) > 0
-          labels:
-            severity: critical
-            component: security
-          annotations:
-            summary: "MEV attack detected"
-            description: "{{ $value }} MEV attacks detected on {{ $labels.network }} in the last minute"
-        
-        - alert: FailedTransactionRateHigh
-          expr: rate(arbitragex_transactions_failed_total[5m]) / rate(arbitragex_transactions_total[5m]) > 0.1
-          for: 2m
-          labels:
-            severity: warning
-            component: trading
-          annotations:
-            summary: "High failed transaction rate"
-            description: "Failed transaction rate is {{ $value | humanizePercentage }} on {{ $labels.network }}"
-    
-    # Business logic rules
-    - name: arbitragex-supreme.business
-      interval: 1m
-      rules:
-        - alert: LowProfitabilityDetected
-          expr: rate(arbitragex_profitable_trades_total[10m]) / rate(arbitragex_total_trades_total[10m]) < 0.6
-          for: 5m
-          labels:
-            severity: warning
-            component: business
-          annotations:
-            summary: "Low profitability detected"
-            description: "Profitable trade rate is {{ $value | humanizePercentage }} which is below 60%"
-        
-        - alert: NoTradingActivityDetected
-          expr: rate(arbitragex_total_trades_total[30m]) == 0
-          for: 15m
-          labels:
-            severity: warning
-            component: business
-          annotations:
-            summary: "No trading activity detected"
-            description: "No trades executed in the last 30 minutes"
-        
-        - alert: HighSlippageDetected
-          expr: histogram_quantile(0.95, rate(arbitragex_slippage_percentage_bucket[5m])) > {{ .Values.monitoring.alerts.business.maxSlippageThreshold | default 5 }}
-          for: 3m
-          labels:
-            severity: warning
-            component: trading
-          annotations:
-            summary: "High slippage detected"
-            description: "95th percentile slippage is {{ $value }}% which exceeds threshold"
+  - name: arbitragex-supreme
+    rules:
+    - alert: ArbitrageXSupremeDown
+      expr: up{job="{{ include "arbitragex-supreme.fullname" . }}"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "ArbitrageX Supreme is down"
+        description: "ArbitrageX Supreme has been down for more than 1 minute."
 
----
-# Grafana Dashboard ConfigMap
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "arbitragex-supreme.fullname" . }}-dashboard
-  namespace: {{ .Values.monitoring.grafana.namespace | default .Values.namespace }}
-  labels:
-    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
-    component: monitoring
-    grafana_dashboard: "1"
-    {{- with .Values.monitoring.grafana.dashboardLabels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-data:
-  arbitragex-supreme-dashboard.json: |
-    {
-      "dashboard": {
-        "id": null,
-        "title": "ArbitrageX Supreme - Production Dashboard",
-        "tags": ["arbitragex", "defi", "trading", "blockchain"],
-        "style": "dark",
-        "timezone": "UTC",
-        "refresh": "30s",
-        "time": {
-          "from": "now-1h",
-          "to": "now"
-        },
-        "panels": [
-          {
-            "id": 1,
-            "title": "Application Overview",
-            "type": "stat",
-            "targets": [
-              {
-                "expr": "up{job=~\".*arbitragex-supreme.*\"}",
-                "legendFormat": "Instance Status"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
-          },
-          {
-            "id": 2,
-            "title": "Request Rate",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(arbitragex_http_requests_total[5m])",
-                "legendFormat": "{{method}} {{route}}"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
-          },
-          {
-            "id": 3,
-            "title": "Response Times",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "histogram_quantile(0.50, rate(arbitragex_http_request_duration_seconds_bucket[5m]))",
-                "legendFormat": "50th percentile"
-              },
-              {
-                "expr": "histogram_quantile(0.95, rate(arbitragex_http_request_duration_seconds_bucket[5m]))",
-                "legendFormat": "95th percentile"
-              },
-              {
-                "expr": "histogram_quantile(0.99, rate(arbitragex_http_request_duration_seconds_bucket[5m]))",
-                "legendFormat": "99th percentile"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
-          },
-          {
-            "id": 4,
-            "title": "Error Rate",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(arbitragex_http_requests_total{status=~\"5..\"}[5m])",
-                "legendFormat": "5xx errors"
-              },
-              {
-                "expr": "rate(arbitragex_http_requests_total{status=~\"4..\"}[5m])",
-                "legendFormat": "4xx errors"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
-          },
-          {
-            "id": 5,
-            "title": "Trading Metrics",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(arbitragex_total_trades_total[5m])",
-                "legendFormat": "Total Trades"
-              },
-              {
-                "expr": "rate(arbitragex_profitable_trades_total[5m])",
-                "legendFormat": "Profitable Trades"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
-          },
-          {
-            "id": 6,
-            "title": "Blockchain Status",
-            "type": "stat",
-            "targets": [
-              {
-                "expr": "arbitragex_blockchain_connection_status",
-                "legendFormat": "{{network}}"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
-          },
-          {
-            "id": 7,
-            "title": "Gas Prices",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "arbitragex_gas_price_gwei",
-                "legendFormat": "{{network}} Gas Price"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
-          },
-          {
-            "id": 8,
-            "title": "MEV Protection",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(arbitragex_mev_attacks_detected_total[5m])",
-                "legendFormat": "MEV Attacks Detected"
-              },
-              {
-                "expr": "rate(arbitragex_mev_attacks_prevented_total[5m])",
-                "legendFormat": "MEV Attacks Prevented"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
-          }
-        ]
-      }
-    }
-{{- end }}
+    - alert: ArbitrageXSupremeHighMemoryUsage
+      expr: container_memory_usage_bytes{pod=~"{{ include "arbitragex-supreme.fullname" . }}-.*"} / container_spec_memory_limit_bytes > 0.8
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage"
+        description: "Memory usage is above 80% for ArbitrageX Supreme pod."
 
----
-# AlertManager configuration for webhook notifications
-{{- if .Values.monitoring.alertmanager.enabled }}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "arbitragex-supreme.fullname" . }}-alertmanager-config
-  namespace: {{ .Values.monitoring.prometheus.namespace | default .Values.namespace }}
-  labels:
-    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
-    component: monitoring
-data:
-  alertmanager.yml: |
-    global:
-      smtp_smarthost: {{ .Values.monitoring.alertmanager.smtp.smarthost | quote }}
-      smtp_from: {{ .Values.monitoring.alertmanager.smtp.from | quote }}
-      slack_api_url: {{ .Values.monitoring.alertmanager.slack.apiUrl | quote }}
-    
-    route:
-      group_by: ['alertname', 'severity', 'component']
-      group_wait: 10s
-      group_interval: 5m
-      repeat_interval: 12h
-      receiver: 'default'
-      routes:
-        - match:
-            severity: critical
-          receiver: 'critical-alerts'
-        - match:
-            component: blockchain
-          receiver: 'blockchain-alerts'
-        - match:
-            component: trading
-          receiver: 'trading-alerts'
-    
-    receivers:
-      - name: 'default'
-        webhook_configs:
-          - url: {{ .Values.monitoring.alertWebhookUrl | quote }}
-            send_resolved: true
-      
-      - name: 'critical-alerts'
-        slack_configs:
-          - channel: '#arbitragex-critical'
-            title: 'Critical Alert: {{ "{{" }} .GroupLabels.alertname {{ "}}" }}'
-            text: '{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.description {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
-        webhook_configs:
-          - url: {{ .Values.monitoring.alertWebhookUrl | quote }}
-            send_resolved: true
-      
-      - name: 'blockchain-alerts'
-        slack_configs:
-          - channel: '#arbitragex-blockchain'
-            title: 'Blockchain Alert: {{ "{{" }} .GroupLabels.alertname {{ "}}" }}'
-            text: '{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.description {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
-      
-      - name: 'trading-alerts'
-        slack_configs:
-          - channel: '#arbitragex-trading'
-            title: 'Trading Alert: {{ "{{" }} .GroupLabels.alertname {{ "}}" }}'
-            text: '{{ "{{" }} range .Alerts {{ "}}" }}{{ "{{" }} .Annotations.description {{ "}}" }}{{ "{{" }} end {{ "}}" }}'
+    - alert: ArbitrageXSupremeHighCPUUsage
+      expr: rate(container_cpu_usage_seconds_total{pod=~"{{ include "arbitragex-supreme.fullname" . }}-.*"}[5m]) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage"
+        description: "CPU usage is above 80% for ArbitrageX Supreme pod."
 {{- end }}
