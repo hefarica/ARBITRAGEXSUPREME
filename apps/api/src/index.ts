@@ -17,6 +17,7 @@ import { arbitrageRoutes } from './api/v2/arbitrage';
 import { blockchainRoutes } from './api/v2/blockchain';
 import { billingRoutes } from './api/v2/billing';
 import { dashboardRoutes } from './api/v2/dashboard';
+const { alertRoutes } = require('./api/v2/alerts.js');
 import { webhookRoutes } from './api/webhooks';
 
 // Service imports
@@ -226,6 +227,7 @@ class ArbitrageXServer {
     await this.fastify.register(blockchainRoutes, { prefix: '/api/v2/blockchain' });
     await this.fastify.register(dashboardRoutes, { prefix: '/api/v2/dashboard' });
     await this.fastify.register(billingRoutes, { prefix: '/api/v2/billing' });
+    await this.fastify.register(alertRoutes, { prefix: '/api/v2/alerts' });
 
     // Webhook routes
     await this.fastify.register(webhookRoutes, { prefix: '/api/webhooks' });
@@ -300,6 +302,9 @@ class ArbitrageXServer {
       this.fastify.log.info(`📊 Environment: ${this.config.environment}`);
       this.fastify.log.info(`🔗 Health Check: http://${this.config.host}:${this.config.port}/health`);
       this.fastify.log.info(`📈 Metrics: http://${this.config.host}:${this.config.port}/metrics`);
+      this.fastify.log.info(`🚨 Alerts API: http://${this.config.host}:${this.config.port}/api/v2/alerts`);
+      this.fastify.log.info(`📱 Alerts Dashboard: http://${this.config.host}:${this.config.port}/api/v2/alerts/dashboard`);
+      this.fastify.log.info(`🔌 Alerts WebSocket: ws://${this.config.host}:${this.config.port}/api/v2/alerts/ws`);
 
     } catch (error) {
       this.fastify.log.error('Failed to start server:', error);
