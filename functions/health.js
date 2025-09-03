@@ -17,14 +17,44 @@ export async function onRequest(context) {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  // Quick check of data sources availability
+  let dataSourcesStatus = 'unknown';
+  let realDataAvailable = false;
+  
+  try {
+    // Verificación rápida de una fuente clave
+    const testResponse = await fetch('https://api.coingecko.com/api/v3/ping', {
+      signal: AbortSignal.timeout(3000)
+    });
+    if (testResponse.ok) {
+      dataSourcesStatus = 'available';
+      realDataAvailable = true;
+    } else {
+      dataSourcesStatus = 'degraded';
+    }
+  } catch (error) {
+    dataSourcesStatus = 'unavailable';
+    realDataAvailable = false;
+  }
+
   const healthData = {
     status: 'ok',
     service: 'ArbitrageX Supreme API',
-    version: '2.1.0',
+    version: '2.2.0', // Incrementado para indicar soporte de datos reales
     timestamp: new Date().toISOString(),
     uptime: Math.floor(Math.random() * 10000) + 1000, // Simulated uptime
     environment: 'production',
-    endpoints: ['/health', '/api/v2/arbitrage/network-status', '/api/v2/arbitrage/opportunities', '/api/v2/dashboard/summary']
+    data_sources_status: dataSourcesStatus,
+    real_data_available: realDataAvailable,
+    backend_mode: realDataAvailable ? 'real-data-ready' : 'mock-only',
+    endpoints: [
+      '/health', 
+      '/api/v2/arbitrage/network-status', 
+      '/api/v2/arbitrage/opportunities', 
+      '/api/v2/arbitrage/dashboard/summary',
+      '/api/v2/data-sources/status'  // Nuevo endpoint
+    ],
+    warning: realDataAvailable ? null : 'ADVERTENCIA: Solo datos simulados disponibles - NO ejecutar trades reales'
   };
 
   console.log(`Health check requested at ${healthData.timestamp}`);
