@@ -8,11 +8,11 @@ const url = require('url');
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// CORS headers
+// CORS headers - Actualizado para show-my-github-gems
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Client',
   'Access-Control-Allow-Credentials': 'true',
   'Content-Type': 'application/json'
 };
@@ -245,7 +245,9 @@ const requestHandler = (req, res) => {
   const path = parsedUrl.pathname;
   const method = req.method;
 
-  console.log(`${new Date().toISOString()} - ${method} ${path}`);
+  // Log client info if available
+  const clientHeader = req.headers['x-client'] || 'unknown-client';
+  console.log(`${new Date().toISOString()} - ${method} ${path} [${clientHeader}]`);
 
   // Routes
   try {
