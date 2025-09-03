@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ArbitrageX Supreme - Deployment Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: white; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .endpoint { margin: 20px 0; padding: 15px; border: 1px solid #333; border-radius: 5px; }
+        .result { margin: 10px 0; padding: 10px; background: #2a2a2a; border-radius: 3px; }
+        .success { border-left: 4px solid #4CAF50; }
+        .error { border-left: 4px solid #f44336; }
+        button { padding: 10px 20px; background: #0080ff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0060cc; }
+        pre { overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 ArbitrageX Supreme - Deployment Test</h1>
+        <p><strong>Backend URL:</strong> <span id="backend-url">https://8001c524.arbitragex-supreme-backend.pages.dev</span></p>
+        
+        <div class="endpoint">
+            <h3>1. Health Check</h3>
+            <button onclick="testEndpoint('/health', 'health-result')">Test Health</button>
+            <div id="health-result" class="result"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3>2. Network Status</h3>
+            <button onclick="testEndpoint('/api/v2/arbitrage/network-status', 'network-result')">Test Network Status</button>
+            <div id="network-result" class="result"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3>3. Arbitrage Opportunities</h3>
+            <button onclick="testEndpoint('/api/v2/arbitrage/opportunities', 'opportunities-result')">Test Opportunities</button>
+            <div id="opportunities-result" class="result"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3>4. Dashboard Summary</h3>
+            <button onclick="testEndpoint('/api/v2/arbitrage/dashboard/summary', 'dashboard-result')">Test Dashboard</button>
+            <div id="dashboard-result" class="result"></div>
+        </div>
+        
+        <div class="endpoint">
+            <h3>5. Test All Endpoints</h3>
+            <button onclick="testAllEndpoints()">Test All</button>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = document.getElementById('backend-url').textContent;
+        
+        async function testEndpoint(endpoint, resultId) {
+            const resultDiv = document.getElementById(resultId);
+            resultDiv.innerHTML = '<p>Testing...</p>';
+            
+            try {
+                const response = await fetch(BASE_URL + endpoint, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Client': 'deployment-test'
+                    },
+                    mode: 'cors'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <p><strong>✅ SUCCESS</strong> - Status: ${response.status}</p>
+                            <pre>${JSON.stringify(data, null, 2).substring(0, 500)}${JSON.stringify(data, null, 2).length > 500 ? '...' : ''}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <p><strong>❌ ERROR</strong> - Status: ${response.status}</p>
+                            <pre>${await response.text()}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <p><strong>❌ NETWORK ERROR</strong></p>
+                        <pre>${error.message}</pre>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testAllEndpoints() {
+            console.log('🔄 Testing all endpoints...');
+            await testEndpoint('/health', 'health-result');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await testEndpoint('/api/v2/arbitrage/network-status', 'network-result');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await testEndpoint('/api/v2/arbitrage/opportunities', 'opportunities-result');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await testEndpoint('/api/v2/arbitrage/dashboard/summary', 'dashboard-result');
+            console.log('✅ All tests completed!');
+        }
+        
+        // Auto-test on load
+        setTimeout(() => {
+            console.log('🚀 Starting automatic tests...');
+            testAllEndpoints();
+        }, 2000);
+    </script>
+</body>
+</html>
