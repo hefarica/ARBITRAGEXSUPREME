@@ -1,0 +1,1069 @@
+openapi: 3.0.3
+info:
+  title: ArbitrageX Supreme API
+  description: |
+    Enterprise-grade arbitrage trading system for 20+ blockchains
+    
+    ## Architecture
+    - **Backend**: PostgreSQL + Prisma ORM + Fastify
+    - **Multi-tenant**: Tenant-based architecture for enterprise
+    - **Real-time**: WebSocket support for live data
+    - **Authentication**: JWT tokens with HTTP-Only cookies
+    
+    ## Supported Blockchains (20)
+    ethereum, bsc, polygon, arbitrum, optimism, avalanche, base, fantom, gnosis, celo, moonbeam, cronos, aurora, harmony, kava, metis, evmos, oasis, milkomeda, telos
+    
+    ## Key Features
+    - Real-time arbitrage opportunity detection
+    - Multi-chain execution engine
+    - Advanced risk management
+    - Enterprise-grade security
+    - Comprehensive analytics
+  version: 2.0.0
+  contact:
+    name: Hector Fabio Riascos C.
+    email: soporte@arbitragexsupreme.com
+    url: https://arbitragexsupreme.com
+  license:
+    name: Proprietary
+    url: https://arbitragexsupreme.com/license
+
+servers:
+  - url: https://api.arbitragexsupreme.com/api/v2
+    description: Production server
+  - url: https://staging-api.arbitragexsupreme.com/api/v2
+    description: Staging server
+  - url: http://localhost:3000/api/v2
+    description: Development server
+
+security:
+  - BearerAuth: []
+  - CookieAuth: []
+
+paths:
+  # ==========================================================================
+  # AUTHENTICATION ENDPOINTS
+  # ==========================================================================
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+          headers:
+            Set-Cookie:
+              description: JWT tokens in HTTP-Only cookies
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: User registration
+      description: Register new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Refresh JWT access token using refresh token
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: Optional refresh token (can use cookie)
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Logout user and revoke tokens
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get user profile
+      description: Get current user information and permissions
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  # ==========================================================================
+  # ARBITRAGE ENDPOINTS
+  # ==========================================================================
+  /arbitrage/network-status:
+    get:
+      tags:
+        - Arbitrage
+      summary: Get blockchain network status
+      description: Get status and latency for all supported blockchains
+      responses:
+        '200':
+          description: Network status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkStatusResponse'
+
+  /arbitrage/opportunities:
+    get:
+      tags:
+        - Arbitrage
+      summary: Get arbitrage opportunities
+      description: Get filtered list of available arbitrage opportunities
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      parameters:
+        - name: chains
+          in: query
+          description: Comma-separated list of blockchain chains
+          schema:
+            type: string
+            example: "ethereum,bsc,polygon"
+        - name: strategies
+          in: query
+          description: Comma-separated list of arbitrage strategies
+          schema:
+            type: string
+            example: "triangular_arbitrage,cross_dex"
+        - name: minProfitUsd
+          in: query
+          description: Minimum profit amount in USD
+          schema:
+            type: number
+            minimum: 0
+        - name: maxRiskLevel
+          in: query
+          description: Maximum risk level
+          schema:
+            type: string
+            enum: [low, medium, high]
+        - name: limit
+          in: query
+          description: Number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Number of results to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Opportunities retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpportunitiesResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /arbitrage/execute:
+    post:
+      tags:
+        - Arbitrage
+      summary: Execute arbitrage opportunity
+      description: Execute a specific arbitrage opportunity
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteArbitrageRequest'
+      responses:
+        '200':
+          description: Execution initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteArbitrageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /arbitrage/executions:
+    get:
+      tags:
+        - Arbitrage
+      summary: Get execution history
+      description: Get filtered list of arbitrage executions
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by execution status
+          schema:
+            type: string
+            enum: [PENDING, SUCCESS, FAILED, CANCELLED]
+        - name: opportunityId
+          in: query
+          description: Filter by opportunity ID
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Number of results to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Executions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionsResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /arbitrage/executions/{executionId}:
+    get:
+      tags:
+        - Arbitrage
+      summary: Get execution details
+      description: Get detailed information about a specific execution
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          description: Execution ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execution details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionDetailsResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /arbitrage/executions/{executionId}/cancel:
+    post:
+      tags:
+        - Arbitrage
+      summary: Cancel execution
+      description: Cancel a pending arbitrage execution
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          description: Execution ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Execution cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+
+  # ==========================================================================
+  # DASHBOARD ENDPOINTS
+  # ==========================================================================
+  /dashboard/summary:
+    get:
+      tags:
+        - Dashboard
+      summary: Get dashboard summary
+      description: Get comprehensive dashboard data with metrics and charts
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Dashboard summary retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummaryResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  # ==========================================================================
+  # BLOCKCHAIN ENDPOINTS
+  # ==========================================================================
+  /blockchain/networks:
+    get:
+      tags:
+        - Blockchain
+      summary: Get blockchain networks
+      description: Get detailed information about all supported blockchain networks
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Blockchain networks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlockchainNetworksResponse'
+
+  # ==========================================================================
+  # BILLING ENDPOINTS
+  # ==========================================================================
+  /billing/subscription:
+    get:
+      tags:
+        - Billing
+      summary: Get subscription status
+      description: Get current subscription plan and usage information
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Subscription information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+
+  # ==========================================================================
+  # ALERTS ENDPOINTS
+  # ==========================================================================
+  /alerts:
+    get:
+      tags:
+        - Alerts
+      summary: Get alerts
+      description: Get filtered list of system alerts and notifications
+      security:
+        - BearerAuth: []
+        - CookieAuth: []
+      parameters:
+        - name: type
+          in: query
+          description: Filter by alert type
+          schema:
+            type: string
+            enum: [opportunity, execution, system, security]
+        - name: status
+          in: query
+          description: Filter by alert status
+          schema:
+            type: string
+            enum: [active, resolved]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Alerts retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertsResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+
+  schemas:
+    # Authentication Schemas
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          minLength: 8
+          example: "securepassword123"
+        tenantSlug:
+          type: string
+          example: "ingenio-pichichi"
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - firstName
+        - lastName
+        - tenantSlug
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        firstName:
+          type: string
+          minLength: 1
+        lastName:
+          type: string
+          minLength: 1
+        tenantSlug:
+          type: string
+          minLength: 1
+        inviteToken:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        user:
+          $ref: '#/components/schemas/AuthUser'
+        permissions:
+          type: array
+          items:
+            type: string
+          example: ["arbitrage:read", "arbitrage:execute"]
+        features:
+          type: array
+          items:
+            type: string
+          example: ["multi_chain_trading", "real_time_data"]
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "user_123"
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        tenantId:
+          type: string
+          example: "tenant_456"
+        role:
+          type: string
+          enum: [admin, trader, viewer]
+          example: "trader"
+
+    UserProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        user:
+          $ref: '#/components/schemas/AuthUser'
+        permissions:
+          type: array
+          items:
+            type: string
+
+    # Arbitrage Schemas
+    ArbitrageOpportunity:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "arb_eth_001"
+        strategy:
+          type: string
+          enum: [triangular_arbitrage, cross_dex, flash_loan, cross_chain]
+          example: "triangular_arbitrage"
+        blockchain_from:
+          type: string
+          example: "ethereum"
+        blockchain_to:
+          type: string
+          example: "arbitrum"
+        token_in:
+          type: string
+          example: "USDC"
+        token_out:
+          type: string
+          example: "USDT"
+        amount_in:
+          type: number
+          example: 1000.0
+        expected_amount_out:
+          type: number
+          example: 1025.50
+        profit_amount:
+          type: number
+          example: 25.50
+        profit_percentage:
+          type: number
+          example: 2.55
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.85
+        gas_estimate:
+          type: string
+          example: "150000"
+        expires_at:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:35:00Z"
+        dex_path:
+          type: array
+          items:
+            type: string
+          example: ["Uniswap V3", "SushiSwap"]
+        created_at:
+          type: string
+          format: date-time
+
+    ArbitrageExecution:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "exec_001"
+        opportunityId:
+          type: string
+          example: "arb_eth_001"
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED, CANCELLED]
+          example: "SUCCESS"
+        actualProfitUsd:
+          type: number
+          example: 120.30
+        actualProfitPercentage:
+          type: number
+          example: 2.41
+        executionTimeMs:
+          type: number
+          example: 1250
+        gasUsed:
+          type: string
+          example: "147832"
+        gasPriceGwei:
+          type: string
+          example: "25.5"
+        totalGasCost:
+          type: string
+          example: "0.00377316"
+        slippageActual:
+          type: number
+          example: 0.18
+        transactionHash:
+          type: string
+          example: "0x1f4e2c7d8a9b3f6e8d2c5a7b9e1f4d6c8a2b5e7f9d1c3a6b8e4f7d2a5c8b9e1f"
+        failureReason:
+          type: string
+          example: "Insufficient liquidity"
+        executedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    ExecuteArbitrageRequest:
+      type: object
+      required:
+        - opportunityId
+      properties:
+        opportunityId:
+          type: string
+          example: "arb_eth_001"
+        slippageTolerance:
+          type: number
+          minimum: 0
+          maximum: 5
+          default: 0.5
+          example: 0.5
+        amount:
+          type: string
+          example: "1000.00"
+
+    NetworkStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        network_status:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [online, offline, degraded]
+              latency:
+                type: number
+        supported_blockchains:
+          type: array
+          items:
+            type: string
+        active_networks:
+          type: integer
+          example: 20
+        timestamp:
+          type: string
+          format: date-time
+
+    OpportunitiesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        opportunities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArbitrageOpportunity'
+        total:
+          type: integer
+          example: 1
+        total_available:
+          type: integer
+          example: 45
+        filters_applied:
+          type: object
+          properties:
+            chains:
+              type: string
+            minProfit:
+              type: number
+            strategy:
+              type: string
+            limit:
+              type: integer
+        scan_timestamp:
+          type: string
+          format: date-time
+
+    ExecuteArbitrageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        execution:
+          $ref: '#/components/schemas/ArbitrageExecution'
+        message:
+          type: string
+          example: "Arbitrage execution initiated"
+
+    ExecutionsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArbitrageExecution'
+        total:
+          type: integer
+        stats:
+          type: object
+          properties:
+            successRate:
+              type: number
+              example: 85.5
+            totalProfitUsd:
+              type: number
+              example: 2450.75
+            averageExecutionTime:
+              type: number
+              example: 1150
+            totalGasSpent:
+              type: string
+              example: "0.12345678"
+
+    ExecutionDetailsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        execution:
+          $ref: '#/components/schemas/ArbitrageExecution'
+
+    # Dashboard Schemas
+    DashboardSummaryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        summary:
+          type: object
+          properties:
+            totalOpportunities:
+              type: integer
+              example: 127
+            totalProfitUsd:
+              type: number
+              example: 8450.75
+            successfulExecutions:
+              type: integer
+              example: 45
+            averageProfitPercentage:
+              type: number
+              example: 2.35
+            activeBlockchains:
+              type: integer
+              example: 20
+            topPerformingChain:
+              type: string
+              example: "ethereum"
+            recentExecutions:
+              type: array
+              items:
+                $ref: '#/components/schemas/ArbitrageExecution'
+            profitByChain:
+              type: object
+              additionalProperties:
+                type: number
+            executionsByHour:
+              type: array
+              items:
+                type: object
+                properties:
+                  hour:
+                    type: string
+                    example: "09:00"
+                  executions:
+                    type: integer
+                    example: 5
+                  profit:
+                    type: number
+                    example: 325.50
+        lastUpdated:
+          type: string
+          format: date-time
+
+    # Blockchain Schemas
+    BlockchainNetworksResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        networks:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: "ethereum"
+              name:
+                type: string
+                example: "Ethereum Mainnet"
+              chainId:
+                type: integer
+                example: 1
+              status:
+                type: string
+                enum: [online, offline, degraded]
+              latency:
+                type: number
+                example: 150
+              gasPrice:
+                type: string
+                example: "25.5"
+              supportedProtocols:
+                type: array
+                items:
+                  type: string
+              tvl:
+                type: string
+                example: "45000000000"
+
+    # Billing Schemas
+    SubscriptionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        subscription:
+          type: object
+          properties:
+            id:
+              type: string
+              example: "sub_123"
+            plan:
+              type: string
+              enum: [free, pro, enterprise]
+              example: "pro"
+            status:
+              type: string
+              enum: [active, cancelled, expired]
+              example: "active"
+            currentPeriodStart:
+              type: string
+              format: date-time
+            currentPeriodEnd:
+              type: string
+              format: date-time
+            usage:
+              type: object
+              properties:
+                executionsUsed:
+                  type: integer
+                  example: 125
+                executionsLimit:
+                  type: integer
+                  example: 1000
+                chainsAccess:
+                  type: integer
+                  example: 20
+                realTimeData:
+                  type: boolean
+                  example: true
+            features:
+              type: array
+              items:
+                type: string
+
+    # Alerts Schemas
+    AlertsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        alerts:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: "alert_001"
+              type:
+                type: string
+                enum: [opportunity, execution, system, security]
+              severity:
+                type: string
+                enum: [low, medium, high, critical]
+              title:
+                type: string
+                example: "High Profit Opportunity Detected"
+              message:
+                type: string
+                example: "Found 5.2% profit opportunity on ETH/USDC pair"
+              data:
+                type: object
+              status:
+                type: string
+                enum: [active, resolved]
+              createdAt:
+                type: string
+                format: date-time
+        total:
+          type: integer
+
+    # Common Response Schemas
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Error message"
+        code:
+          type: integer
+          example: 400
+
+  responses:
+    BadRequestError:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Invalid request parameters"
+            code: 400
+
+    UnauthorizedError:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Authentication required"
+            code: 401
+
+    ForbiddenError:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Insufficient permissions"
+            code: 403
+
+    NotFoundError:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Resource not found"
+            code: 404
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "Internal server error"
+            code: 500
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization endpoints
+  - name: Arbitrage
+    description: Core arbitrage functionality and execution endpoints
+  - name: Dashboard
+    description: Dashboard analytics and summary endpoints
+  - name: Blockchain
+    description: Blockchain network and protocol endpoints
+  - name: Billing
+    description: Subscription and billing management endpoints
+  - name: Alerts
+    description: System alerts and notifications endpoints
