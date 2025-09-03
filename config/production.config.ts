@@ -57,7 +57,9 @@ export const PRODUCTION_NETWORKS: Record<string, NetworkConfig> = {
     chainId: 1,
     name: "Ethereum Mainnet",
     symbol: "ETH",
-    rpcUrl: "https://eth-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+    rpcUrl: process.env.ALCHEMY_ETHEREUM_KEY 
+      ? `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_ETHEREUM_KEY}`
+      : "https://ethereum.publicnode.com",
     explorerUrl: "https://etherscan.io",
     flashLoanProviders: [
       "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2", // Aave V3 Pool
@@ -119,7 +121,9 @@ export const PRODUCTION_NETWORKS: Record<string, NetworkConfig> = {
     chainId: 137,
     name: "Polygon Mainnet",
     symbol: "MATIC",
-    rpcUrl: "https://polygon-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+    rpcUrl: process.env.ALCHEMY_POLYGON_KEY 
+      ? `https://polygon-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_POLYGON_KEY}`
+      : "https://polygon-rpc.com",
     explorerUrl: "https://polygonscan.com",
     flashLoanProviders: [
       "0x794a61358D6845594F94dc1DB02A252b5b4814aD", // Aave V3 Pool Polygon
@@ -150,7 +154,9 @@ export const PRODUCTION_NETWORKS: Record<string, NetworkConfig> = {
     chainId: 42161,
     name: "Arbitrum One",
     symbol: "ETH",
-    rpcUrl: "https://arb-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+    rpcUrl: process.env.ALCHEMY_ARBITRUM_KEY 
+      ? `https://arb-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_ARBITRUM_KEY}`
+      : "https://arbitrum.publicnode.com",
     explorerUrl: "https://arbiscan.io",
     flashLoanProviders: [
       "0x794a61358D6845594F94dc1DB02A252b5b4814aD", // Aave V3 Pool Arbitrum
@@ -181,7 +187,9 @@ export const PRODUCTION_NETWORKS: Record<string, NetworkConfig> = {
     chainId: 10,
     name: "Optimism",
     symbol: "ETH",
-    rpcUrl: "https://opt-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+    rpcUrl: process.env.ALCHEMY_OPTIMISM_KEY 
+      ? `https://opt-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_OPTIMISM_KEY}`
+      : "https://optimism.publicnode.com",
     explorerUrl: "https://optimistic.etherscan.io",
     flashLoanProviders: [
       "0x794a61358D6845594F94dc1DB02A252b5b4814aD", // Aave V3 Pool Optimism

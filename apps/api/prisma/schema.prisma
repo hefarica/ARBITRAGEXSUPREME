@@ -31,6 +31,7 @@ model Tenant {
   users           User[]
   api_keys        ApiKey[]
   arbitrage_configs ArbitrageConfig[]
+  executions      ArbitrageExecution[]
 
   @@map("tenants")
 }
@@ -51,6 +52,7 @@ model User {
   // Relationships
   tenant        Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   api_keys      ApiKey[]
+  executions    ArbitrageExecution[]
 
   @@map("users")
 }
@@ -145,18 +147,197 @@ model ArbitrageOpportunity {
   strategy_name     String
   blockchain_from   String
   blockchain_to     String
-  token_symbol      String
+  token_in          String
+  token_out         String
+  token_symbol      String   // For backward compatibility
+  amount_in         Decimal  @db.Decimal(30, 18)
+  expected_amount_out Decimal @db.Decimal(30, 18)
+  profit_amount     Decimal  @db.Decimal(30, 18)
   profit_percentage Decimal  @db.Decimal(10, 6)
   profit_usd        Decimal  @db.Decimal(20, 8)
   confidence_score  Decimal  @db.Decimal(3, 2)
+  gas_estimate      String
+  dex_path          Json     // Array of DEX exchanges and pool addresses
+  triangular_path   Json?    // For triangular arbitrage routes
+  flash_loan_data   Json?    // Flash loan provider and parameters
   status            OpportunityStatus @default(DETECTED)
   expires_at        DateTime
   detected_at       DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
   // Relationships
   config            ArbitrageConfig @relation(fields: [config_id], references: [id])
+  executions        ArbitrageExecution[]
 
+  @@index([strategy_name, blockchain_from, status])
+  @@index([expires_at, status])
+  @@index([profit_percentage])
   @@map("arbitrage_opportunities")
+}
+
+model ArbitrageExecution {
+  id                String   @id @default(uuid()) @db.Uuid
+  opportunity_id    String   @db.Uuid
+  tenant_id         String   @db.Uuid
+  user_id           String   @db.Uuid
+  execution_mode    ExecutionMode
+  status            ExecutionStatus @default(PENDING)
+  
+  // Transaction details
+  transaction_hashes Json     // Array of transaction hashes
+  actual_profit     Decimal? @db.Decimal(30, 18)
+  actual_gas_used   String?
+  execution_time_ms Int?
+  slippage_actual   Decimal? @db.Decimal(10, 6)
+  
+  // Execution parameters
+  slippage_tolerance Decimal @db.Decimal(5, 4) @default(0.005)
+  max_gas_price     String?
+  deadline          DateTime
+  
+  // Error handling
+  error_message     String?
+  retry_count       Int      @default(0)
+  
+  // Timestamps
+  started_at        DateTime @default(now())
+  completed_at      DateTime?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relationships
+  opportunity       ArbitrageOpportunity @relation(fields: [opportunity_id], references: [id])
+  tenant           Tenant @relation(fields: [tenant_id], references: [id])
+  user             User @relation(fields: [user_id], references: [id])
+  steps            ExecutionStep[]
+
+  @@index([status, started_at])
+  @@index([tenant_id, user_id, status])
+  @@index([opportunity_id])
+  @@map("arbitrage_executions")
+}
+
+model ExecutionStep {
+  id                String   @id @default(uuid()) @db.Uuid
+  execution_id      String   @db.Uuid
+  step_number       Int
+  step_type         StepType
+  blockchain        String
+  transaction_hash  String?
+  status           StepStatus @default(PENDING)
+  
+  // Step details
+  token_in         String?
+  token_out        String?
+  amount_in        Decimal? @db.Decimal(30, 18)
+  amount_out       Decimal? @db.Decimal(30, 18)
+  dex_exchange     String?
+  pool_address     String?
+  gas_used         String?
+  
+  // Error handling
+  error_message    String?
+  
+  // Timestamps
+  started_at       DateTime?
+  completed_at     DateTime?
+  created_at       DateTime @default(now())
+
+  // Relationships
+  execution        ArbitrageExecution @relation(fields: [execution_id], references: [id], onDelete: Cascade)
+
+  @@index([execution_id, step_number])
+  @@map("execution_steps")
+}
+
+// =============================================================================
+// BLOCKCHAIN MONITORING MODELS
+// =============================================================================
+
+model BlockchainNetwork {
+  id                String   @id @default(uuid()) @db.Uuid
+  network_id        String   @unique  // ethereum, bsc, polygon, etc.
+  name              String
+  symbol            String
+  chain_id          Int      @unique
+  rpc_url           String
+  ws_url            String?
+  explorer_url      String
+  block_time        Int      // in seconds
+  is_active         Boolean  @default(true)
+  last_sync_block   BigInt?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relationships
+  dex_protocols     DexProtocol[]
+  network_status    NetworkStatus[]
+
+  @@map("blockchain_networks")
+}
+
+model DexProtocol {
+  id                String   @id @default(uuid()) @db.Uuid
+  network_id        String   @db.Uuid
+  name              String
+  protocol_type     String   // uniswap_v2, uniswap_v3, curve, balancer
+  router_address    String
+  factory_address   String?
+  supports_flash_loans Boolean @default(false)
+  fee_percentage    Decimal  @db.Decimal(6, 4)
+  tvl_usd           Decimal? @db.Decimal(20, 2)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relationships
+  network           BlockchainNetwork @relation(fields: [network_id], references: [id])
+  trading_pairs     TradingPair[]
+
+  @@index([network_id, is_active])
+  @@map("dex_protocols")
+}
+
+model TradingPair {
+  id                String   @id @default(uuid()) @db.Uuid
+  dex_protocol_id   String   @db.Uuid
+  token0_address    String
+  token1_address    String
+  token0_symbol     String
+  token1_symbol     String
+  pair_address      String   @unique
+  reserve0          Decimal  @db.Decimal(30, 18)
+  reserve1          Decimal  @db.Decimal(30, 18)
+  price             Decimal  @db.Decimal(30, 18)
+  volume_24h_usd    Decimal? @db.Decimal(20, 2)
+  liquidity_usd     Decimal? @db.Decimal(20, 2)
+  last_updated      DateTime @default(now())
+  created_at        DateTime @default(now())
+
+  // Relationships
+  dex_protocol      DexProtocol @relation(fields: [dex_protocol_id], references: [id])
+
+  @@index([dex_protocol_id, token0_symbol, token1_symbol])
+  @@index([pair_address])
+  @@map("trading_pairs")
+}
+
+model NetworkStatus {
+  id                String   @id @default(uuid()) @db.Uuid
+  network_id        String   @db.Uuid
+  block_number      BigInt
+  gas_price_gwei    Decimal  @db.Decimal(10, 4)
+  is_syncing        Boolean  @default(false)
+  peer_count        Int?
+  response_time_ms  Int
+  is_healthy        Boolean  @default(true)
+  checked_at        DateTime @default(now())
+
+  // Relationships
+  network           BlockchainNetwork @relation(fields: [network_id], references: [id])
+
+  @@index([network_id, checked_at])
+  @@map("network_status")
 }
 
 // =============================================================================
@@ -200,4 +381,36 @@ enum OpportunityStatus {
   EXECUTED
   FAILED
   EXPIRED
+}
+
+enum ExecutionMode {
+  SIMULATION
+  PAPER_TRADING
+  LIVE_TRADING
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+enum StepType {
+  APPROVAL
+  FLASH_LOAN_START
+  SWAP
+  BRIDGE
+  FLASH_LOAN_REPAY
+  PROFIT_EXTRACTION
+}
+
+enum StepStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
 }

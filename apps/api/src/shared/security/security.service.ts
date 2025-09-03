@@ -46,13 +46,24 @@ export class SecurityService {
 
   encrypt(text: string): { encryptedData: string; authTag: string; iv: string } {
     try {
-      const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipher(this.algorithm, this.encryptionKey);
-      cipher.setAAD(Buffer.from('ArbitrageX-Pro-2025', 'utf8'));
+      // AES-GCM requires 12-byte IV for optimal security
+      const iv = crypto.randomBytes(12);
+      
+      // Ensure encryption key is 32 bytes (256 bits)
+      const key = this.getSecureKey();
+      
+      // Use createCipheriv (NOT createCipher) with explicit IV
+      const cipher = crypto.createCipheriv(this.algorithm, key, iv);
+      
+      // Set Additional Authenticated Data (AAD)
+      const aad = Buffer.from('ArbitrageX-Pro-2025', 'utf8');
+      cipher.setAAD(aad);
 
+      // Encrypt the data
       let encrypted = cipher.update(text, 'utf8', 'hex');
       encrypted += cipher.final('hex');
 
+      // Get authentication tag AFTER finalization
       const authTag = cipher.getAuthTag();
 
       return {
@@ -68,10 +79,24 @@ export class SecurityService {
 
   decrypt(encryptedData: string, authTag: string, iv: string): string {
     try {
-      const decipher = crypto.createDecipher(this.algorithm, this.encryptionKey);
-      decipher.setAAD(Buffer.from('ArbitrageX-Pro-2025', 'utf8'));
-      decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+      // Ensure encryption key is 32 bytes (256 bits)
+      const key = this.getSecureKey();
+      
+      // Convert hex strings back to buffers
+      const ivBuffer = Buffer.from(iv, 'hex');
+      const authTagBuffer = Buffer.from(authTag, 'hex');
+      
+      // Use createDecipheriv (NOT createDecipher) with explicit IV
+      const decipher = crypto.createDecipheriv(this.algorithm, key, ivBuffer);
+      
+      // Set Additional Authenticated Data (AAD) - must match encryption
+      const aad = Buffer.from('ArbitrageX-Pro-2025', 'utf8');
+      decipher.setAAD(aad);
+      
+      // Set authentication tag BEFORE decryption
+      decipher.setAuthTag(authTagBuffer);
 
+      // Decrypt the data
       let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
 
@@ -315,6 +340,39 @@ export class SecurityService {
 
   private generateRandomKey(): string {
     return crypto.randomBytes(32).toString('hex');
+  }
+
+  /**
+   * Get secure 32-byte encryption key for AES-256-GCM
+   * Ensures key is exactly 32 bytes regardless of input format
+   */
+  private getSecureKey(): Buffer {
+    try {
+      let keyBuffer: Buffer;
+      
+      // If ENCRYPTION_KEY is base64 encoded
+      if (this.encryptionKey.length === 44 && this.encryptionKey.includes('/') || this.encryptionKey.includes('+')) {
+        keyBuffer = Buffer.from(this.encryptionKey, 'base64');
+      }
+      // If ENCRYPTION_KEY is hex encoded (64 chars)
+      else if (this.encryptionKey.length === 64) {
+        keyBuffer = Buffer.from(this.encryptionKey, 'hex');
+      }
+      // If ENCRYPTION_KEY is raw string, hash it to get 32 bytes
+      else {
+        keyBuffer = crypto.createHash('sha256').update(this.encryptionKey).digest();
+      }
+      
+      // Ensure we have exactly 32 bytes
+      if (keyBuffer.length !== 32) {
+        throw new Error(`Invalid key length: ${keyBuffer.length}, expected 32 bytes`);
+      }
+      
+      return keyBuffer;
+    } catch (error) {
+      this.logger.error('Failed to derive secure encryption key', { error });
+      throw new Error('Failed to derive secure encryption key');
+    }
   }
 
   constantTimeEquals(a: string, b: string): boolean {

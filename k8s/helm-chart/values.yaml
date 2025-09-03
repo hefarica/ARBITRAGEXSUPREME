@@ -1,0 +1,426 @@
+# ArbitrageX Supreme - Helm Chart Values
+# Ingenio Pichichi S.A. - Configuración de valores por defecto
+# TODO FUNCIONAL - Valores para despliegue real
+
+# ============================================================================
+# GLOBAL CONFIGURATION
+# ============================================================================
+global:
+  imageRegistry: "ghcr.io"
+  storageClass: "fast-ssd"
+  
+# ============================================================================
+# APPLICATION CONFIGURATION
+# ============================================================================
+image:
+  registry: ghcr.io
+  repository: arbitragex/arbitragex-pro-2025
+  tag: "latest"
+  pullPolicy: Always
+  pullSecrets: []
+
+# Application metadata
+nameOverride: ""
+fullnameOverride: ""
+environment: "staging"
+
+# ============================================================================
+# DEPLOYMENT CONFIGURATION
+# ============================================================================
+replicaCount: 3
+
+deployment:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+
+# ============================================================================
+# SERVICE CONFIGURATION
+# ============================================================================
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+  annotations: {}
+  
+# Load Balancer configuration
+loadBalancer:
+  enabled: true
+  type: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+# ============================================================================
+# INGRESS CONFIGURATION
+# ============================================================================
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  
+  hosts:
+    - host: arbitragex.local
+      paths:
+        - path: /
+          pathType: Prefix
+  
+  tls:
+    - secretName: arbitragex-tls
+      hosts:
+        - arbitragex.local
+
+# ============================================================================
+# RESOURCE MANAGEMENT
+# ============================================================================
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ============================================================================
+# NODE SCHEDULING
+# ============================================================================
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - arbitragex-supreme
+          topologyKey: kubernetes.io/hostname
+
+# ============================================================================
+# SECURITY CONFIGURATION
+# ============================================================================
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  fsGroup: 1001
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Security Policy
+podSecurityPolicy:
+  enabled: true
+
+# Network Policy
+networkPolicy:
+  enabled: true
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 5432 # PostgreSQL
+        - protocol: TCP
+          port: 6379 # Redis
+
+# ============================================================================
+# ENVIRONMENT VARIABLES
+# ============================================================================
+env:
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  
+# Environment variables from ConfigMap
+envFrom:
+  - configMapRef:
+      name: arbitragex-config
+  - secretRef:
+      name: arbitragex-secrets
+
+# ============================================================================
+# HASHICORP VAULT INTEGRATION
+# ============================================================================
+vault:
+  enabled: true
+  address: "http://vault.vault.svc.cluster.local:8200"
+  authMethod: "kubernetes"
+  role: "arbitragex"
+  
+  # Vault Agent sidecar
+  agent:
+    enabled: true
+    image:
+      repository: vault
+      tag: "1.15.2"
+    
+    # Secret injection
+    secrets:
+      - path: "secret/data/arbitragex/database"
+        template: |
+          {{- with secret "secret/data/arbitragex/database" -}}
+          DATABASE_URL="{{ .Data.data.url }}"
+          DB_PASSWORD="{{ .Data.data.password }}"
+          {{- end }}
+      
+      - path: "secret/data/arbitragex/api-keys"
+        template: |
+          {{- with secret "secret/data/arbitragex/api-keys" -}}
+          ALCHEMY_API_KEY="{{ .Data.data.alchemy_key }}"
+          INFURA_API_KEY="{{ .Data.data.infura_key }}"
+          {{- end }}
+
+# ============================================================================
+# DATABASE CONFIGURATION (PostgreSQL)
+# ============================================================================
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: ""  # Set via secret
+    database: "arbitragex"
+    username: "arbitragex"
+    password: ""  # Set via secret
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: "fast-ssd"
+    
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    
+    podSecurityContext:
+      enabled: true
+      fsGroup: 1001
+    
+    containerSecurityContext:
+      enabled: true
+      runAsUser: 1001
+
+# ============================================================================
+# REDIS CONFIGURATION (Cache)
+# ============================================================================
+redis:
+  enabled: true
+  architecture: standalone
+  
+  auth:
+    enabled: true
+    password: ""  # Set via secret
+  
+  master:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: "fast-ssd"
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+# ============================================================================
+# MONITORING & OBSERVABILITY
+# ============================================================================
+monitoring:
+  enabled: true
+  
+  # Prometheus monitoring
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      path: /metrics
+    
+  # Grafana dashboards
+  grafana:
+    enabled: true
+    dashboards:
+      enabled: true
+    
+  # Custom metrics
+  metrics:
+    enabled: true
+    port: 9090
+    path: /metrics
+
+# Application-specific monitoring
+healthCheck:
+  enabled: true
+  path: /health
+  port: 3000
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  path: /ready
+  port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+livenessProbe:
+  enabled: true
+  path: /health
+  port: 3000
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+
+# ============================================================================
+# BACKUP CONFIGURATION
+# ============================================================================
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  
+  # S3 backup configuration
+  s3:
+    enabled: true
+    bucket: "arbitragex-backups"
+    region: "us-east-1"
+    
+  retention:
+    days: 30
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+logging:
+  enabled: true
+  level: "info"
+  
+  # Centralized logging
+  fluentd:
+    enabled: true
+    
+  # Log aggregation
+  elasticsearch:
+    enabled: false
+    host: "elasticsearch.logging.svc.cluster.local"
+
+# ============================================================================
+# BLOCKCHAIN NETWORK CONFIGURATION
+# ============================================================================
+blockchain:
+  networks:
+    ethereum:
+      enabled: true
+      rpcUrl: ""  # From Vault
+    polygon:
+      enabled: true
+      rpcUrl: ""  # From Vault
+    arbitrum:
+      enabled: true
+      rpcUrl: ""  # From Vault
+    optimism:
+      enabled: true
+      rpcUrl: ""  # From Vault
+    base:
+      enabled: true
+      rpcUrl: ""  # From Vault
+  
+  monitoring:
+    enabled: true
+    interval: 30
+
+# ============================================================================
+# MICROSERVICES CONFIGURATION
+# ============================================================================
+microservices:
+  # API Gateway
+  api:
+    enabled: true
+    replicas: 3
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+  
+  # Blockchain Monitor
+  blockchain:
+    enabled: true
+    replicas: 2
+    resources:
+      limits:
+        cpu: 300m
+        memory: 512Mi
+      requests:
+        cpu: 150m
+        memory: 256Mi
+  
+  # Arbitrage Engine
+  arbitrage:
+    enabled: true
+    replicas: 3
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+# ============================================================================
+# DEVELOPMENT & TESTING
+# ============================================================================
+development:
+  enabled: false
+  debugMode: false
+  hotReload: false
+  
+testing:
+  enabled: false
+  mockServices: false
+  testData: false

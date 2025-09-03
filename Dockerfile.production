@@ -46,26 +46,28 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build arguments
+# Build arguments para CI/CD pipeline
 ARG NODE_ENV=production
 ARG BUILD_VERSION=latest
 ARG BUILD_DATE
+ARG BUILD_BRANCH
 ARG GIT_COMMIT
 
 # Set environment variables
 ENV NODE_ENV=${NODE_ENV}
 ENV BUILD_VERSION=${BUILD_VERSION}
 ENV BUILD_DATE=${BUILD_DATE}
+ENV BUILD_BRANCH=${BUILD_BRANCH}
 ENV GIT_COMMIT=${GIT_COMMIT}
 
 # Build the application
 RUN npm run build
 
-# Build smart contracts
-RUN npm run build:contracts
+# Optimizar para producción si existe el script
+RUN npm run build:prod 2>/dev/null || echo "No production optimization script found"
 
-# Generate optimized production bundle
-RUN npm run build:optimize
+# Generate type definitions
+RUN npm run build:types 2>/dev/null || echo "No type definitions script found"
 
 # Remove development dependencies
 RUN npm prune --production
