@@ -14,10 +14,11 @@ He desarrollado **ArbitrageX Supreme**, una plataforma completa de arbitraje de 
 
 ## 🎯 SOLICITUD ESPECÍFICA
 
-**Implementa este proyecto completo en Cloudflare Pages con:**
+**Implementa este proyecto completo en Cloudflare Pages usando los 2 repositorios separados:**
 
-### **1️⃣ BACKEND: Deploy a Cloudflare Pages Functions**
+### **1️⃣ BACKEND: Deploy desde ARBITRAGEXSUPREME repo**
 
+**Repositorio**: `https://github.com/hefarica/ARBITRAGEXSUPREME.git`
 **Proyecto Cloudflare**: `arbitragex-supreme-backend`
 
 **Archivo Backend**: `deployment/stable-server.js` (ya creado y funcionando)
@@ -33,9 +34,10 @@ He desarrollado **ArbitrageX Supreme**, una plataforma completa de arbitraje de 
 
 **URL Final Backend**: `https://arbitragex-supreme-backend.pages.dev`
 
-### **2️⃣ FRONTEND: Crear proyecto React completo**
+### **2️⃣ FRONTEND: Deploy desde show-my-github-gems repo**
 
-**Proyecto Cloudflare**: `arbitragex-supreme-frontend` 
+**Repositorio**: `https://github.com/hefarica/show-my-github-gems.git`
+**Proyecto Cloudflare**: `show-my-github-gems`
 
 **Stack Tecnológico**:
 - React + TypeScript
@@ -43,23 +45,24 @@ He desarrollado **ArbitrageX Supreme**, una plataforma completa de arbitraje de 
 - Vite build system
 - Cloudflare Pages hosting
 
-**URL Final Frontend**: `https://arbitragex-supreme-frontend.pages.dev`
+**URL Final Frontend**: `https://show-my-github-gems.pages.dev`
 
 ---
 
 ## 📁 ARCHIVOS DISPONIBLES
 
-**En el repositorio GitHub**: `https://github.com/hefarica/ARBITRAGEXSUPREME`
-**Branch**: `activities-141-150`
+**Backend Repository**: `https://github.com/hefarica/ARBITRAGEXSUPREME.git`
+**Frontend Repository**: `https://github.com/hefarica/show-my-github-gems.git`
+**Branch**: `activities-141-150` (backend) / `main` (frontend)
 
-### **Backend Listo**:
+### **Backend Listo (ARBITRAGEXSUPREME repo)**:
 - `deployment/stable-server.js` - Servidor API completo
 - Endpoints: `/health`, `/api/v2/arbitrage/network-status`, `/api/v2/arbitrage/opportunities`, `/api/v2/dashboard/summary`
 - CORS configurado, datos simulados realistas
 
-### **Frontend Especificado**:
-- `LOVABLE_IMPLEMENTATION_PROMPT.md` - Especificaciones completas
-- `FRONTEND_CODE_FINAL.md` - Código React listo para usar
+### **Frontend Especificado (show-my-github-gems repo)**:
+- `LOVABLE_IMPLEMENTATION_PROMPT.md` - Especificaciones completas (en backend repo)
+- `FRONTEND_CODE_FINAL.md` - Código React listo para usar (en backend repo)
 - UI: Dashboard profesional de trading con métricas en tiempo real
 
 ---
@@ -233,8 +236,8 @@ export default defineConfig({
 ## 🚀 RESULTADO ESPERADO
 
 ### **URLs Finales**:
-- **Backend API**: `https://arbitragex-supreme-backend.pages.dev`
-- **Frontend App**: `https://arbitragex-supreme-frontend.pages.dev`
+- **Backend API**: `https://arbitragex-supreme-backend.pages.dev` (desde ARBITRAGEXSUPREME repo)
+- **Frontend App**: `https://show-my-github-gems.pages.dev` (desde show-my-github-gems repo)
 
 ### **Funcionalidades Completadas**:
 ✅ **Backend desplegado** en Cloudflare Pages Functions
@@ -251,17 +254,19 @@ export default defineConfig({
 
 ## 📋 INSTRUCCIONES DE IMPLEMENTACIÓN
 
-### **Paso 1: Backend Deployment**
-1. Crear proyecto Cloudflare Pages `arbitragex-supreme-backend`
-2. Convertir `deployment/stable-server.js` a Cloudflare Pages Functions
-3. Configurar routing para todos los endpoints
-4. Desplegar y verificar URLs
+### **Paso 1: Backend Deployment (ARBITRAGEXSUPREME repo)**
+1. Conectar repositorio `https://github.com/hefarica/ARBITRAGEXSUPREME.git`
+2. Crear proyecto Cloudflare Pages `arbitragex-supreme-backend`
+3. Convertir `deployment/stable-server.js` a Cloudflare Pages Functions
+4. Configurar routing para todos los endpoints
+5. Desplegar y verificar URLs
 
-### **Paso 2: Frontend Implementation** 
-1. Crear proyecto React + TypeScript + Tailwind
-2. Implementar componentes usando especificaciones de `FRONTEND_CODE_FINAL.md`
-3. Configurar cliente API apuntando al backend desplegado
-4. Optimizar build para Cloudflare Pages
+### **Paso 2: Frontend Implementation (show-my-github-gems repo)** 
+1. Conectar repositorio `https://github.com/hefarica/show-my-github-gems.git`
+2. Crear proyecto Cloudflare Pages `show-my-github-gems`
+3. Implementar componentes usando especificaciones de `FRONTEND_CODE_FINAL.md` (del backend repo)
+4. Configurar cliente API apuntando a `https://arbitragex-supreme-backend.pages.dev`
+5. Optimizar build para Cloudflare Pages
 
 ### **Paso 3: Integration Testing**
 1. Verificar conexión frontend ↔ backend
@@ -285,6 +290,8 @@ export default defineConfig({
 
 **Por favor implementa ambos proyectos (backend + frontend) en Cloudflare Pages usando las especificaciones completas proporcionadas. Necesito URLs permanentes y estables para una plataforma de arbitraje de criptomonedas completamente funcional.**
 
-**Repositorio de referencia**: https://github.com/hefarica/ARBITRAGEXSUPREME/tree/activities-141-150
+**Repositorios de referencia**: 
+- Backend: https://github.com/hefarica/ARBITRAGEXSUPREME/tree/activities-141-150
+- Frontend: https://github.com/hefarica/show-my-github-gems
 
 **¡Implementa una plataforma de trading profesional en Cloudflare!** 🚀
