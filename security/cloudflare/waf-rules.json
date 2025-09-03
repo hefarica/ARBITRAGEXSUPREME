@@ -1,0 +1,228 @@
+{
+  "waf_rules": {
+    "description": "Configuración WAF para ArbitrageX Supreme - Ingenio Pichichi S.A.",
+    "version": "1.0.0",
+    "created_by": "Hector Fabio Riascos C.",
+    "last_updated": "2025-01-15",
+    
+    "security_rules": [
+      {
+        "rule_id": "rate_limit_api",
+        "description": "Rate limiting para endpoints API críticos",
+        "expression": "(http.request.uri.path matches \"/api/(trading|arbitrage|portfolio)/*\")",
+        "action": "challenge",
+        "characteristics": [
+          "cf.colo.id",
+          "ip.src"
+        ],
+        "period": 60,
+        "requests_per_period": 100,
+        "mitigation_timeout": 300
+      },
+      {
+        "rule_id": "block_malicious_ips",
+        "description": "Bloquear IPs maliciosas conocidas",
+        "expression": "(ip.geoip.country in {\"CN\" \"RU\" \"KP\"} and not cf.client.bot) or (cf.threat_score gt 10)",
+        "action": "block"
+      },
+      {
+        "rule_id": "api_authentication_required",
+        "description": "Requerir autenticación para endpoints sensibles",
+        "expression": "(http.request.uri.path matches \"/api/(admin|trading|wallet)/*\" and not any(http.request.headers[\"authorization\"][*] contains \"Bearer \"))",
+        "action": "block",
+        "response": {
+          "status_code": 401,
+          "content_type": "application/json",
+          "body": "{\"error\": \"Authentication required\", \"code\": \"AUTH_REQUIRED\"}"
+        }
+      },
+      {
+        "rule_id": "websocket_connection_limit",
+        "description": "Limitar conexiones WebSocket por IP",
+        "expression": "(http.request.headers[\"upgrade\"][0] eq \"websocket\")",
+        "action": "challenge",
+        "characteristics": [
+          "ip.src"
+        ],
+        "period": 300,
+        "requests_per_period": 10
+      },
+      {
+        "rule_id": "sql_injection_protection",
+        "description": "Protección contra inyección SQL",
+        "expression": "(http.request.body matches \"(?i)(union|select|insert|delete|update|drop|exec|script)\" and http.request.method eq \"POST\")",
+        "action": "block",
+        "sensitivity": "high"
+      },
+      {
+        "rule_id": "xss_protection",
+        "description": "Protección contra Cross-Site Scripting",
+        "expression": "(http.request.uri.query matches \"(?i)(<script|javascript:|on\\w+=)\" or any(http.request.headers[*][*] matches \"(?i)(<script|javascript:|on\\w+=)\"))",
+        "action": "block"
+      },
+      {
+        "rule_id": "large_payload_protection",
+        "description": "Protección contra payloads excesivamente grandes",
+        "expression": "(http.request.body.size gt 1048576)",
+        "action": "block",
+        "response": {
+          "status_code": 413,
+          "content_type": "application/json",
+          "body": "{\"error\": \"Payload too large\", \"max_size\": \"1MB\"}"
+        }
+      },
+      {
+        "rule_id": "blockchain_rpc_protection",
+        "description": "Protección específica para llamadas RPC blockchain",
+        "expression": "(http.request.uri.path matches \"/api/blockchain/*\" and http.request.method eq \"POST\")",
+        "action": "managed_challenge",
+        "characteristics": [
+          "ip.src",
+          "cf.colo.id"
+        ],
+        "period": 60,
+        "requests_per_period": 30
+      }
+    ],
+    
+    "ddos_protection": {
+      "enabled": true,
+      "sensitivity": "high",
+      "automatic_mitigation": true,
+      "custom_rules": [
+        {
+          "rule_id": "trading_endpoint_ddos",
+          "description": "Protección DDoS específica para endpoints de trading",
+          "expression": "(http.request.uri.path matches \"/api/trading/*\")",
+          "rate_limit": {
+            "threshold": 1000,
+            "period": 60,
+            "action": "simulate"
+          },
+          "challenge_threshold": 500
+        },
+        {
+          "rule_id": "websocket_ddos_protection", 
+          "description": "Protección DDoS para conexiones WebSocket",
+          "expression": "(http.request.headers[\"upgrade\"][0] eq \"websocket\")",
+          "rate_limit": {
+            "threshold": 100,
+            "period": 60,
+            "action": "challenge"
+          }
+        }
+      ]
+    },
+
+    "bot_management": {
+      "enabled": true,
+      "verified_bots": {
+        "allow_good_bots": true,
+        "block_unverified_bots": true
+      },
+      "static_resource_protection": false,
+      "javascript_detections": true,
+      "custom_bot_rules": [
+        {
+          "rule_id": "block_crypto_scrapers",
+          "description": "Bloquear bots de scraping de datos crypto",
+          "expression": "(cf.bot_management.score lt 30 and http.request.uri.path matches \"/api/(prices|market-data)/*\")",
+          "action": "block"
+        }
+      ]
+    },
+
+    "geo_blocking": {
+      "enabled": true,
+      "blocked_countries": [
+        "CN",
+        "KP", 
+        "IR",
+        "CU"
+      ],
+      "exceptions": [
+        {
+          "rule_id": "allow_verified_users",
+          "expression": "(any(http.request.headers[\"x-verified-user\"][*] eq \"true\"))",
+          "action": "allow"
+        }
+      ]
+    },
+
+    "ssl_tls_settings": {
+      "minimum_tls_version": "1.2",
+      "cipher_suites": [
+        "ECDHE-RSA-AES128-GCM-SHA256",
+        "ECDHE-RSA-AES256-GCM-SHA384",
+        "ECDHE-RSA-CHACHA20-POLY1305"
+      ],
+      "http_strict_transport_security": {
+        "enabled": true,
+        "max_age": 31536000,
+        "include_subdomains": true,
+        "preload": true
+      }
+    },
+
+    "cache_settings": {
+      "security_headers_cache": false,
+      "api_cache_bypass": [
+        "/api/trading/*",
+        "/api/portfolio/*", 
+        "/api/arbitrage/*",
+        "/api/wallet/*"
+      ]
+    },
+
+    "monitoring_and_logging": {
+      "security_events": true,
+      "failed_requests": true,
+      "blocked_requests": true,
+      "challenge_responses": true,
+      "retention_days": 90,
+      "real_time_alerts": [
+        {
+          "event_type": "high_threat_score",
+          "threshold": 50,
+          "notification_webhook": "/api/security/alert"
+        },
+        {
+          "event_type": "rate_limit_exceeded",
+          "threshold": 10,
+          "notification_webhook": "/api/security/rate-limit-alert"
+        }
+      ]
+    }
+  },
+
+  "deployment_commands": {
+    "description": "Comandos para desplegar configuración WAF en Cloudflare",
+    "prerequisites": [
+      "wrangler auth login",
+      "Cloudflare API token with Zone:Edit permissions",
+      "Zone ID configurado en wrangler.toml"
+    ],
+    "commands": [
+      {
+        "step": 1,
+        "description": "Crear reglas WAF básicas",
+        "command": "wrangler firewall-rules create --zone-id $CLOUDFLARE_ZONE_ID --file waf-basic-rules.json"
+      },
+      {
+        "step": 2,
+        "description": "Configurar rate limiting",
+        "command": "wrangler rate-limiting create --zone-id $CLOUDFLARE_ZONE_ID --file rate-limit-rules.json"
+      },
+      {
+        "step": 3,
+        "description": "Habilitar bot management",
+        "command": "wrangler bot-management update --zone-id $CLOUDFLARE_ZONE_ID --enable"
+      },
+      {
+        "step": 4,
+        "description": "Configurar SSL/TLS settings",
+        "command": "wrangler ssl-tls update --zone-id $CLOUDFLARE_ZONE_ID --min-tls-version 1.2"
+      }
+    ]
+  }
+}

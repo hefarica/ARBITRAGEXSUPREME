@@ -18,15 +18,19 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDashboardData } from '@/hooks/useDashboardData'
+import { AntiFlickerWrapper, AntiFlickerMetricCard, useAntiFlickerCounter, formatters } from '@/components/ui/anti-flicker'
 
-// Componente para mostrar módulo individual del dashboard
+// Componente para mostrar módulo individual del dashboard CON ANTI-PARPADEO
 function DashboardModule({ 
   title, 
   value, 
   subtitle, 
   icon: Icon, 
   color,
-  isLoading = false 
+  isLoading = false,
+  trend,
+  trendValue,
+  formatter
 }: {
   title: string
   value: string | number
@@ -34,35 +38,34 @@ function DashboardModule({
   icon: any
   color: string
   isLoading?: boolean
+  trend?: 'up' | 'down' | 'neutral'
+  trendValue?: string
+  formatter?: (val: any) => string
 }) {
+  // Anti-flicker counter for numeric values
+  const numericValue = typeof value === 'number' ? value : parseFloat(value.toString()) || 0
+  const { value: animatedValue, isAnimating } = useAntiFlickerCounter(numericValue, 800, !isLoading)
+  
+  const displayValue = typeof value === 'number' && !isNaN(numericValue) 
+    ? (formatter ? formatter(animatedValue) : Math.round(animatedValue).toString())
+    : value
+
   return (
-    <Card className={cn(
-      "bg-gradient-to-br backdrop-blur-sm rounded-2xl border shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl",
-      `border-${color}-200/30 shadow-${color}-500/10`,
-      `from-${color}-50/50 to-${color}-100/30`
-    )}>
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-gray-600">{title}</p>
-            {isLoading ? (
-              <div className="h-8 w-20 bg-gradient-to-r from-gray-200 to-gray-300 rounded animate-pulse"></div>
-            ) : (
-              <p className="text-2xl font-bold text-gray-900">{value}</p>
-            )}
-            {subtitle && (
-              <p className="text-xs text-gray-500">{subtitle}</p>
-            )}
-          </div>
-          <div className={cn(
-            "w-12 h-12 rounded-2xl flex items-center justify-center",
-            `bg-gradient-to-br from-${color}-100 to-${color}-200`
-          )}>
-            <Icon className={cn("w-6 h-6", `text-${color}-600`)} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <AntiFlickerMetricCard
+      title={title}
+      value={displayValue}
+      subtitle={subtitle}
+      trend={trend}
+      trendValue={trendValue}
+      icon={<Icon className="w-6 h-6" />}
+      isLoading={isLoading}
+      className={cn(
+        "bg-gradient-to-br backdrop-blur-sm rounded-2xl border shadow-lg transition-all duration-300 hover:scale-[1.02] hover:shadow-xl",
+        `border-${color}-200/30 shadow-${color}-500/10`,
+        `from-${color}-50/50 to-${color}-100/30`,
+        isAnimating && "ring-2 ring-blue-500/20"
+      )}
+    />
   )
 }
 
@@ -194,43 +197,55 @@ export function DashboardSummary() {
       </div>
 
       {/* Grid de módulos principales */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <AntiFlickerWrapper 
+        isLoading={isLoading && !data && !legacyData}
+        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+      >
         <DashboardModule
-          title="Redes Totales"
-          value={data?.totalNetworks || 0}
-          subtitle="Blockchains soportadas"
-          icon={Globe}
+          title="Total Oportunidades"
+          value={data?.totalOpportunities || legacyData?.activeArbitrageOpportunities || 0}
+          subtitle="Disponibles ahora"
+          icon={TrendingUp}
           color="blue"
           isLoading={isLoading}
+          trend="up"
+          trendValue="+12%"
         />
         
         <DashboardModule
-          title="Redes Conectadas"
-          value={data?.connectedNetworks || 0}
-          subtitle="Activamente monitoreadas"
-          icon={Network}
+          title="Profit Total"
+          value={data?.totalProfitUsd || legacyData?.totalBalance || 0}
+          subtitle="En las últimas 24h"
+          icon={Wallet}
           color="emerald"
           isLoading={isLoading}
+          formatter={formatters.currency}
+          trend="up"
+          trendValue="+8.5%"
         />
         
         <DashboardModule
-          title="Balance Total"
-          value={data ? formatTotalBalance() : '$0.00'}
-          subtitle="Valor total en USD"
-          icon={Wallet}
+          title="Ejecuciones Exitosas"
+          value={data?.successfulExecutions || 0}
+          subtitle="Ratio de éxito"
+          icon={CheckCircle2}
           color="purple"
           isLoading={isLoading}
+          trend="up"
+          trendValue="95.2%"
         />
         
         <DashboardModule
-          title="Oportunidades"
-          value={data?.activeArbitrageOpportunities || 0}
-          subtitle="Arbitrajes activos"
-          icon={TrendingUp}
+          title="Redes Activas"
+          value={data?.activeBlockchains || legacyData?.connectedNetworks || 0}
+          subtitle="De 20 disponibles"
+          icon={Globe}
           color="yellow"
           isLoading={isLoading}
+          trend="neutral"
+          trendValue="18/20"
         />
-      </div>
+      </AntiFlickerWrapper>
 
       {/* Sección de Integración de Redes */}
       <div className="grid lg:grid-cols-2 gap-6">

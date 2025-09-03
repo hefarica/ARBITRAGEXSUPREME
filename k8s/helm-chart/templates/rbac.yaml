@@ -1,0 +1,373 @@
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "arbitragex-supreme.serviceAccountName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+  annotations:
+    # EKS IAM role annotation (for AWS)
+    {{- if .Values.serviceAccount.annotations.eksRoleArn }}
+    eks.amazonaws.com/role-arn: {{ .Values.serviceAccount.annotations.eksRoleArn }}
+    {{- end }}
+    
+    # GKE Workload Identity annotation (for GCP)
+    {{- if .Values.serviceAccount.annotations.gkeServiceAccount }}
+    iam.gke.io/gcp-service-account: {{ .Values.serviceAccount.annotations.gkeServiceAccount }}
+    {{- end }}
+    
+    # Azure Workload Identity annotation (for Azure)
+    {{- if .Values.serviceAccount.annotations.azureClientId }}
+    azure.workload.identity/client-id: {{ .Values.serviceAccount.annotations.azureClientId }}
+    {{- end }}
+    
+    # HashiCorp Vault annotations
+    {{- if .Values.vault.enabled }}
+    vault.hashicorp.com/agent-inject: "true"
+    vault.hashicorp.com/role: {{ .Values.vault.role }}
+    vault.hashicorp.com/agent-pre-populate-only: "true"
+    {{- end }}
+    
+    {{- with .Values.serviceAccount.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+
+---
+# Cluster Role for ArbitrageX Supreme operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-cluster-role
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+rules:
+  # Pod and service discovery permissions
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  
+  # ConfigMap and Secret read permissions for configuration
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+    resourceNames:
+      - {{ include "arbitragex-supreme.fullname" . }}-config
+      - {{ include "arbitragex-supreme.fullname" . }}-blockchain-config
+      - {{ include "arbitragex-supreme.fullname" . }}-secrets
+      {{- if .Values.vault.enabled }}
+      - {{ include "arbitragex-supreme.fullname" . }}-vault-sync
+      - {{ include "arbitragex-supreme.fullname" . }}-vault-config
+      {{- end }}
+  
+  # Node information for performance monitoring
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  
+  # Events for debugging and monitoring
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  
+  # Metrics and monitoring
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  
+  # Custom resource definitions (for KEDA, Vault Operator)
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list"]
+  
+  # KEDA scaled objects (if KEDA is enabled)
+  {{- if .Values.keda.enabled }}
+  - apiGroups: ["keda.sh"]
+    resources: ["scaledobjects", "triggerauthentications"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  {{- end }}
+  
+  # Vault resources (if Vault is enabled)
+  {{- if .Values.vault.enabled }}
+  - apiGroups: ["secrets.hashicorp.com"]
+    resources: ["vaultauths", "vaultconnections", "vaultdynamicsecrets", "vaultstaticsecrets"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  
+  # Istio service mesh (if enabled)
+  {{- if .Values.istio.enabled }}
+  - apiGroups: ["networking.istio.io"]
+    resources: ["destinationrules", "virtualservices", "serviceentries"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+
+---
+# Role for namespace-specific operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ include "arbitragex-supreme.fullname" . }}-role
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+rules:
+  # Pod management for health checks and debugging
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Service management
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  
+  # ConfigMap and Secret management
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # PersistentVolumeClaims for data storage
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  
+  # Deployment and ReplicaSet management
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  
+  # StatefulSet management (for database components)
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  
+  # HorizontalPodAutoscaler management
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  
+  # Job and CronJob management for maintenance tasks
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Ingress management
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  
+  # Resource quotas and limits
+  - apiGroups: [""]
+    resources: ["resourcequotas", "limitranges"]
+    verbs: ["get", "list", "watch"]
+  
+  # Service monitors for Prometheus (if monitoring is enabled)
+  {{- if .Values.monitoring.prometheus.enabled }}
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "podmonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  {{- end }}
+
+---
+# Cluster Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-cluster-binding
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "arbitragex-supreme.serviceAccountName" . }}
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "arbitragex-supreme.fullname" . }}-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Role Binding for namespace operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-binding
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "arbitragex-supreme.serviceAccountName" . }}
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "arbitragex-supreme.fullname" . }}-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Security Context Constraints (OpenShift)
+{{- if .Values.openshift.enabled }}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-scc
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowedCapabilities: []
+allowedUnsafeSysctls: []
+defaultAddCapabilities: []
+defaultAllowPrivilegeEscalation: false
+forbiddenSysctls:
+  - "*"
+fsGroup:
+  type: MustRunAs
+  ranges:
+    - min: 1000
+      max: 2000
+readOnlyRootFilesystem: true
+requiredDropCapabilities:
+  - ALL
+runAsUser:
+  type: MustRunAsNonRoot
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: MustRunAs
+  ranges:
+    - min: 1000
+      max: 2000
+users:
+  - system:serviceaccount:{{ .Values.namespace }}:{{ include "arbitragex-supreme.serviceAccountName" . }}
+volumes:
+  - configMap
+  - downwardAPI
+  - emptyDir
+  - persistentVolumeClaim
+  - projected
+  - secret
+{{- end }}
+
+---
+# Pod Security Policy (deprecated but still used in some clusters)
+{{- if .Values.podSecurityPolicy.enabled }}
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-psp
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1000
+        max: 2000
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1000
+        max: 2000
+  readOnlyRootFilesystem: true
+  seLinux:
+    rule: RunAsAny
+
+---
+# Role for Pod Security Policy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-psp-role
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+rules:
+  - apiGroups: ['policy']
+    resources: ['podsecuritypolicies']
+    verbs: ['use']
+    resourceNames:
+      - {{ include "arbitragex-supreme.fullname" . }}-psp
+
+---
+# Role Binding for Pod Security Policy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-psp-binding
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "arbitragex-supreme.serviceAccountName" . }}
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "arbitragex-supreme.fullname" . }}-psp-role
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+
+---
+# Network Policy RBAC (for network policy management)
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-network-policy-role
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-network-policy-binding
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: rbac
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "arbitragex-supreme.serviceAccountName" . }}
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "arbitragex-supreme.fullname" . }}-network-policy-role
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

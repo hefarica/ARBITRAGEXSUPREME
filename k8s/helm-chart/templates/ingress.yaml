@@ -1,0 +1,324 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: ingress
+  annotations:
+    # Ingress class annotation
+    {{- if .Values.ingress.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+    {{- end }}
+    
+    # NGINX specific annotations
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/upstream-keepalive-connections: "32"
+    nginx.ingress.kubernetes.io/upstream-keepalive-requests: "100"
+    nginx.ingress.kubernetes.io/upstream-keepalive-timeout: "60"
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit-enabled: "true"
+    nginx.ingress.kubernetes.io/rate-limit-rpm: {{ .Values.ingress.rateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/rate-limit-rps: {{ .Values.ingress.rateLimit.rps | quote }}
+    
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options DENY always;
+      add_header X-Content-Type-Options nosniff always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:;" always;
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-set-headers: |
+      Host $host;
+      X-Real-IP $remote_addr;
+      X-Forwarded-For $proxy_add_x_forwarded_for;
+      X-Forwarded-Proto $scheme;
+      X-Forwarded-Host $host;
+      X-Forwarded-Port $server_port;
+    {{- end }}
+    
+    # Traefik specific annotations
+    {{- if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Values.namespace }}-{{ include "arbitragex-supreme.fullname" . }}-auth@kubernetescrd
+    {{- end }}
+    
+    # Istio specific annotations
+    {{- if eq .Values.ingress.className "istio" }}
+    kubernetes.io/ingress.class: istio
+    {{- end }}
+    
+    # Custom annotations from values
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    
+    # Cert-manager annotations for TLS
+    {{- if .Values.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer | quote }}
+    cert-manager.io/acme-challenge-type: {{ .Values.ingress.tls.challengeType | quote }}
+    {{- if eq .Values.ingress.tls.challengeType "dns01" }}
+    cert-manager.io/acme-dns01-provider: {{ .Values.ingress.tls.dnsProvider | quote }}
+    {{- end }}
+    {{- end }}
+
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    {{- range .Values.ingress.hosts }}
+    - hosts:
+        - {{ .host | quote }}
+      secretName: {{ include "arbitragex-supreme.fullname" $ }}-tls-{{ .host | replace "." "-" }}
+    {{- end }}
+  {{- end }}
+  
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          # Health check endpoint (highest priority)
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" $ }}-internal
+                port:
+                  name: health
+          
+          # Metrics endpoint (internal only, protected)
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" $ }}-internal
+                port:
+                  name: metrics
+          
+          # WebSocket endpoints
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" $ }}
+                port:
+                  name: websocket
+          
+          # API endpoints
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" $ }}
+                port:
+                  name: http
+          
+          # Static files and frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" $ }}
+                port:
+                  name: http
+    {{- end }}
+
+---
+# Ingress for API-only access (separate subdomain)
+{{- if .Values.ingress.api.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: ingress-api
+  annotations:
+    {{- if .Values.ingress.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+    {{- end }}
+    
+    # API-specific rate limiting (more restrictive)
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rate-limit-enabled: "true"
+    nginx.ingress.kubernetes.io/rate-limit-rpm: {{ .Values.ingress.api.rateLimit.rpm | quote }}
+    nginx.ingress.kubernetes.io/rate-limit-rps: {{ .Values.ingress.api.rateLimit.rps | quote }}
+    nginx.ingress.kubernetes.io/rate-limit-connections: {{ .Values.ingress.api.rateLimit.connections | quote }}
+    
+    # API authentication requirements
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ include "arbitragex-supreme.fullname" . }}-api-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'ArbitrageX Supreme API'
+    
+    # Enhanced security for API
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-API-Version {{ .Chart.AppVersion | quote }} always;
+      add_header X-Rate-Limit-Limit {{ .Values.ingress.api.rateLimit.rpm | quote }} always;
+      add_header X-Frame-Options DENY always;
+      add_header X-Content-Type-Options nosniff always;
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    {{- end }}
+    
+    # Custom API annotations
+    {{- with .Values.ingress.api.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    
+    # TLS configuration
+    {{- if .Values.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer | quote }}
+    {{- end }}
+
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.api.host | quote }}
+      secretName: {{ include "arbitragex-supreme.fullname" . }}-api-tls
+  {{- end }}
+  
+  rules:
+    - host: {{ .Values.ingress.api.host | quote }}
+      http:
+        paths:
+          # API health check
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}-internal
+                port:
+                  name: health
+          
+          # API endpoints only
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}
+                port:
+                  name: http
+          
+          # WebSocket API
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}
+                port:
+                  name: websocket
+{{- end }}
+
+---
+# Ingress for internal/admin access (separate ingress class)
+{{- if .Values.ingress.internal.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-internal
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: ingress-internal
+  annotations:
+    {{- if .Values.ingress.internal.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.internal.className | quote }}
+    {{- end }}
+    
+    # Internal access restrictions
+    {{- if eq .Values.ingress.internal.className "nginx" }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ join "," .Values.ingress.internal.allowedCIDRs | quote }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ include "arbitragex-supreme.fullname" . }}-admin-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'ArbitrageX Supreme Admin'
+    
+    # No rate limiting for internal access
+    nginx.ingress.kubernetes.io/rate-limit-enabled: "false"
+    {{- end }}
+    
+    # Custom internal annotations
+    {{- with .Values.ingress.internal.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+spec:
+  {{- if .Values.ingress.internal.className }}
+  ingressClassName: {{ .Values.ingress.internal.className }}
+  {{- end }}
+  
+  tls:
+    - hosts:
+        - {{ .Values.ingress.internal.host | quote }}
+      secretName: {{ include "arbitragex-supreme.fullname" . }}-internal-tls
+  
+  rules:
+    - host: {{ .Values.ingress.internal.host | quote }}
+      http:
+        paths:
+          # Admin metrics (unrestricted for monitoring)
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}-internal
+                port:
+                  name: metrics
+          
+          # Health check
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}-internal
+                port:
+                  name: health
+          
+          # Full API access for admin
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}
+                port:
+                  name: http
+          
+          # Admin WebSocket
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}
+                port:
+                  name: websocket
+          
+          # Admin interface
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "arbitragex-supreme.fullname" . }}
+                port:
+                  name: http
+{{- end }}
+{{- end }}

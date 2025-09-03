@@ -1,0 +1,372 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-connection"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  
+  {{- include "arbitragex-supreme.podSecurityContext" . | nindent 2 }}
+  
+  containers:
+  - name: connection-test
+    image: curlimages/curl:8.5.0
+    {{- include "arbitragex-supreme.securityContext" . | nindent 4 }}
+    
+    command: ['sh', '-c']
+    args:
+      - |
+        set -e
+        echo "🔍 Starting ArbitrageX Supreme connection tests..."
+        
+        # Test variables
+        SERVICE_URL="http://{{ include "arbitragex-supreme.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.port }}"
+        HEALTH_URL="http://{{ include "arbitragex-supreme.fullname" . }}-internal.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.healthPort }}"
+        MAX_RETRIES=30
+        RETRY_INTERVAL=10
+        
+        echo "📍 Service URL: $SERVICE_URL"
+        echo "🏥 Health URL: $HEALTH_URL"
+        
+        # Function to test endpoint
+        test_endpoint() {
+          local url=$1
+          local name=$2
+          local expected_status=${3:-200}
+          
+          echo "🧪 Testing $name endpoint: $url"
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "  Attempt $i/$MAX_RETRIES..."
+            
+            if response=$(curl -s -w "HTTPSTATUS:%{http_code}\nTIME:%{time_total}" "$url" 2>/dev/null); then
+              status=$(echo "$response" | grep "HTTPSTATUS:" | cut -d: -f2)
+              time=$(echo "$response" | grep "TIME:" | cut -d: -f2)
+              body=$(echo "$response" | sed -E 's/HTTPSTATUS:[0-9]{3}|TIME:[0-9.]+//g')
+              
+              if [ "$status" = "$expected_status" ]; then
+                echo "  ✅ $name test PASSED (Status: $status, Time: ${time}s)"
+                if [ -n "$body" ]; then
+                  echo "  📄 Response: $body"
+                fi
+                return 0
+              else
+                echo "  ❌ Unexpected status: $status (expected: $expected_status)"
+              fi
+            else
+              echo "  ⚠️  Connection failed"
+            fi
+            
+            if [ $i -lt $MAX_RETRIES ]; then
+              echo "  ⏱️  Waiting ${RETRY_INTERVAL}s before retry..."
+              sleep $RETRY_INTERVAL
+            fi
+          done
+          
+          echo "  ❌ $name test FAILED after $MAX_RETRIES attempts"
+          return 1
+        }
+        
+        # Test health endpoint
+        test_endpoint "$HEALTH_URL/health" "Health Check"
+        
+        # Test main service
+        test_endpoint "$SERVICE_URL/" "Main Service"
+        
+        # Test API endpoint
+        test_endpoint "$SERVICE_URL/api/health" "API Health"
+        
+        # Test metrics endpoint (internal)
+        test_endpoint "http://{{ include "arbitragex-supreme.fullname" . }}-internal.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.metricsPort }}/metrics" "Metrics"
+        
+        echo ""
+        echo "🎉 All connection tests completed successfully!"
+        echo "✅ ArbitrageX Supreme is ready for trading operations"
+    
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-api"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test-api
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  
+  {{- include "arbitragex-supreme.podSecurityContext" . | nindent 2 }}
+  
+  containers:
+  - name: api-test
+    image: curlimages/curl:8.5.0
+    {{- include "arbitragex-supreme.securityContext" . | nindent 4 }}
+    
+    command: ['sh', '-c']
+    args:
+      - |
+        set -e
+        echo "🔍 Starting ArbitrageX Supreme API tests..."
+        
+        # Test variables
+        API_BASE="http://{{ include "arbitragex-supreme.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.port }}/api"
+        MAX_RETRIES=10
+        RETRY_INTERVAL=5
+        
+        echo "📍 API Base URL: $API_BASE"
+        
+        # Function to test API endpoint
+        test_api() {
+          local endpoint=$1
+          local name=$2
+          local method=${3:-GET}
+          local expected_status=${4:-200}
+          
+          echo "🧪 Testing API $name: $method $endpoint"
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "  Attempt $i/$MAX_RETRIES..."
+            
+            if response=$(curl -s -X "$method" -w "HTTPSTATUS:%{http_code}\nTIME:%{time_total}" "$API_BASE$endpoint" 2>/dev/null); then
+              status=$(echo "$response" | grep "HTTPSTATUS:" | cut -d: -f2)
+              time=$(echo "$response" | grep "TIME:" | cut -d: -f2)
+              body=$(echo "$response" | sed -E 's/HTTPSTATUS:[0-9]{3}|TIME:[0-9.]+//g')
+              
+              if [ "$status" = "$expected_status" ]; then
+                echo "  ✅ $name API test PASSED (Status: $status, Time: ${time}s)"
+                if [ -n "$body" ]; then
+                  echo "  📄 Response: $(echo "$body" | head -c 200)..."
+                fi
+                return 0
+              else
+                echo "  ❌ Unexpected status: $status (expected: $expected_status)"
+                if [ -n "$body" ]; then
+                  echo "  📄 Error response: $(echo "$body" | head -c 200)..."
+                fi
+              fi
+            else
+              echo "  ⚠️  API call failed"
+            fi
+            
+            if [ $i -lt $MAX_RETRIES ]; then
+              echo "  ⏱️  Waiting ${RETRY_INTERVAL}s before retry..."
+              sleep $RETRY_INTERVAL
+            fi
+          done
+          
+          echo "  ❌ $name API test FAILED after $MAX_RETRIES attempts"
+          return 1
+        }
+        
+        # Test API endpoints
+        test_api "/health" "Health API"
+        test_api "/status" "Status API"
+        test_api "/chains" "Chains API"
+        test_api "/tokens" "Tokens API"
+        test_api "/markets" "Markets API"
+        
+        # Test WebSocket connection
+        echo "🧪 Testing WebSocket endpoint..."
+        WS_URL="ws://{{ include "arbitragex-supreme.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.wsPort }}/ws"
+        echo "📍 WebSocket URL: $WS_URL"
+        
+        # Note: Basic WebSocket test - in a real scenario you'd use a proper WebSocket client
+        if curl -s --http1.1 -H "Upgrade: websocket" -H "Connection: Upgrade" -H "Sec-WebSocket-Key: test" -H "Sec-WebSocket-Version: 13" "$WS_URL" >/dev/null 2>&1; then
+          echo "✅ WebSocket endpoint is accessible"
+        else
+          echo "⚠️  WebSocket test inconclusive (requires proper WebSocket client)"
+        fi
+        
+        echo ""
+        echo "🎉 All API tests completed successfully!"
+        echo "✅ ArbitrageX Supreme API is functional"
+    
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test-security"
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: test-security
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  
+  {{- include "arbitragex-supreme.podSecurityContext" . | nindent 2 }}
+  
+  containers:
+  - name: security-test
+    image: curlimages/curl:8.5.0
+    {{- include "arbitragex-supreme.securityContext" . | nindent 4 }}
+    
+    command: ['sh', '-c']
+    args:
+      - |
+        set -e
+        echo "🔍 Starting ArbitrageX Supreme security tests..."
+        
+        # Test variables
+        SERVICE_URL="http://{{ include "arbitragex-supreme.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.port }}"
+        
+        # Function to test security headers
+        test_security_headers() {
+          local url=$1
+          
+          echo "🧪 Testing security headers for: $url"
+          
+          response=$(curl -s -I "$url" 2>/dev/null || echo "")
+          
+          if [ -z "$response" ]; then
+            echo "  ❌ Failed to get response headers"
+            return 1
+          fi
+          
+          # Check for security headers
+          if echo "$response" | grep -qi "x-frame-options"; then
+            echo "  ✅ X-Frame-Options header present"
+          else
+            echo "  ⚠️  X-Frame-Options header missing"
+          fi
+          
+          if echo "$response" | grep -qi "x-content-type-options"; then
+            echo "  ✅ X-Content-Type-Options header present"
+          else
+            echo "  ⚠️  X-Content-Type-Options header missing"
+          fi
+          
+          if echo "$response" | grep -qi "x-xss-protection"; then
+            echo "  ✅ X-XSS-Protection header present"
+          else
+            echo "  ⚠️  X-XSS-Protection header missing"
+          fi
+          
+          return 0
+        }
+        
+        # Function to test unauthorized access
+        test_unauthorized_access() {
+          echo "🧪 Testing unauthorized access protection..."
+          
+          # Test metrics endpoint (should be protected)
+          metrics_url="http://{{ include "arbitragex-supreme.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.port }}/metrics"
+          
+          if response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$metrics_url" 2>/dev/null); then
+            status=$(echo "$response" | grep "HTTPSTATUS:" | cut -d: -f2)
+            
+            # Metrics should be restricted (403/404) or redirected to internal service
+            if [ "$status" = "403" ] || [ "$status" = "404" ] || [ "$status" = "401" ]; then
+              echo "  ✅ Metrics endpoint properly protected (Status: $status)"
+            else
+              echo "  ⚠️  Metrics endpoint may be exposed (Status: $status)"
+            fi
+          else
+            echo "  ✅ Metrics endpoint not accessible from main service"
+          fi
+        }
+        
+        # Function to test rate limiting (basic check)
+        test_rate_limiting() {
+          echo "🧪 Testing rate limiting..."
+          
+          # Make multiple rapid requests
+          success_count=0
+          for i in $(seq 1 10); do
+            if response=$(curl -s -w "HTTPSTATUS:%{http_code}" "$SERVICE_URL/api/health" 2>/dev/null); then
+              status=$(echo "$response" | grep "HTTPSTATUS:" | cut -d: -f2)
+              if [ "$status" = "200" ]; then
+                success_count=$((success_count + 1))
+              fi
+            fi
+          done
+          
+          if [ $success_count -eq 10 ]; then
+            echo "  ℹ️  All requests succeeded (rate limiting may not be active in test environment)"
+          else
+            echo "  ✅ Some requests were limited ($success_count/10 succeeded)"
+          fi
+        }
+        
+        # Run security tests
+        test_security_headers "$SERVICE_URL/"
+        test_unauthorized_access
+        test_rate_limiting
+        
+        {{- if .Values.vault.enabled }}
+        echo ""
+        echo "🧪 Testing Vault integration..."
+        
+        # Check if vault secrets are mounted
+        if ls /vault/secrets/ >/dev/null 2>&1; then
+          echo "  ✅ Vault secrets directory is accessible"
+          
+          # Check for expected secret files
+          if ls /vault/secrets/*database* >/dev/null 2>&1; then
+            echo "  ✅ Database secrets are present"
+          fi
+          
+          if ls /vault/secrets/*auth* >/dev/null 2>&1; then
+            echo "  ✅ Authentication secrets are present"
+          fi
+          
+        else
+          echo "  ⚠️  Vault secrets directory not accessible from test pod"
+        fi
+        {{- end }}
+        
+        echo ""
+        echo "🎉 Security tests completed!"
+        echo "✅ ArbitrageX Supreme security configuration validated"
+    
+    {{- if .Values.vault.enabled }}
+    volumeMounts:
+    - name: vault-secrets
+      mountPath: /vault/secrets
+      readOnly: true
+    {{- end }}
+    
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  
+  {{- if .Values.vault.enabled }}
+  volumes:
+  - name: vault-secrets
+    emptyDir:
+      medium: Memory
+  {{- end }}

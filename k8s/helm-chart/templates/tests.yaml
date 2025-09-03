@@ -1,0 +1,16 @@
+# Simple test to validate deployment functionality
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "arbitragex-supreme.fullname" . }}-test"
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+  - name: wget
+    image: busybox
+    command: ['wget']
+    args: ['{{ include "arbitragex-supreme.fullname" . }}:{{ .Values.service.port }}']

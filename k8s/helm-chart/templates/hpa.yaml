@@ -1,0 +1,263 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: autoscaler
+  annotations:
+    # HPA configuration annotations
+    autoscaling.kubernetes.io/metric-config: |
+      {
+        "targetCPUUtilizationPercentage": {{ .Values.autoscaling.targetCPUUtilizationPercentage }},
+        "targetMemoryUtilizationPercentage": {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+      }
+    # Custom metrics configuration
+    autoscaling.kubernetes.io/custom-metrics-config: |
+      {
+        "arbitrage_opportunities_per_second": {{ .Values.autoscaling.customMetrics.arbitrageOpportunities.target }},
+        "active_websocket_connections": {{ .Values.autoscaling.customMetrics.websocketConnections.target }},
+        "transaction_throughput": {{ .Values.autoscaling.customMetrics.transactionThroughput.target }}
+      }
+
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "arbitragex-supreme.fullname" . }}
+  
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  
+  # Scaling behavior configuration
+  behavior:
+    scaleDown:
+      # Stabilization window to prevent flapping
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDown.stabilizationWindowSeconds | default 300 }}
+      # Scale down policies
+      policies:
+        # Conservative scale down - max 25% of pods in 60 seconds
+        - type: Percent
+          value: {{ .Values.autoscaling.scaleDown.percentPolicy.value | default 25 }}
+          periodSeconds: {{ .Values.autoscaling.scaleDown.percentPolicy.periodSeconds | default 60 }}
+        # Absolute scale down - max 2 pods in 60 seconds
+        - type: Pods
+          value: {{ .Values.autoscaling.scaleDown.podsPolicy.value | default 2 }}
+          periodSeconds: {{ .Values.autoscaling.scaleDown.podsPolicy.periodSeconds | default 60 }}
+      # Select the most conservative policy
+      selectPolicy: Min
+    
+    scaleUp:
+      # Faster scale up for trading opportunities
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleUp.stabilizationWindowSeconds | default 60 }}
+      # Scale up policies
+      policies:
+        # Aggressive scale up - max 50% increase in 30 seconds
+        - type: Percent
+          value: {{ .Values.autoscaling.scaleUp.percentPolicy.value | default 50 }}
+          periodSeconds: {{ .Values.autoscaling.scaleUp.percentPolicy.periodSeconds | default 30 }}
+        # Absolute scale up - max 4 pods in 30 seconds
+        - type: Pods
+          value: {{ .Values.autoscaling.scaleUp.podsPolicy.value | default 4 }}
+          periodSeconds: {{ .Values.autoscaling.scaleUp.podsPolicy.periodSeconds | default 30 }}
+      # Select the most aggressive policy for faster response
+      selectPolicy: Max
+  
+  # Metrics configuration
+  metrics:
+    # CPU utilization metric
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    
+    # Memory utilization metric
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    
+    {{- if .Values.autoscaling.customMetrics.enabled }}
+    # Custom metric: Arbitrage opportunities per second
+    - type: Pods
+      pods:
+        metric:
+          name: arbitrage_opportunities_per_second
+          selector:
+            matchLabels:
+              {{- include "arbitragex-supreme.selectorLabels" . | nindent 14 }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.customMetrics.arbitrageOpportunities.target | quote }}
+    
+    # Custom metric: Active WebSocket connections
+    - type: Pods
+      pods:
+        metric:
+          name: active_websocket_connections
+          selector:
+            matchLabels:
+              {{- include "arbitragex-supreme.selectorLabels" . | nindent 14 }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.customMetrics.websocketConnections.target | quote }}
+    
+    # Custom metric: Transaction throughput (transactions per second)
+    - type: Pods
+      pods:
+        metric:
+          name: transaction_throughput_per_second
+          selector:
+            matchLabels:
+              {{- include "arbitragex-supreme.selectorLabels" . | nindent 14 }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.customMetrics.transactionThroughput.target | quote }}
+    
+    # Custom metric: MEV detection events per minute
+    - type: Pods
+      pods:
+        metric:
+          name: mev_detection_events_per_minute
+          selector:
+            matchLabels:
+              {{- include "arbitragex-supreme.selectorLabels" . | nindent 14 }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.customMetrics.mevDetectionEvents.target | quote }}
+    
+    # External metric: Gas price (scale up when gas is low)
+    {{- if .Values.autoscaling.externalMetrics.gasPrice.enabled }}
+    - type: External
+      external:
+        metric:
+          name: ethereum_gas_price_gwei
+          selector:
+            matchLabels:
+              chain: ethereum
+        target:
+          type: AverageValue
+          # Scale up when gas price is below threshold (inverse scaling)
+          averageValue: {{ .Values.autoscaling.externalMetrics.gasPrice.threshold | quote }}
+    {{- end }}
+    
+    # External metric: Network congestion
+    {{- if .Values.autoscaling.externalMetrics.networkCongestion.enabled }}
+    - type: External
+      external:
+        metric:
+          name: network_congestion_score
+          selector:
+            matchLabels:
+              network: multi_chain
+        target:
+          type: AverageValue
+          # Scale up when congestion is high
+          averageValue: {{ .Values.autoscaling.externalMetrics.networkCongestion.threshold | quote }}
+    {{- end }}
+    {{- end }}
+
+---
+# Vertical Pod Autoscaler (VPA) for right-sizing recommendations
+{{- if .Values.autoscaling.vpa.enabled }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}-vpa
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: vpa
+  annotations:
+    # VPA configuration
+    vpa.kubernetes.io/update-mode: {{ .Values.autoscaling.vpa.updateMode | quote }}
+
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "arbitragex-supreme.fullname" . }}
+  
+  updatePolicy:
+    updateMode: {{ .Values.autoscaling.vpa.updateMode }}
+    {{- if eq .Values.autoscaling.vpa.updateMode "Auto" }}
+    # Minimum resource changes to trigger update (avoid churn)
+    minReplicas: {{ .Values.autoscaling.minReplicas }}
+    {{- end }}
+  
+  resourcePolicy:
+    containerPolicies:
+      # Main application container
+      - containerName: {{ .Chart.Name }}
+        mode: {{ .Values.autoscaling.vpa.containerMode | default "Auto" }}
+        minAllowed:
+          cpu: {{ .Values.autoscaling.vpa.minAllowed.cpu | default "100m" }}
+          memory: {{ .Values.autoscaling.vpa.minAllowed.memory | default "128Mi" }}
+        maxAllowed:
+          cpu: {{ .Values.autoscaling.vpa.maxAllowed.cpu | default "2000m" }}
+          memory: {{ .Values.autoscaling.vpa.maxAllowed.memory | default "4Gi" }}
+        controlledResources: ["cpu", "memory"]
+        # Resource scaling factors
+        controlledValues: RequestsAndLimits
+      
+      # Vault sidecar container (if enabled)
+      {{- if .Values.vault.enabled }}
+      - containerName: vault-agent
+        mode: "Off"  # Don't auto-scale vault sidecar
+        minAllowed:
+          cpu: "50m"
+          memory: "64Mi"
+        maxAllowed:
+          cpu: "200m"
+          memory: "256Mi"
+        controlledResources: ["cpu", "memory"]
+      {{- end }}
+      
+      # Nginx sidecar container (if enabled)
+      {{- if .Values.nginx.sidecar.enabled }}
+      - containerName: nginx-proxy
+        mode: {{ .Values.autoscaling.vpa.nginxMode | default "Auto" }}
+        minAllowed:
+          cpu: "50m"
+          memory: "32Mi"
+        maxAllowed:
+          cpu: "500m"
+          memory: "512Mi"
+        controlledResources: ["cpu", "memory"]
+      {{- end }}
+{{- end }}
+
+---
+# PodDisruptionBudget to maintain availability during scaling
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "arbitragex-supreme.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "arbitragex-supreme.labels" . | nindent 4 }}
+    component: pdb
+  annotations:
+    # PDB configuration
+    pdb.kubernetes.io/min-available-policy: {{ .Values.autoscaling.pdb.policy | default "percentage" }}
+
+spec:
+  {{- if .Values.autoscaling.pdb.minAvailable }}
+  minAvailable: {{ .Values.autoscaling.pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.autoscaling.pdb.maxUnavailable | default "25%" }}
+  {{- end }}
+  
+  selector:
+    matchLabels:
+      {{- include "arbitragex-supreme.selectorLabels" . | nindent 6 }}
+  
+  # Unhealthy pod eviction policy
+  unhealthyPodEvictionPolicy: {{ .Values.autoscaling.pdb.unhealthyPodEvictionPolicy | default "AlwaysAllow" }}
+{{- end }}

@@ -18,7 +18,7 @@ import { DexHelpers } from './dexHelpers';
 import { dexDataFetcher } from './dexDataFetcher';
 import { poolDataFetcher } from './poolDataFetcher';
 import { poolBatchFetcher } from './poolBatchFetcher';
-import {
+import type {
   Chain,
   DexInfo,
   LiquidityPool,
@@ -36,8 +36,9 @@ import {
   AggregatorConfig,
   CrossChainRoute,
   GasEstimate,
-  ArbitrageSnapshot
-} from '../types/defi';
+  ArbitrageSnapshot,
+  SystemHealth
+} from '../apps/web/types/defi';
 
 // ============================================================================
 // CONFIGURACIONES Y CONSTANTES
@@ -94,12 +95,12 @@ const STRATEGY_THRESHOLDS = {
 
 export class ArbitrageDataAggregator {
   private config: AggregatorConfig;
-  private cache: Map<string, any> = new Map();
+  private cache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private activeOpportunities: Map<string, ArbitrageOpportunity> = new Map();
   private historicalData: ArbitrageSnapshot[] = [];
   private alerts: ArbitrageAlert[] = [];
   private metrics: ArbitrageMetrics;
-  private refreshTimer: NodeJS.Timer | null = null;
+  private refreshTimer: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
 
   constructor(config?: Partial<AggregatorConfig>) {
@@ -150,7 +151,7 @@ export class ArbitrageDataAggregator {
     this.isRunning = false;
 
     if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
+      clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
 

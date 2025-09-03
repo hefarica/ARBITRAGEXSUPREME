@@ -1,0 +1,508 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "ArbitrageX Supreme - Overview Dashboard",
+    "description": "Dashboard principal para monitoreo de ArbitrageX Supreme - Ingenio Pichichi S.A.",
+    "tags": ["arbitragex", "overview", "ingenio-pichichi"],
+    "style": "dark",
+    "timezone": "UTC",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h"],
+      "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "network",
+          "type": "query",
+          "query": "label_values(arbitragex_blockchain_connection_status, network)",
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        },
+        {
+          "name": "exchange",
+          "type": "query", 
+          "query": "label_values(arbitragex_trading_volume_usd, exchange)",
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Health Overview",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "up{job='arbitragex-app'}",
+            "legendFormat": "App Status",
+            "refId": "A"
+          },
+          {
+            "expr": "arbitragex_trading_engine_status",
+            "legendFormat": "Trading Engine",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(arbitragex_blockchain_connection_status)",
+            "legendFormat": "Blockchain Connections",
+            "refId": "C"
+          },
+          {
+            "expr": "arbitragex_active_users_5min",
+            "legendFormat": "Active Users",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 0.8},
+                {"color": "green", "value": 1}
+              ]
+            },
+            "unit": "none"
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Trading Volume (24h)",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+        "targets": [
+          {
+            "expr": "sum by (exchange) (arbitragex_trading_volume_24h{exchange=~\"$exchange\"})",
+            "legendFormat": "{{exchange}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "spanNulls": false,
+              "insertNulls": false,
+              "showPoints": "never",
+              "pointSize": 5,
+              "stacking": {"mode": "none", "group": "A"},
+              "axisPlacement": "auto",
+              "axisLabel": "Trading Volume (USD)",
+              "scaleDistribution": {"type": "linear"}
+            }
+          }
+        },
+        "options": {
+          "tooltip": {"mode": "multi", "sort": "none"},
+          "legend": {"displayMode": "list", "placement": "bottom"}
+        }
+      },
+      {
+        "id": 3,
+        "title": "Arbitrage Opportunities",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+        "targets": [
+          {
+            "expr": "rate(arbitragex_arbitrage_opportunities_found_total[5m])",
+            "legendFormat": "Found",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(arbitragex_arbitrage_opportunities_executed_total[5m])",
+            "legendFormat": "Executed",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 20
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "API Performance",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(arbitragex_http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(arbitragex_http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(arbitragex_http_requests_total{status=~\"5..\"}[5m]) / rate(arbitragex_http_requests_total[5m])",
+            "legendFormat": "Error Rate",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Error Rate"},
+              "properties": [
+                {"id": "unit", "value": "percentunit"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 5,
+        "title": "Blockchain Network Status",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+        "targets": [
+          {
+            "expr": "arbitragex_blockchain_connection_status{network=~\"$network\"}",
+            "legendFormat": "{{network}}",
+            "refId": "A",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "arbitragex_blockchain_gas_price_gwei{network=~\"$network\"}",
+            "legendFormat": "{{network}}_gas",
+            "refId": "B",
+            "format": "table",
+            "instant": true
+          },
+          {
+            "expr": "arbitragex_blockchain_block_number{network=~\"$network\"}",
+            "legendFormat": "{{network}}_block",
+            "refId": "C",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true, "job": true, "instance": true},
+              "renameByName": {
+                "network": "Network",
+                "Value #A": "Status",
+                "Value #B": "Gas Price (Gwei)",
+                "Value #C": "Block Number"
+              }
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "green", "value": 1}
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Status"},
+              "properties": [
+                {"id": "custom.displayMode", "value": "color-background"},
+                {"id": "mappings", "value": [
+                  {"options": {"0": {"text": "Offline", "color": "red"}}, "type": "value"},
+                  {"options": {"1": {"text": "Online", "color": "green"}}, "type": "value"}
+                ]}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 6,
+        "title": "Security Events",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+        "targets": [
+          {
+            "expr": "rate(arbitragex_security_attacks_total[5m])",
+            "legendFormat": "Attack Attempts",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(arbitragex_auth_failed_logins_total[5m])",
+            "legendFormat": "Failed Logins",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(arbitragex_rate_limit_exceeded_total[5m])",
+            "legendFormat": "Rate Limits",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "fillOpacity": 10
+            }
+          }
+        },
+        "alert": {
+          "conditions": [
+            {
+              "query": {"queryType": "", "refId": "A"},
+              "reducer": {"type": "last", "params": []},
+              "evaluator": {"type": "gt", "params": [0.1]}
+            }
+          ],
+          "executionErrorState": "alerting",
+          "noDataState": "no_data",
+          "frequency": "10s"
+        }
+      },
+      {
+        "id": 7,
+        "title": "Revenue Metrics",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 24, "x": 0, "y": 30},
+        "targets": [
+          {
+            "expr": "arbitragex_arbitrage_revenue_24h",
+            "legendFormat": "24h Revenue",
+            "refId": "A"
+          },
+          {
+            "expr": "arbitragex_trading_fees_earned_24h",
+            "legendFormat": "Trading Fees",
+            "refId": "B"
+          },
+          {
+            "expr": "arbitragex_gas_costs_24h",
+            "legendFormat": "Gas Costs",
+            "refId": "C"
+          },
+          {
+            "expr": "arbitragex_arbitrage_revenue_24h - arbitragex_gas_costs_24h",
+            "legendFormat": "Net Profit",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 100},
+                {"color": "green", "value": 1000}
+              ]
+            }
+          }
+        },
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto"
+        }
+      },
+      {
+        "id": 8,
+        "title": "Active Positions",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 36},
+        "targets": [
+          {
+            "expr": "sum by (token) (arbitragex_portfolio_token_balance{token!=\"\"})",
+            "legendFormat": "{{token}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD"
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "pieType": "pie",
+          "tooltip": {"mode": "single", "sort": "none"},
+          "legend": {"displayMode": "visible", "placement": "bottom"},
+          "displayLabels": ["name", "value"]
+        }
+      },
+      {
+        "id": 9,
+        "title": "WebSocket Connections",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 36},
+        "targets": [
+          {
+            "expr": "arbitragex_websocket_connections_active",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(arbitragex_websocket_messages_sent_total[5m])",
+            "legendFormat": "Messages Sent/sec",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(arbitragex_websocket_messages_received_total[5m])",
+            "legendFormat": "Messages Received/sec",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 2
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byRegexp", "options": "/Messages.*/"},
+              "properties": [
+                {"id": "unit", "value": "ops"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        },
+        {
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "ALERTS{job=\"arbitragex-app\", severity=\"critical\"}",
+          "iconColor": "red",
+          "name": "Critical Alerts",
+          "step": "60s",
+          "tagKeys": "alertname",
+          "titleFormat": "Critical Alert",
+          "textFormat": "{{alertname}}: {{summary}}"
+        }
+      ]
+    },
+    "links": [
+      {
+        "title": "Trading Dashboard",
+        "url": "/d/arbitragex-trading/arbitragex-trading-dashboard",
+        "type": "dashboards"
+      },
+      {
+        "title": "Security Dashboard", 
+        "url": "/d/arbitragex-security/arbitragex-security-dashboard",
+        "type": "dashboards"
+      },
+      {
+        "title": "Blockchain Dashboard",
+        "url": "/d/arbitragex-blockchain/arbitragex-blockchain-dashboard", 
+        "type": "dashboards"
+      }
+    ]
+  },
+  "overwrite": true,
+  "inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "value": "Prometheus"
+    }
+  ],
+  "meta": {
+    "type": "dashboard",
+    "canSave": true,
+    "canEdit": true,
+    "canAdmin": true,
+    "canStar": true,
+    "slug": "arbitragex-overview",
+    "url": "/d/arbitragex-overview/arbitragex-supreme-overview-dashboard",
+    "expires": "0001-01-01T00:00:00Z",
+    "created": "2025-01-15T00:00:00Z",
+    "updated": "2025-01-15T00:00:00Z",
+    "updatedBy": "Hector Fabio Riascos C.",
+    "createdBy": "Ingenio Pichichi S.A.",
+    "version": 1,
+    "hasAcl": false,
+    "isFolder": false,
+    "folderId": 0,
+    "folderTitle": "ArbitrageX Supreme",
+    "folderUrl": "",
+    "provisioned": true,
+    "provisionedExternalId": "arbitragex-overview.json"
+  }
+}

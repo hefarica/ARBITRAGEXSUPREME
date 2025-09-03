@@ -15,7 +15,7 @@
 import { ethers, JsonRpcProvider, Contract } from 'ethers';
 import { DexHelpers } from './dexHelpers';
 import { dexDataFetcher } from './dexDataFetcher';
-import {
+import type {
   Chain,
   DexInfo,
   TokenInfo,
@@ -24,12 +24,11 @@ import {
   PoolAnalysis,
   YieldOpportunity,
   ImpermanentLossData,
-  PoolSnapshot,
   PoolHistoricalData,
   LiquidityPosition,
   FeesAnalysis,
   VolatilityMetrics
-} from '../types/defi';
+} from '../apps/web/types/defi';
 
 // ============================================================================
 // CONFIGURACIONES ESPECÍFICAS PARA POOLS
@@ -104,7 +103,7 @@ const POOL_ABIS = {
 // ============================================================================
 
 export class PoolDataFetcher {
-  private cache: Map<string, any> = new Map();
+  private cache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly cacheTimeout: number = 5000; // 5 segundos
   private priceFeeds: Map<string, number[]> = new Map(); // Para tracking histórico
 

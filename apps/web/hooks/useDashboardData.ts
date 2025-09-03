@@ -1,7 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { 
+  DashboardSummary,
+  DashboardSummaryResponse,
+  ApiError,
+  Chain
+} from '../types/api'
 
+// Legacy interface for backward compatibility
 export interface DashboardData {
   totalNetworks: number
   connectedNetworks: number
@@ -19,7 +26,8 @@ export interface DashboardData {
 }
 
 interface DashboardState {
-  data: DashboardData | null
+  data: DashboardSummary | null
+  legacyData: DashboardData | null
   isLoading: boolean
   error: string | null
 }
@@ -27,6 +35,7 @@ interface DashboardState {
 export function useDashboardData() {
   const [state, setState] = useState<DashboardState>({
     data: null,
+    legacyData: null,
     isLoading: false,
     error: null
   })
@@ -36,11 +45,12 @@ export function useDashboardData() {
     setState(prev => ({ ...prev, isLoading: true, error: null }))
 
     try {
-      const response = await fetch('/api/arbitrage/dashboard/summary', {
+      const response = await fetch('/api/v2/dashboard/summary', {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
         },
       })
 
@@ -48,16 +58,38 @@ export function useDashboardData() {
         throw new Error(`Dashboard API error: ${response.status}`)
       }
 
-      const result = await response.json()
+      const result: DashboardSummaryResponse | ApiError = await response.json()
 
       if (result.success) {
+        const dashboardResult = result as DashboardSummaryResponse
+        const summary = dashboardResult.summary
+        
+        // Transform to legacy format for backward compatibility
+        const legacyData: DashboardData = {
+          totalNetworks: summary.activeBlockchains,
+          connectedNetworks: summary.activeBlockchains,
+          totalBalance: summary.totalProfitUsd,
+          activeArbitrageOpportunities: summary.totalOpportunities,
+          blockchainNetworks: Object.keys(summary.profitByChain),
+          networkIntegration: {
+            implemented: summary.activeBlockchains,
+            connected: summary.activeBlockchains,
+            syncPercentage: 95 // Mock percentage
+          },
+          balanceByNetwork: summary.profitByChain as { [chainId: string]: number },
+          systemStatus: 'active',
+          lastUpdate: Date.now()
+        }
+        
         setState({
-          data: result.dashboard,
+          data: summary,
+          legacyData,
           isLoading: false,
           error: null
         })
       } else {
-        throw new Error(result.error || 'Failed to fetch dashboard data')
+        const errorResult = result as ApiError
+        throw new Error(errorResult.error || 'Failed to fetch dashboard data')
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
@@ -122,8 +154,14 @@ export function useDashboardData() {
   }
 
   return {
-    // Estado
+    // Estado (new API)
     data: state.data,
+    summary: state.data,
+    
+    // Estado (legacy compatibility)
+    legacyData: state.legacyData,
+    
+    // Loading and error states
     isLoading: state.isLoading,
     error: state.error,
 
@@ -137,6 +175,15 @@ export function useDashboardData() {
 
     // Verificadores de estado
     hasError: !!state.error,
-    isReady: !!state.data && !state.isLoading && !state.error
+    isReady: !!(state.data || state.legacyData) && !state.isLoading && !state.error,
+    
+    // Additional utility functions for new API
+    getTotalOpportunities: () => state.data?.totalOpportunities || 0,
+    getSuccessfulExecutions: () => state.data?.successfulExecutions || 0,
+    getAverageProfitPercentage: () => state.data?.averageProfitPercentage || 0,
+    getTopPerformingChain: () => state.data?.topPerformingChain || 'ethereum' as Chain,
+    getRecentExecutions: () => state.data?.recentExecutions || [],
+    getProfitByChain: () => state.data?.profitByChain || {},
+    getExecutionsByHour: () => state.data?.executionsByHour || []
   }
 }
