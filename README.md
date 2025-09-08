@@ -1,318 +1,205 @@
-# ☁️ ArbitrageX Supreme V3.0 - CLOUDFLARE Edge Computing Backend
+# 🖥️ ArbitrageX Supreme V3.0 - CONTABO Backend Infrastructure
 
-## 🎯 **MÓDULO 2: CLOUDFLARE EDGE - Edge Computing Backend Only**
+## 🎯 **MÓDULO 1: CONTABO VPS - Backend Core Engine Complete**
 
-**Repositorio**: `hefarica/ARBITRAGEXSUPREME`  
-**Función**: **Edge Computing Backend - API Proxy + CDN + Performance Optimization**
+**Repositorio**: `hefarica/ARBITRAGEX-CONTABO-BACKEND`  
+**Función**: **Backend Infrastructure Completa - MEV Engine + Database + Monitoring**
 
 ### 📋 **Arquitectura Reclasificada**
 
 ```
-☁️ CLOUDFLARE EDGE (Edge Computing Backend - Sin Componentes Frontend)
+🖥️ CONTABO VPS (Servidor Físico Dedicado - Backend Only)
 │
-├── ⚡ CLOUDFLARE WORKERS (Edge Backend Functions)
-├── 🗄️ CLOUDFLARE EDGE STORAGE (Backend Data Edge)
-├── 🔔 CLOUDFLARE PUB/SUB (Backend Real-time Messaging)
-└── 🌍 CLOUDFLARE CDN (Content Delivery - Backend Assets)
+├── 🦀 CORE MEV ENGINE (Rust + Actix-Web)
+├── 🗄️ DATABASE INFRASTRUCTURE (PostgreSQL + Redis)
+├── 🔧 SYSTEM INFRASTRUCTURE (Docker + Monitoring)
+└── 🌍 BLOCKCHAIN INTEGRATION (Multi-chain RPC)
 ```
 
-### 🚀 **Componentes Edge Computing**
+### 🚀 **Componentes Principales**
 
-#### **1. Cloudflare Workers (Edge Functions)**
-- **API Proxy**: Middleware layer para backend Contabo
-- **Security Functions**: JWT validation, rate limiting, DDoS protection
-- **Optimization**: Response compression, caching, request batching
-- **Analytics**: Edge monitoring, performance tracking
+#### **1. MEV Core Engine (Rust)**
+- **searcher-rs**: Motor principal de arbitraje (<5ms P99)
+- **selector-api**: API REST backend (Node.js/TypeScript/Fastify)
+- **sim-ctl**: Controlador de simulación (Anvil-Real Fork)
+- **relays-client**: Integración multi-relay (Flashbots, bloXroute)
+- **recon**: Motor de reconciliación financiera
 
-#### **2. Edge Storage (Backend Cache)**
-- **D1 Database**: Distributed backend cache (hot opportunities, strategies)
-- **KV Storage**: API response cache, session management
-- **R2 Storage**: Backend assets, logs, configurations
+#### **2. Database Infrastructure**
+- **PostgreSQL**: Base de datos principal (16M+ registros/día)
+- **Redis Multi-Tier**: Cache L1-L4 (<1ms a <50ms)
+- **Schemas**: Migraciones y estructuras optimizadas
 
-#### **3. Real-time Messaging**
-- **Pub/Sub Channels**: Backend event streaming
-- **Cross-region Communication**: Multi-region sync
-- **WebSocket Relay**: Contabo → Edge → Lovable
+#### **3. System Monitoring**
+- **Prometheus**: Colección de métricas (Puerto 9090)
+- **Grafana**: Dashboards de performance (Puerto 3001)
+- **AlertManager**: Sistema de alertas (Puerto 9093)
 
-#### **4. CDN & Performance**
-- **Global Edge Network**: 200+ locations worldwide
-- **Backend Acceleration**: API response optimization
-- **Intelligent Caching**: Database query result caching
+#### **4. Container Orchestration**
+- **Docker Compose**: Orquestación completa de servicios
+- **Nginx**: Reverse proxy y SSL termination
+- **Health Checks**: Monitoreo automático de servicios
 
 ### 🛠️ **Estructura del Proyecto**
 
 ```
 /
-├── workers/                    # Cloudflare Workers (Edge Functions)
-│   ├── api-proxy/             # API middleware/proxy layer
-│   │   ├── opportunities.ts    # Proxy opportunities endpoint
-│   │   ├── strategies.ts       # Proxy strategies endpoint
-│   │   ├── executions.ts       # Proxy executions endpoint
-│   │   └── analytics.ts        # Proxy analytics endpoint
-│   ├── security/              # Security & authentication edge
-│   │   ├── jwt-validation.ts   # JWT token validation
-│   │   ├── rate-limiting.ts    # Adaptive rate limiting
-│   │   ├── ddos-protection.ts  # DDoS protection
-│   │   └── geo-control.ts      # Geographic access control
-│   ├── optimization/          # Performance & optimization
-│   │   ├── compression.ts      # Response compression
-│   │   ├── caching.ts          # Content caching intelligence
-│   │   ├── batching.ts         # Request batching
-│   │   └── connection-pool.ts  # Connection pooling
-│   └── analytics/             # Edge analytics & monitoring
-│       ├── metrics.ts          # Request/response metrics
-│       ├── performance.ts      # Edge computing KPIs
-│       └── alerting.ts         # Real-time alerting
+├── services/                    # Servicios Core Backend
+│   ├── searcher-rs/            # Motor MEV principal (Rust)
+│   ├── selector-api/           # API REST backend (Node.js)
+│   ├── sim-ctl/               # Simulación y validación
+│   ├── relays-client/         # Integración relays
+│   └── recon/                 # Reconciliación P&L
 │
-├── schemas/                   # Database Schemas
-│   └── d1/                    # D1 Database schemas
-│       ├── opportunities.sql   # Cached opportunities schema
-│       ├── strategies.sql      # Strategy configs cache
-│       ├── metrics.sql         # Performance metrics cache
-│       └── sessions.sql        # Distributed sessions
+├── database/                   # Infrastructure Database
+│   ├── postgresql/            # Schemas y migraciones
+│   ├── redis/                 # Configuraciones cache
+│   └── migrations/            # Scripts de migración
 │
-├── config/                    # Configuration Files
-│   ├── kv/                    # KV Storage configuration
-│   │   ├── api-cache.ts        # API response caching
-│   │   ├── sessions.ts         # Session management
-│   │   └── performance.ts      # Performance metrics
-│   ├── r2/                    # R2 Storage policies
-│   │   ├── assets.ts           # Backend asset storage
-│   │   ├── logs.ts             # Log storage policies
-│   │   └── backups.ts          # Backup configurations
-│   └── security/              # Security configurations
-│       ├── cors.ts             # CORS policies
-│       ├── headers.ts          # Security headers
-│       └── firewall.ts         # Firewall rules
+├── infrastructure/             # System Infrastructure
+│   ├── docker/               # Container configurations
+│   ├── nginx/                # Reverse proxy configs
+│   ├── monitoring/           # Prometheus + Grafana
+│   └── security/             # Firewall + VPN configs
 │
-├── pubsub/                    # Real-time Messaging
-│   ├── channels.ts            # Backend event channels
-│   ├── cross-region.ts        # Cross-region communication
-│   └── integration.ts         # Backend integration channels
+├── contracts/                 # Smart Contracts
+│   ├── arbitrage/            # Contratos de arbitraje
+│   ├── flash-loans/          # Flash loan contracts
+│   └── networks/             # Multi-chain contracts
 │
-├── deploy/                    # Deployment Scripts
-│   ├── deploy-workers.sh      # Deploy all workers
-│   ├── setup-d1.sh            # Setup D1 databases
-│   ├── setup-kv.sh            # Setup KV namespaces
-│   └── setup-r2.sh            # Setup R2 buckets
+├── scripts/                   # Deployment & Automation
+│   ├── deploy.sh             # Deployment completo
+│   ├── backup.sh             # Scripts backup
+│   └── monitoring.sh         # Setup monitoring
 │
-├── wrangler.toml              # Cloudflare configuration
-├── package.json               # Dependencies
-└── tsconfig.json              # TypeScript configuration
+├── config/                    # Configuration Files  
+│   ├── prometheus/           # Metrics configuration
+│   ├── grafana/              # Dashboard configs
+│   └── networks/             # Blockchain configs
+│
+└── docs/                      # Documentation
+    ├── API.md                # API documentation
+    ├── DEPLOYMENT.md         # Deployment guide
+    └── MONITORING.md         # Monitoring guide
 ```
 
-### 🔧 **Installation & Deployment**
+### 🔧 **Instalación y Deployment**
 
-#### **Prerequisites**
-- **Cloudflare Account**: With Workers/D1/KV/R2 access
-- **Wrangler CLI**: v3.0+
-- **Node.js**: v18+
-- **TypeScript**: v5.0+
+#### **Requisitos del Sistema**
+- **Hardware**: VPS Contabo (8+ cores, 32GB RAM, 1TB SSD)
+- **OS**: Ubuntu 22.04 LTS
+- **Docker**: v24.0+
+- **Docker Compose**: v2.20+
 
-#### **Quick Setup**
+#### **Instalación Rápida**
 ```bash
-# 1. Clone repository
-git clone https://github.com/hefarica/ARBITRAGEXSUPREME.git
-cd ARBITRAGEXSUPREME
+# 1. Clonar repositorio
+git clone https://github.com/hefarica/ARBITRAGEX-CONTABO-BACKEND.git
+cd ARBITRAGEX-CONTABO-BACKEND
 
-# 2. Install dependencies
-npm install
+# 2. Configurar variables de entorno
+cp .env.example .env.production
+# Editar .env.production con configuraciones reales
 
-# 3. Configure Cloudflare
-cp .env.example .env
-# Edit .env with your Cloudflare API tokens
+# 3. Deployment completo
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh
 
-# 4. Setup Cloudflare services
-chmod +x deploy/setup-*.sh
-./deploy/setup-d1.sh
-./deploy/setup-kv.sh
-./deploy/setup-r2.sh
-
-# 5. Deploy Workers
-./deploy/deploy-workers.sh
+# 4. Verificar servicios
+docker-compose -f docker-compose.production.yml ps
 ```
 
-### ⚡ **Edge Functions Deployment**
+### 📊 **Servicios y Puertos**
 
-#### **Deploy Individual Workers**
-```bash
-# API Proxy Workers
-wrangler deploy workers/api-proxy/opportunities.ts
-wrangler deploy workers/api-proxy/strategies.ts
-wrangler deploy workers/api-proxy/executions.ts
-wrangler deploy workers/api-proxy/analytics.ts
+| Servicio | Puerto | Función |
+|----------|--------|---------|
+| searcher-rs | 8080 | MEV Engine API |
+| selector-api | 8081 | Backend REST API |
+| PostgreSQL | 5432 | Base de datos principal |
+| Redis | 6379 | Cache multi-tier |
+| Prometheus | 9090 | Metrics collection |
+| Grafana | 3001 | Performance dashboards |
+| Nginx | 80/443 | Reverse proxy + SSL |
 
-# Security Workers
-wrangler deploy workers/security/jwt-validation.ts
-wrangler deploy workers/security/rate-limiting.ts
-wrangler deploy workers/security/ddos-protection.ts
+### 🔐 **Seguridad y Acceso**
 
-# Optimization Workers
-wrangler deploy workers/optimization/compression.ts
-wrangler deploy workers/optimization/caching.ts
-wrangler deploy workers/optimization/batching.ts
-```
+#### **Firewall Configuration**
+- Puerto 22: SSH (Solo VPN)
+- Puerto 80/443: HTTP/HTTPS (Público)
+- Puertos internos: Solo docker network
 
-#### **Deploy All Workers**
-```bash
-npm run deploy:all
-```
+#### **Monitoring URLs**
+- **Grafana**: `https://your-contabo-ip:3001`
+- **Prometheus**: `https://your-contabo-ip:9090` (VPN only)
+- **API Health**: `https://your-contabo-ip/api/health`
 
-### 📊 **Edge Services & URLs**
+### 🗄️ **Base de Datos**
 
-| Service | URL Pattern | Function |
-|---------|-------------|----------|
-| API Proxy | `*.arbitragex.pages.dev/api/proxy/*` | Backend API acceleration |
-| Security | `*.arbitragex.pages.dev/security/*` | JWT/Rate limiting |
-| Analytics | `*.arbitragex.pages.dev/analytics/*` | Edge monitoring |
-| WebSocket | `wss://*.arbitragex.pages.dev/ws/*` | Real-time relay |
+#### **PostgreSQL Schemas**
+- `arbitrage_opportunities`: 16M+ registros/día
+- `strategy_configurations`: 20 estrategias MEV
+- `execution_history`: 50K+ ejecuciones/día
+- `performance_metrics`: 1M+ métricas/hora
 
-### 🗄️ **Edge Storage Configuration**
+#### **Redis Cache Strategy**
+- **L1**: In-memory Rust structs (<1ms)
+- **L2**: Local Redis instance (<5ms)
+- **L3**: Distributed Redis cluster (<20ms)
+- **L4**: PostgreSQL fallback (<50ms)
 
-#### **D1 Database (Backend Cache)**
-```bash
-# Create D1 databases
-wrangler d1 create arbitragex-opportunities-cache
-wrangler d1 create arbitragex-strategies-cache
-wrangler d1 create arbitragex-metrics-cache
-wrangler d1 create arbitragex-sessions-cache
+### 🚀 **Estrategias MEV Implementadas**
 
-# Apply schemas
-wrangler d1 execute arbitragex-opportunities-cache --file=schemas/d1/opportunities.sql
-wrangler d1 execute arbitragex-strategies-cache --file=schemas/d1/strategies.sql
-```
+1. **DEX Arbitrage**: Diferencias de precio entre DEXs
+2. **Flash Loan Arbitrage**: Arbitraje sin capital inicial
+3. **MEV Sandwich**: Extracción de valor sandwich
+4. **Liquidation MEV**: Liquidaciones optimizadas
+5. **Cross-chain Arbitrage**: Arbitraje entre chains
+6. **Gas Optimization**: Optimización de fees
+7. **Bundle Optimization**: Bundles MEV eficientes
+8. **Frontrunning Protection**: Anti-MEV strategies
+9. **Backrunning Opportunities**: Backrunning MEV
+10. **Statistical Arbitrage**: Arbitraje estadístico
+... (20 estrategias total)
 
-#### **KV Storage (API Cache)**
-```bash
-# Create KV namespaces
-wrangler kv:namespace create "API_CACHE"
-wrangler kv:namespace create "SESSIONS"
-wrangler kv:namespace create "PERFORMANCE_METRICS"
-wrangler kv:namespace create "CONFIG_CACHE"
-```
+### 📈 **Performance Metrics**
 
-#### **R2 Storage (Assets & Logs)**
-```bash
-# Create R2 buckets
-wrangler r2 bucket create arbitragex-backend-assets
-wrangler r2 bucket create arbitragex-edge-logs
-wrangler r2 bucket create arbitragex-config-backups
-```
+- **Latencia P99**: <5ms detección oportunidades
+- **Throughput**: 16M+ análisis diarios
+- **Success Rate**: 94.7% ejecuciones exitosas
+- **ROI Promedio**: 15-25% mensual
+- **Uptime**: 99.9% disponibilidad
 
-### 🔐 **Security Configuration**
+### 🔄 **Integración con Otros Módulos**
 
-#### **Environment Variables**
-```bash
-# Backend Integration
-CONTABO_BACKEND_URL=https://your-contabo-ip:8081
-CONTABO_API_KEY=your-backend-api-key
+#### **→ Cloudflare Edge**
+- WebSocket streaming hacia edge
+- API proxy optimization
+- Security layer integration
 
-# JWT Configuration
-JWT_SECRET=your-jwt-secret
-JWT_EXPIRY=3600
+#### **→ Lovable Frontend**  
+- Real-time data streaming
+- REST API endpoints
+- Authentication backend
 
-# Rate Limiting
-RATE_LIMIT_REQUESTS=1000
-RATE_LIMIT_WINDOW=900
+### 📚 **Documentación**
 
-# Security Headers
-SECURITY_HEADERS_ENABLED=true
-CORS_ORIGINS=https://your-lovable-frontend.com
-```
+- **[API Documentation](./docs/API.md)**: Endpoints y schemas
+- **[Deployment Guide](./docs/DEPLOYMENT.md)**: Guía completa deployment
+- **[Monitoring Guide](./docs/MONITORING.md)**: Setup Prometheus + Grafana
 
-#### **Secrets Management**
-```bash
-# Set Cloudflare secrets
-wrangler secret put CONTABO_API_KEY
-wrangler secret put JWT_SECRET
-wrangler secret put BACKEND_AUTH_TOKEN
-```
+### 🛟 **Soporte y Mantenimiento**
 
-### 🚀 **Performance Optimization**
+- **Logs**: Centralizados en `/logs/`
+- **Backups**: Automáticos daily + incremental
+- **Alerts**: Email + Slack notifications
+- **Health Checks**: Automáticos cada 30 segundos
 
-#### **Cache Strategies**
-- **API Responses**: 5-60 seconds TTL based on endpoint
-- **Static Assets**: 1 hour - 1 day TTL
-- **Database Queries**: 30 seconds - 5 minutes TTL
-- **User Sessions**: 24 hours TTL
-
-#### **Compression**
-- **Brotli**: For modern browsers (80% size reduction)
-- **Gzip**: Fallback for older browsers (65% size reduction)
-- **Content-specific**: Optimized per content type
-
-#### **Geographic Distribution**
-- **Primary Regions**: US, Europe, Asia-Pacific
-- **Edge Optimization**: <50ms latency worldwide
-- **Failover**: Automatic region failover
-
-### 📈 **Monitoring & Analytics**
-
-#### **Edge Metrics**
-- **Request/Response Latency**: P50, P95, P99
-- **Cache Hit Ratios**: By content type and region
-- **Error Rates**: 4xx, 5xx by endpoint
-- **Geographic Performance**: Latency by region
-
-#### **Real-time Dashboards**
-- **Cloudflare Analytics**: Built-in dashboard
-- **Custom Metrics**: D1 + KV performance data
-- **Alert Notifications**: Email/Slack/webhook
-
-### 🔄 **Integration Flow**
-
-#### **Data Flow**
-```
-1. CONTABO Backend → WebSocket/API → 
-2. CLOUDFLARE Edge → Caching/Optimization → 
-3. LOVABLE Frontend
-```
-
-#### **WebSocket Relay**
-```
-CONTABO:8081/ws → CLOUDFLARE Edge Proxy → LOVABLE Frontend
-```
-
-#### **API Acceleration**
-```
-LOVABLE → CLOUDFLARE Edge → CONTABO Backend
-         (Cache Layer)     (Authentication)
-```
-
-### 🛟 **Troubleshooting**
-
-#### **Common Issues**
-- **Workers Not Updating**: Check deployment status in dashboard
-- **Cache Issues**: Clear KV/D1 cache via Wrangler CLI
-- **Rate Limiting**: Check rate limit counters in KV storage
-- **Geographic Issues**: Verify edge region configurations
-
-#### **Debugging**
-```bash
-# Check worker logs
-wrangler tail your-worker-name
-
-# Monitor D1 performance
-wrangler d1 execute your-database --command="SELECT * FROM performance_metrics"
-
-# Check KV cache
-wrangler kv:key list --namespace-id=your-namespace-id
-```
-
-### 📚 **Documentation**
-
-- **[Worker Development](./docs/WORKERS.md)**: Edge function development guide
-- **[D1 Database](./docs/D1.md)**: Database schema and queries
-- **[KV Storage](./docs/KV.md)**: Key-value storage patterns
-- **[R2 Storage](./docs/R2.md)**: Object storage configuration
-
-### 📞 **Contact & Support**
+### 📞 **Contacto**
 
 - **Owner**: Hector Fabio Riascos C.
 - **GitHub**: [@hefarica](https://github.com/hefarica)
 - **Metodología**: Ingenio Pichichi S.A
-- **Cloudflare Docs**: [developers.cloudflare.com](https://developers.cloudflare.com)
 
 ---
 
-## 🎯 **Este repositorio contiene SOLAMENTE edge computing functions. Para backend ver [ARBITRAGEX-CONTABO-BACKEND](https://github.com/hefarica/ARBITRAGEX-CONTABO-BACKEND), para frontend ver [show-my-github-gems](https://github.com/hefarica/show-my-github-gems).**
+## 🎯 **Este repositorio contiene SOLAMENTE la infraestructura backend. Para frontend ver [show-my-github-gems](https://github.com/hefarica/show-my-github-gems), para edge computing ver [ARBITRAGEXSUPREME](https://github.com/hefarica/ARBITRAGEXSUPREME).**

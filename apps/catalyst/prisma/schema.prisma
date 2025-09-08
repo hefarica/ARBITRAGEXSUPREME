@@ -1,0 +1,364 @@
+// ArbitrageX Supreme - Database Schema
+// Ingenio Pichichi S.A. - Cosecha de Datos DeFi
+// Generator: Prisma ORM
+// Database: SQLite (Desarrollo) / PostgreSQL (Producción)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================================
+// BLOCKCHAIN REGISTRY - 20+ Cadenas Soportadas
+// ==============================================
+
+model Blockchain {
+  id              String    @id @default(cuid())
+  chainId         Int       @unique
+  name            String
+  symbol          String
+  rpcUrl          String
+  explorerUrl     String
+  nativeCurrency  String
+  isTestnet       Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  gasTokenSymbol  String
+  
+  // MetaData Técnica
+  blockTime       Int       // segundos por bloque
+  confirmations   Int       @default(12)
+  maxGasPrice     String?   // en Gwei
+  
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relaciones
+  protocols       Protocol[]
+  pools           LiquidityPool[]
+  arbitrages      ArbitrageOpportunity[]
+  
+  @@map("blockchains")
+}
+
+// ==============================================
+// PROTOCOL DISCOVERY ENGINE - 450+ Protocolos
+// ==============================================
+
+model Protocol {
+  id            String      @id @default(cuid())
+  name          String
+  symbol        String
+  category      String       // ProtocolType as string for SQLite
+  version       String?
+  
+  // Información de Red
+  blockchain    Blockchain  @relation(fields: [blockchainId], references: [id])
+  blockchainId  String
+  
+  // Contratos y Direcciones
+  routerAddress String?
+  factoryAddress String?
+  masterChefAddress String?
+  
+  // MetaData del Protocolo  
+  tvl           Float       @default(0)
+  volume24h     Float       @default(0)
+  fees24h       Float       @default(0)
+  
+  // Estado y Configuración
+  isActive      Boolean     @default(true)
+  isVerified    Boolean     @default(false)
+  riskScore     Int         @default(5) // 1-10 (1=bajo riesgo, 10=alto riesgo)
+  
+  // URLs y Documentación
+  websiteUrl    String?
+  docsUrl       String?
+  githubUrl     String?
+  auditUrl      String?
+  
+  // Flash Loan Support
+  supportsFlashLoans Boolean @default(false)
+  flashLoanFee       Float?  // % fee
+  maxFlashLoanAmount String? // en wei
+  
+  // Timestamps
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  lastSyncAt    DateTime?
+  
+  // Relaciones
+  pools         LiquidityPool[]
+  arbitrages    ArbitrageOpportunity[]
+  strategies    FlashLoanStrategy[]
+  
+  @@unique([name, blockchainId])
+  @@map("protocols")
+}
+
+// ProtocolType enum values as constants (for SQLite compatibility)
+// DEX_AMM, DEX_ORDERBOOK, LENDING, STABLECOIN, BRIDGE, YIELD_FARMING, 
+// DERIVATIVES, INSURANCE, AGGREGATOR, SYNTHETIC, OPTIONS, FUTURES, OTHER
+
+// ==============================================
+// LIQUIDITY POOLS - Datos de Pares de Trading
+// ==============================================
+
+model LiquidityPool {
+  id            String      @id @default(cuid())
+  pairAddress   String      @unique
+  
+  // Información del Par
+  token0Address String
+  token1Address String  
+  token0Symbol  String
+  token1Symbol  String
+  token0Decimals Int       @default(18)
+  token1Decimals Int       @default(18)
+  
+  // Relaciones de Red
+  protocol      Protocol    @relation(fields: [protocolId], references: [id])
+  protocolId    String
+  blockchain    Blockchain  @relation(fields: [blockchainId], references: [id])
+  blockchainId  String
+  
+  // Datos de Liquidez
+  reserve0      String      // token0 reserve en wei
+  reserve1      String      // token1 reserve en wei  
+  totalSupply   String      // LP token supply
+  
+  // Métricas Financieras
+  tvl           Float       @default(0)
+  volume24h     Float       @default(0)
+  volume7d      Float       @default(0)
+  fees24h       Float       @default(0)
+  apy           Float       @default(0)
+  
+  // Precio y Cambios
+  token0Price   Float       @default(0)
+  token1Price   Float       @default(0)
+  priceChange24h Float      @default(0)
+  
+  // Estado del Pool
+  isActive      Boolean     @default(true)
+  isStable      Boolean     @default(false) // Para Curve-style pools
+  
+  // Timestamps
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  lastSyncAt    DateTime?
+  
+  // Relaciones  
+  arbitrages    ArbitrageOpportunity[]
+  
+  @@unique([pairAddress, blockchainId])
+  @@index([protocolId])
+  @@index([blockchainId])
+  @@map("liquidity_pools")
+}
+
+// ==============================================
+// FLASH LOAN STRATEGIES - 12 Tipos de Arbitraje
+// ==============================================
+
+model FlashLoanStrategy {
+  id              String        @id @default(cuid())
+  name            String        @unique
+  strategyType    String       // StrategyType as string for SQLite
+  description     String
+  
+  // Configuración de la Estrategia
+  minProfitUsd    Float         @default(10)  // Beneficio mínimo en USD
+  maxGasCost      Float         @default(50)  // Costo máximo de gas en USD
+  riskLevel       Int           @default(5)   // 1-10 
+  
+  // Protocolo Objetivo
+  protocol        Protocol      @relation(fields: [protocolId], references: [id])
+  protocolId      String
+  
+  // Parámetros Técnicos
+  flashLoanAmount String?       // Cantidad de flash loan en wei
+  swapPath        String?       // JSON con ruta de intercambios
+  slippageTolerance Float      @default(0.5) // % tolerancia de slippage
+  
+  // Estados y Configuración
+  isActive        Boolean       @default(true)
+  isBacktested    Boolean       @default(false)
+  
+  // Performance Histórica
+  totalExecutions Int           @default(0)
+  successRate     Float         @default(0)
+  totalProfitUsd  Float         @default(0)
+  avgProfitUsd    Float         @default(0)
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastExecutedAt  DateTime?
+  
+  // Relaciones
+  arbitrages      ArbitrageOpportunity[]
+  
+  @@map("flash_loan_strategies")
+}
+
+// StrategyType enum values as constants (for SQLite compatibility)
+// INTRA_DEX, INTER_DEX, CROSS_CHAIN, INTEREST_RATE, STABLECOIN_DEPEG, NFT_ARBITRAGE,
+// COLLATERAL_SWAP, LIQUIDITY_PROVISION, DEBT_REFINANCING, TRADE_BATCHING, FLASH_MINTING, WASH_TRADING_DETECT
+
+// ==============================================
+// ARBITRAGE OPPORTUNITIES - Oportunidades Detectadas
+// ==============================================
+
+model ArbitrageOpportunity {
+  id                String        @id @default(cuid())
+  
+  // Información de la Oportunidad
+  strategyType      String       // StrategyType as string for SQLite
+  profitEstimateUsd Float
+  profitPercentage  Float
+  
+  // Relaciones Principales
+  strategy          FlashLoanStrategy? @relation(fields: [strategyId], references: [id])
+  strategyId        String?
+  
+  sourcePool        LiquidityPool @relation(fields: [sourcePoolId], references: [id])
+  sourcePoolId      String
+  
+  protocol          Protocol      @relation(fields: [protocolId], references: [id])
+  protocolId        String
+  
+  blockchain        Blockchain    @relation(fields: [blockchainId], references: [id])
+  blockchainId      String
+  
+  // Datos de Precios
+  tokenAddress      String        // Token para arbitraje
+  tokenSymbol       String
+  sourcePriceUsd    Float         // Precio en pool fuente
+  targetPriceUsd    Float         // Precio objetivo
+  
+  // Costs and Requirements
+  gasEstimate       String        // Gas estimado en wei
+  gasCostUsd        Float         // Costo de gas en USD
+  flashLoanFee      Float         // Fee del flash loan
+  slippageEstimate  Float         // Slippage estimado
+  
+  // Execution Data
+  isExecuted        Boolean       @default(false)
+  executionTxHash   String?
+  actualProfitUsd   Float?
+  executionError    String?
+  
+  // Timing
+  detectedAt        DateTime      @default(now())
+  expiresAt         DateTime?     // Cuándo expira la oportunidad
+  executedAt        DateTime?
+  
+  // Status
+  status            String       @default("DETECTED") // OpportunityStatus as string
+  
+  @@index([strategyType])
+  @@index([profitEstimateUsd])
+  @@index([detectedAt])
+  @@index([status])
+  @@map("arbitrage_opportunities")
+}
+
+// OpportunityStatus enum values as constants (for SQLite compatibility)
+// DETECTED, VALIDATING, READY, EXECUTING, COMPLETED, FAILED, EXPIRED
+
+// ==============================================
+// SYSTEM MONITORING - Monitoreo del Sistema
+// ==============================================
+
+model SystemMetric {
+  id                String    @id @default(cuid())
+  metricName        String
+  metricValue       Float
+  metricUnit        String?   // USD, %, count, etc.
+  
+  // Context
+  blockchainId      String?
+  protocolId        String?
+  
+  // Timing
+  timestamp         DateTime  @default(now())
+  
+  @@index([metricName])
+  @@index([timestamp])
+  @@map("system_metrics")
+}
+
+// ==============================================
+// SECURITY & ANTI-SCAM - Seguridad
+// ==============================================
+
+model SecurityAlert {
+  id              String      @id @default(cuid())
+  alertType       String       // AlertType as string for SQLite
+  severity        String       // AlertSeverity as string for SQLite
+  title           String
+  description     String
+  
+  // Context
+  blockchainId    String?
+  protocolId      String?
+  transactionHash String?
+  affectedAddress String?
+  
+  // Status
+  isResolved      Boolean     @default(false)
+  resolvedAt      DateTime?
+  resolverNotes   String?
+  
+  // Timing
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  @@index([alertType])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("security_alerts")
+}
+
+// AlertType enum values as constants (for SQLite compatibility)
+// SUSPICIOUS_TRANSACTION, UNUSUAL_PRICE_MOVEMENT, HIGH_SLIPPAGE, FLASH_LOAN_ATTACK, 
+// RUG_PULL_DETECTED, SMART_CONTRACT_EXPLOIT, SANDWICH_ATTACK, MEV_BOT_DETECTED, WASH_TRADING, PUMP_AND_DUMP
+
+// AlertSeverity enum values as constants (for SQLite compatibility)  
+// LOW, MEDIUM, HIGH, CRITICAL
+
+// ==============================================
+// API INTEGRATION - Integraciones Externas
+// ==============================================
+
+model ApiIntegration {
+  id              String    @id @default(cuid())
+  serviceName     String    // N8N, Tenderly, Gelato, etc.
+  serviceType     String       // ServiceType as string for SQLite
+  
+  // Configuration
+  apiKey          String?
+  webhookUrl      String?
+  isActive        Boolean   @default(true)
+  
+  // Performance Metrics
+  totalRequests   Int       @default(0)
+  successRequests Int       @default(0)
+  lastRequestAt   DateTime?
+  
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@unique([serviceName])
+  @@map("api_integrations")
+}
+
+// ServiceType enum values as constants (for SQLite compatibility)
+// AUTOMATION (N8N), SIMULATION (Tenderly), TASK_SCHEDULER (Gelato), 
+// PRICE_FEED (Chainlink, CoinGecko), NOTIFICATION (Discord, Telegram), MONITORING (DataDog, NewRelic)

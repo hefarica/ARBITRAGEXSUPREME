@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Main Database
+  postgres:
+    image: postgres:15
+    container_name: arbitragex-postgres
+    environment:
+      POSTGRES_DB: arbitragex_prod
+      POSTGRES_USER: arbitragex
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-arbitragex_secure_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - arbitragex-network
+    restart: unless-stopped
+
+  # PostgreSQL Replica (Read-only)
+  postgres-replica:
+    image: postgres:15
+    container_name: arbitragex-postgres-replica
+    environment:
+      POSTGRES_DB: arbitragex_prod
+      POSTGRES_USER: arbitragex_readonly
+      POSTGRES_PASSWORD: ${DB_REPLICA_PASSWORD:-arbitragex_readonly_password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    networks:
+      - arbitragex-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: arbitragex-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secure_password}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./infrastructure/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - arbitragex-network
+    restart: unless-stopped
+
+  # TimescaleDB for time-series metrics
+  timescale:
+    image: timescale/timescaledb:latest-pg15
+    container_name: arbitragex-timescale
+    environment:
+      POSTGRES_DB: arbitragex_timeseries
+      POSTGRES_USER: arbitragex
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-timescale_secure_password}
+    ports:
+      - "5434:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./infrastructure/docker/timescale/init:/docker-entrypoint-initdb.d
+    networks:
+      - arbitragex-network
+    restart: unless-stopped
+
+  # pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: arbitragex-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@arbitragex.com
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pgadmin_secure_password}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - arbitragex-network
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - timescale
+
+  # Redis Insight for Redis management
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: arbitragex-redis-insight
+    ports:
+      - "8001:8001"
+    volumes:
+      - redis_insight_data:/db
+    networks:
+      - arbitragex-network
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:
+    driver: local
+  postgres_replica_data:
+    driver: local
+  redis_data:
+    driver: local
+  timescale_data:
+    driver: local
+  pgladmin_data:
+    driver: local
+  redis_insight_data:
+    driver: local
+
+networks:
+  arbitragex-network:
+    driver: bridge

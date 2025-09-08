@@ -1,0 +1,529 @@
+{
+  "name": "ArbitrageX Supreme CDN Configuration",
+  "description": "Configuración completa de CDN para ArbitrageX Supreme - Ingenio Pichichi S.A.",
+  "version": "1.0.0",
+  "zones": [
+    {
+      "name": "arbitragexsupreme.com",
+      "type": "full",
+      "status": "active",
+      "settings": {
+        "ssl": {
+          "certificate_authority": "lets_encrypt",
+          "edge_certificates": {
+            "certificate": "universal"
+          },
+          "min_tls_version": "1.2",
+          "tls_1_3": "on",
+          "automatic_https_rewrites": "on",
+          "opportunistic_encryption": "on",
+          "hsts": {
+            "enabled": true,
+            "max_age": 31536000,
+            "include_subdomains": true,
+            "preload": true
+          }
+        },
+        "speed": {
+          "minify": {
+            "css": "on",
+            "html": "on",
+            "js": "on"
+          },
+          "brotli": "on",
+          "early_hints": "on",
+          "http2": "on",
+          "http3": "on",
+          "rocket_loader": "on"
+        },
+        "caching": {
+          "caching_level": "aggressive",
+          "browser_cache_ttl": 31536000,
+          "edge_cache_ttl": 2678400,
+          "development_mode": "off",
+          "purge_everything": false,
+          "sort_query_strings_for_cache": "off"
+        },
+        "security": {
+          "security_level": "medium",
+          "challenge_ttl": 1800,
+          "browser_integrity_check": "on",
+          "hotlink_protection": "off",
+          "email_obfuscation": "on",
+          "server_side_exclude": "on",
+          "waf": "on"
+        },
+        "network": {
+          "http2": "on",
+          "http3": "on",
+          "websockets": "on",
+          "ipv6": "on",
+          "pseudo_ipv4": "off",
+          "ip_geolocation": "on"
+        }
+      }
+    }
+  ],
+  "page_rules": [
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*.arbitragexsupreme.com/assets/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 31536000
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 31536000
+        },
+        {
+          "id": "security_level",
+          "value": "essentially_off"
+        }
+      ],
+      "priority": 1,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*.arbitragexsupreme.com/api/*"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "bypass"
+        },
+        {
+          "id": "security_level",
+          "value": "high"
+        },
+        {
+          "id": "browser_check",
+          "value": "on"
+        }
+      ],
+      "priority": 2,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*.arbitragexsupreme.com/*.js"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 86400
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 86400
+        }
+      ],
+      "priority": 3,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*.arbitragexsupreme.com/*.css"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 86400
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 86400
+        }
+      ],
+      "priority": 4,
+      "status": "active"
+    },
+    {
+      "targets": [
+        {
+          "target": "url",
+          "constraint": {
+            "operator": "matches",
+            "value": "*.arbitragexsupreme.com/*.{jpg,jpeg,png,gif,webp,avif,svg,ico}"
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "cache_level",
+          "value": "cache_everything"
+        },
+        {
+          "id": "edge_cache_ttl",
+          "value": 2678400
+        },
+        {
+          "id": "browser_cache_ttl",
+          "value": 2678400
+        }
+      ],
+      "priority": 5,
+      "status": "active"
+    }
+  ],
+  "workers": {
+    "routes": [
+      {
+        "pattern": "api.arbitragexsupreme.com/*",
+        "script": "arbitragex-api-worker"
+      },
+      {
+        "pattern": "arbitragexsupreme.com/arbitrage/*",
+        "script": "arbitragex-engine-worker"
+      }
+    ],
+    "scripts": {
+      "arbitragex-api-worker": {
+        "name": "ArbitrageX API Worker",
+        "content": "// Worker script para manejar requests de API",
+        "bindings": {
+          "KV_NAMESPACE": "ARBITRAGEX_CACHE",
+          "D1_DATABASE": "ARBITRAGEX_DB"
+        }
+      },
+      "arbitragex-engine-worker": {
+        "name": "ArbitrageX Engine Worker",
+        "content": "// Worker script para engine de arbitraje",
+        "bindings": {
+          "KV_NAMESPACE": "ARBITRAGEX_CACHE",
+          "D1_DATABASE": "ARBITRAGEX_DB"
+        }
+      }
+    }
+  },
+  "load_balancing": {
+    "pools": [
+      {
+        "name": "arbitragex-primary",
+        "description": "Primary server pool",
+        "enabled": true,
+        "origins": [
+          {
+            "name": "primary-us-east",
+            "address": "us-east.arbitragexsupreme.com",
+            "enabled": true,
+            "weight": 1
+          },
+          {
+            "name": "primary-eu-west",
+            "address": "eu-west.arbitragexsupreme.com", 
+            "enabled": true,
+            "weight": 1
+          }
+        ],
+        "monitor": "https://monitor.arbitragexsupreme.com/health",
+        "notification_email": "hector.riascos@pichichi.com"
+      },
+      {
+        "name": "arbitragex-fallback",
+        "description": "Fallback server pool",
+        "enabled": true,
+        "origins": [
+          {
+            "name": "fallback-us-west",
+            "address": "us-west.arbitragexsupreme.com",
+            "enabled": true,
+            "weight": 1
+          },
+          {
+            "name": "fallback-ap-south",
+            "address": "ap-south.arbitragexsupreme.com",
+            "enabled": true,
+            "weight": 1
+          }
+        ],
+        "monitor": "https://monitor.arbitragexsupreme.com/health",
+        "notification_email": "hector.riascos@pichichi.com"
+      }
+    ],
+    "load_balancers": [
+      {
+        "name": "arbitragex-global-lb",
+        "default_pools": ["arbitragex-primary"],
+        "fallback_pool": "arbitragex-fallback",
+        "region_pools": {
+          "WNAM": ["arbitragex-primary"],
+          "ENAM": ["arbitragex-primary"],
+          "WEU": ["arbitragex-primary"],
+          "EEU": ["arbitragex-primary"],
+          "SEAS": ["arbitragex-fallback"],
+          "NEAS": ["arbitragex-fallback"]
+        },
+        "proxied": true,
+        "ttl": 30,
+        "steering_policy": "geo"
+      }
+    ]
+  },
+  "rate_limiting": {
+    "rules": [
+      {
+        "id": "api-rate-limit",
+        "match": {
+          "request": {
+            "url": "*.arbitragexsupreme.com/api/*"
+          }
+        },
+        "action": {
+          "mode": "simulate",
+          "timeout": 86400,
+          "response": {
+            "status_code": 429,
+            "content_type": "application/json",
+            "content": "{\"error\":\"Rate limit exceeded\"}"
+          }
+        },
+        "threshold": 1000,
+        "period": 60,
+        "correlate": {
+          "by": "ip"
+        },
+        "disabled": false,
+        "description": "API rate limiting - 1000 requests per minute per IP"
+      },
+      {
+        "id": "arbitrage-rate-limit",
+        "match": {
+          "request": {
+            "url": "*.arbitragexsupreme.com/arbitrage/execute"
+          }
+        },
+        "action": {
+          "mode": "ban",
+          "timeout": 3600,
+          "response": {
+            "status_code": 429,
+            "content_type": "application/json",
+            "content": "{\"error\":\"Arbitrage rate limit exceeded\"}"
+          }
+        },
+        "threshold": 100,
+        "period": 60,
+        "correlate": {
+          "by": "ip"
+        },
+        "disabled": false,
+        "description": "Arbitrage execution rate limiting - 100 executions per minute per IP"
+      }
+    ]
+  },
+  "firewall": {
+    "access_rules": [
+      {
+        "mode": "whitelist",
+        "configuration": {
+          "target": "country",
+          "value": "US"
+        },
+        "notes": "Allow US traffic"
+      },
+      {
+        "mode": "whitelist", 
+        "configuration": {
+          "target": "country",
+          "value": "CA"
+        },
+        "notes": "Allow Canada traffic"
+      },
+      {
+        "mode": "whitelist",
+        "configuration": {
+          "target": "country",
+          "value": "CO"
+        },
+        "notes": "Allow Colombia traffic - Ingenio Pichichi"
+      },
+      {
+        "mode": "block",
+        "configuration": {
+          "target": "country", 
+          "value": "CN"
+        },
+        "notes": "Block China traffic"
+      },
+      {
+        "mode": "block",
+        "configuration": {
+          "target": "country",
+          "value": "RU" 
+        },
+        "notes": "Block Russia traffic"
+      }
+    ],
+    "waf_rules": [
+      {
+        "id": "sql-injection-protection",
+        "expression": "(http.request.uri.query contains \"union\" and http.request.uri.query contains \"select\") or (http.request.body contains \"<script\")",
+        "action": "block",
+        "description": "Block SQL injection and XSS attempts",
+        "enabled": true
+      },
+      {
+        "id": "bot-protection",
+        "expression": "(cf.client.bot) and not (cf.verified_bot_category in {\"Search Engine\" \"Monitoring\"})",
+        "action": "challenge",
+        "description": "Challenge unverified bots",
+        "enabled": true
+      }
+    ]
+  },
+  "analytics": {
+    "web_analytics": {
+      "enabled": true,
+      "auto_install": true
+    },
+    "zaraz": {
+      "enabled": true,
+      "tools": [
+        {
+          "name": "Google Analytics 4",
+          "enabled": true,
+          "settings": {
+            "measurement_id": "G-XXXXXXXXXX"
+          }
+        }
+      ]
+    }
+  },
+  "performance": {
+    "argo": {
+      "enabled": true,
+      "smart_routing": true,
+      "tiered_caching": true
+    },
+    "polish": {
+      "enabled": true,
+      "level": "lossless",
+      "webp": "on",
+      "avif": "on"
+    },
+    "mirage": {
+      "enabled": true
+    }
+  },
+  "dns": {
+    "records": [
+      {
+        "type": "A",
+        "name": "@",
+        "content": "198.51.100.1",
+        "ttl": 300,
+        "proxied": true
+      },
+      {
+        "type": "CNAME",
+        "name": "www",
+        "content": "arbitragexsupreme.com",
+        "ttl": 300,
+        "proxied": true
+      },
+      {
+        "type": "CNAME",
+        "name": "api",
+        "content": "arbitragexsupreme.com",
+        "ttl": 300,
+        "proxied": true
+      },
+      {
+        "type": "CNAME", 
+        "name": "cdn",
+        "content": "arbitragexsupreme.com",
+        "ttl": 300,
+        "proxied": true
+      },
+      {
+        "type": "CNAME",
+        "name": "ws",
+        "content": "arbitragexsupreme.com",
+        "ttl": 300,
+        "proxied": true
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "source_url": "http://arbitragexsupreme.com/*",
+      "target_url": "https://arbitragexsupreme.com/$1",
+      "status_code": 301,
+      "include_subdomains": true
+    },
+    {
+      "source_url": "https://www.arbitragexsupreme.com/*",
+      "target_url": "https://arbitragexsupreme.com/$1", 
+      "status_code": 301,
+      "include_subdomains": false
+    }
+  ],
+  "monitoring": {
+    "health_checks": [
+      {
+        "type": "https",
+        "name": "ArbitrageX Main Site",
+        "address": "https://arbitragexsupreme.com",
+        "path": "/health",
+        "interval": 60,
+        "retries": 2,
+        "timeout": 10,
+        "expected_codes": "200",
+        "follow_redirects": true,
+        "notification_email": "hector.riascos@pichichi.com"
+      },
+      {
+        "type": "https", 
+        "name": "ArbitrageX API",
+        "address": "https://api.arbitragexsupreme.com",
+        "path": "/health",
+        "interval": 30,
+        "retries": 3,
+        "timeout": 5,
+        "expected_codes": "200",
+        "follow_redirects": false,
+        "notification_email": "hector.riascos@pichichi.com"
+      }
+    ]
+  }
+}

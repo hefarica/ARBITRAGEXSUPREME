@@ -1,0 +1,359 @@
+{
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "_flashLoanProvider",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "executeArbitrage",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "tokenOut", 
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "strategies",
+          "type": "tuple[]",
+          "internalType": "struct IArbitrageEngine.Strategy[]",
+          "components": [
+            {
+              "name": "strategyType",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "enabled",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "minProfitBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "gasLimit",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        },
+        {
+          "name": "minProfitBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "simulateArbitrage",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "tokenOut",
+          "type": "address", 
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "strategies",
+          "type": "tuple[]",
+          "internalType": "struct IArbitrageEngine.Strategy[]",
+          "components": [
+            {
+              "name": "strategyType",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "enabled", 
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "minProfitBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "gasLimit",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "tuple",
+          "internalType": "struct IArbitrageEngine.SimulationResult",
+          "components": [
+            {
+              "name": "success",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "profitAmount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "profitBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "gasEstimate",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "addStrategy",
+      "inputs": [
+        {
+          "name": "strategyType",
+          "type": "string",
+          "internalType": "string"
+        },
+        {
+          "name": "enabled",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "minProfitBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "maxSlippageBps",
+          "type": "uint256",
+          "internalType": "uint256"
+        },
+        {
+          "name": "gasLimit",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "removeStrategy",
+      "inputs": [
+        {
+          "name": "strategyType",
+          "type": "string",
+          "internalType": "string"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "getStrategy",
+      "inputs": [
+        {
+          "name": "strategyType",
+          "type": "string",
+          "internalType": "string"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "tuple",
+          "internalType": "struct IArbitrageEngine.Strategy",
+          "components": [
+            {
+              "name": "strategyType",
+              "type": "string",
+              "internalType": "string"
+            },
+            {
+              "name": "enabled",
+              "type": "bool",
+              "internalType": "bool"
+            },
+            {
+              "name": "minProfitBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxSlippageBps",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "gasLimit",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ]
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "pause",
+      "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "unpause",
+      "inputs": [],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "owner",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "paused",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "event",
+      "name": "ArbitrageExecuted",
+      "inputs": [
+        {
+          "name": "tokenIn",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "tokenOut", 
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "amountIn",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "profit",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "strategyUsed",
+          "type": "string",
+          "indexed": false,
+          "internalType": "string"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "StrategyAdded",
+      "inputs": [
+        {
+          "name": "strategyType",
+          "type": "string",
+          "indexed": false,
+          "internalType": "string"
+        }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "event",
+      "name": "StrategyRemoved",
+      "inputs": [
+        {
+          "name": "strategyType",
+          "type": "string",
+          "indexed": false,
+          "internalType": "string"
+        }
+      ],
+      "anonymous": false
+    }
+  ]
+}
