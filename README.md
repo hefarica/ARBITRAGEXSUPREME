@@ -2,7 +2,7 @@
 
 ## 🎯 **MÓDULO 2: CLOUDFLARE EDGE - Edge Computing Backend Only**
 
-**Repositorio**: `hefarica/ARBITRAGEX-CONTABO-BACKEND`  
+**Repositorio**: `hefarica/ARBITRAGEXSUPREME`  
 **Función**: **Edge Computing Backend - API Proxy + CDN + Performance Optimization**
 
 ### 📋 **Arquitectura Reclasificada**
@@ -112,8 +112,8 @@
 #### **Quick Setup**
 ```bash
 # 1. Clone repository
-git clone https://github.com/hefarica/ARBITRAGEX-CONTABO-BACKEND.git
-cd ARBITRAGEX-CONTABO-BACKEND
+git clone https://github.com/hefarica/ARBITRAGEXSUPREME.git
+cd ARBITRAGEXSUPREME
 
 # 2. Install dependencies
 npm install
@@ -315,4 +315,4 @@ wrangler kv:key list --namespace-id=your-namespace-id
 
 ---
 
-## 🎯 **Este repositorio contiene SOLAMENTE edge computing functions. Para backend ver [ARBITRAGEXSUPREME](https://github.com/hefarica/ARBITRAGEXSUPREME), para frontend ver [show-my-github-gems](https://github.com/hefarica/show-my-github-gems).**
+## 🎯 **Este repositorio contiene SOLAMENTE edge computing functions. Para backend ver [ARBITRAGEX-CONTABO-BACKEND](https://github.com/hefarica/ARBITRAGEX-CONTABO-BACKEND), para frontend ver [show-my-github-gems](https://github.com/hefarica/show-my-github-gems).**
