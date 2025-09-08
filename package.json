@@ -1,0 +1,72 @@
+{
+  "name": "arbitragex-cloudflare-edge",
+  "version": "3.0.0",
+  "description": "ArbitrageX Supreme V3.0 - Cloudflare Edge Computing Backend",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:all": "npm run deploy:api-proxy && npm run deploy:security && npm run deploy:optimization && npm run deploy:analytics",
+    "deploy:api-proxy": "wrangler deploy workers/api-proxy/opportunities.ts && wrangler deploy workers/api-proxy/strategies.ts && wrangler deploy workers/api-proxy/executions.ts && wrangler deploy workers/api-proxy/analytics.ts",
+    "deploy:security": "wrangler deploy workers/security/jwt-validation.ts && wrangler deploy workers/security/rate-limiting.ts && wrangler deploy workers/security/ddos-protection.ts && wrangler deploy workers/security/geo-control.ts",
+    "deploy:optimization": "wrangler deploy workers/optimization/compression.ts && wrangler deploy workers/optimization/caching.ts && wrangler deploy workers/optimization/batching.ts",
+    "deploy:analytics": "wrangler deploy workers/analytics/metrics.ts && wrangler deploy workers/analytics/performance.ts && wrangler deploy workers/analytics/alerting.ts",
+    "setup:d1": "./deploy/setup-d1.sh",
+    "setup:kv": "./deploy/setup-kv.sh", 
+    "setup:r2": "./deploy/setup-r2.sh",
+    "setup:all": "npm run setup:d1 && npm run setup:kv && npm run setup:r2",
+    "build": "tsc && esbuild src/index.ts --bundle --outdir=dist --format=esm --platform=neutral",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "typecheck": "tsc --noEmit",
+    "tail": "wrangler tail",
+    "d1:migrations:apply": "wrangler d1 migrations apply",
+    "d1:execute": "wrangler d1 execute",
+    "kv:list": "wrangler kv:key list",
+    "kv:get": "wrangler kv:key get",
+    "kv:put": "wrangler kv:key put",
+    "r2:list": "wrangler r2 object list",
+    "secrets:put": "wrangler secret put",
+    "secrets:list": "wrangler secret list"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20240903.0",
+    "hono": "^4.5.8",
+    "jose": "^5.6.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.1",
+    "esbuild": "^0.23.1",
+    "eslint": "^9.9.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "wrangler": "^3.72.0"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers", 
+    "edge-computing",
+    "d1",
+    "kv",
+    "r2",
+    "arbitrage",
+    "mev",
+    "backend-acceleration",
+    "api-proxy",
+    "caching",
+    "performance"
+  ],
+  "author": "Hector Fabio Riascos C.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hefarica/ARBITRAGEX-CONTABO-BACKEND.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
