@@ -520,7 +520,7 @@ export class UniversalArbitrageIntegration {
   }
 
   /**
-   * Ejecuta análisis de rentabilidad para múltiples estrategias
+   * Ejecuta análisis de rentabilidad para TODAS las 13 estrategias MEV
    */
   public async analyzeProfitability(
     opportunity: ArbitrageOpportunity,
@@ -529,17 +529,27 @@ export class UniversalArbitrageIntegration {
     
     const analyses: StrategyAnalysis[] = [];
     
-    // Analizar los 6 tipos base + estrategias 2025
+    // ANALIZAR TODAS LAS 13 ESTRATEGIAS - 100% COMPLETO
     const strategiesToAnalyze = [
+      // 6 Estrategias Base
       ArbitrageType.INTRADEX_SIMPLE,
       ArbitrageType.INTRADEX_TRIANGULAR,
       ArbitrageType.INTERDEX_SIMPLE,
       ArbitrageType.INTERDEX_TRIANGULAR,
+      ArbitrageType.INTERBLOCKCHAIN_SIMPLE,
+      ArbitrageType.INTERBLOCKCHAIN_TRIANGULAR,
+      
+      // 7 Estrategias Avanzadas 2025
       ArbitrageType.MEV_BUNDLING,
       ArbitrageType.LIQUIDITY_FRAGMENTATION,
+      ArbitrageType.GOVERNANCE_ARBITRAGE,
+      ArbitrageType.INTENT_BASED,
       ArbitrageType.YIELD_ARBITRAGE,
-      ArbitrageType.LST_ARBITRAGE
+      ArbitrageType.LST_ARBITRAGE,
+      ArbitrageType.PERP_SPOT_ARBITRAGE
     ];
+
+    console.log(`🔍 Analyzing profitability for ALL ${strategiesToAnalyze.length}/13 strategies on ${chainName}`);
 
     for (const strategy of strategiesToAnalyze) {
       const analysis = await this.analyzeStrategyProfitability(opportunity, strategy, chainName);
@@ -547,7 +557,14 @@ export class UniversalArbitrageIntegration {
     }
 
     // Ordenar por profit potencial
-    return analyses.sort((a, b) => b.expectedProfit - a.expectedProfit);
+    const sortedAnalyses = analyses.sort((a, b) => b.netProfit - a.netProfit);
+    
+    console.log(`📊 Analysis completed: Top 3 strategies:`);
+    sortedAnalyses.slice(0, 3).forEach((analysis, index) => {
+      console.log(`  ${index + 1}. ${analysis.strategyName}: $${analysis.netProfit.toFixed(4)} (${(analysis.profitability * 100).toFixed(2)}% ROI)`);
+    });
+
+    return sortedAnalyses;
   }
 
   /**
