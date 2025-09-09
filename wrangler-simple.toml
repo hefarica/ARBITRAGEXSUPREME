@@ -1,0 +1,18 @@
+# ArbitrageX Supreme V3.0 - Cloudflare Workers Configuration (Simplified)
+# Ingenio Pichichi S.A.
+
+name = "arbitragex-api-worker"
+main = "workers/api-worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Environment Variables
+[vars]
+ENVIRONMENT = "production"
+API_VERSION = "3.0.0"
+MAX_OPPORTUNITIES = "100"
+CACHE_TTL = "30"
+
+# Rate Limiting
+[limits]
+cpu_ms = 50

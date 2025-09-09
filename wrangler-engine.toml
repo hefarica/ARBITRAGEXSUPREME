@@ -1,8 +1,8 @@
-# ArbitrageX Supreme V3.0 - Cloudflare Workers Configuration
+# ArbitrageX Supreme V3.0 - Engine Worker Configuration
 # Ingenio Pichichi S.A.
 
-name = "arbitragex-api-worker"
-main = "workers/api-worker.js"
+name = "arbitragex-engine-worker"
+main = "workers/engine-worker.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
@@ -21,15 +21,6 @@ database_id = "6ccbdfbf-4d1f-4fdd-bab5-2f2ba06b099c"
 # Environment Variables
 [vars]
 ENVIRONMENT = "production"
-API_VERSION = "3.0.0"
-MAX_OPPORTUNITIES = "100"
-CACHE_TTL = "30"
-
-# Analytics and Monitoring (Disabled - needs to be enabled in dashboard)
-# [[analytics_engine_datasets]]
-# binding = "ARBITRAGE_ANALYTICS"
-# dataset = "arbitragex_analytics"
-
-# Rate Limiting (Disabled for Free plan)
-# [limits]
-# cpu_ms = 50
+ENGINE_VERSION = "3.0.0"
+MAX_STRATEGIES = "13"
+OPTIMIZATION_ENABLED = "true"

@@ -121,7 +121,7 @@ router.get('/arbitrage/engine', async (request, env) => {
     // Generate mock opportunities
     const opportunities = generateOpportunities(blockchain, strategy);
     
-    // Cache for 30 seconds
+    // Cache for 60 seconds (minimum KV TTL)
     await env.ARBITRAGEX_CACHE.put(cacheKey, JSON.stringify({
       success: true,
       blockchain,
@@ -129,7 +129,7 @@ router.get('/arbitrage/engine', async (request, env) => {
       opportunities,
       timestamp: new Date().toISOString(),
       cached: false
-    }), { expirationTtl: 30 });
+    }), { expirationTtl: 60 });
 
     return new Response(JSON.stringify({
       success: true,
