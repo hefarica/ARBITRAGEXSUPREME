@@ -1,0 +1,137 @@
+# ================================
+# ArbitrageX Supreme V3.0 - Prometheus Configuration
+# Monitoreo de ultra-baja latencia
+# ================================
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    environment: 'production'
+    project: 'arbitragex-supreme'
+
+# Configuración de reglas de alerta
+rule_files:
+  - "alert_rules.yml"
+
+# Configuración de Alertmanager (opcional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+scrape_configs:
+  # ================================
+  # ArbitrageX Backend Metrics
+  # ================================
+  - job_name: 'arbitragex-backend'
+    scrape_interval: 1s  # Ultra-alta frecuencia para latencia
+    scrape_timeout: 500ms
+    static_configs:
+      - targets: ['arbitragex-backend:9090']
+    metrics_path: /metrics
+    honor_labels: true
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'arbitragex-backend'
+
+  # ================================
+  # Sistema y Docker
+  # ================================
+  - job_name: 'node-exporter'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['node-exporter:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'contabo-vps'
+
+  - job_name: 'docker'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['cadvisor:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'docker-containers'
+
+  # ================================
+  # Base de Datos PostgreSQL
+  # ================================
+  - job_name: 'postgres-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'postgres-db'
+
+  # ================================
+  # Cache Redis
+  # ================================
+  - job_name: 'redis-exporter'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis-cache'
+
+  # ================================
+  # Nginx Reverse Proxy
+  # ================================
+  - job_name: 'nginx'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'nginx-proxy'
+
+  # ================================
+  # Anvil-Real Monitoring (Custom)
+  # ================================
+  - job_name: 'anvil-real'
+    scrape_interval: 2s
+    scrape_timeout: 1s
+    static_configs:
+      - targets: ['arbitragex-backend:9090']
+    metrics_path: /anvil-metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'anvil-real-engine'
+
+  # ================================
+  # Métricas de Arbitraje (Custom)
+  # ================================
+  - job_name: 'arbitrage-metrics'
+    scrape_interval: 500ms  # Máxima frecuencia para oportunidades
+    scrape_timeout: 200ms
+    static_configs:
+      - targets: ['arbitragex-backend:9090']
+    metrics_path: /arbitrage-metrics
+    honor_labels: true
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'arbitrage-engine'
+      - source_labels: [strategy]
+        target_label: arbitrage_strategy
+      - source_labels: [chain_id]
+        target_label: blockchain_network
+
+# ================================
+# Configuración de Storage
+# ================================
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 10GB
+    wal-compression: true

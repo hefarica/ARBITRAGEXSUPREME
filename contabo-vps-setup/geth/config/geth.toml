@@ -1,0 +1,136 @@
+# ArbitrageX Supreme V3.0 - Geth Configuration
+# Real-Only Policy - Production Ethereum node for MEV operations
+
+[Eth]
+NetworkId = 1
+SyncMode = "snap"
+DiscoveryURLs = []
+NoPruning = false
+NoPrefetch = false
+LightPeers = 100
+UltraLightFraction = 75
+DatabaseCache = 2048
+DatabaseFreezer = ""
+TrieCleanCache = 512
+TrieCleanCacheJournal = "triecache"
+TrieCleanCacheRejournal = 3600000000000
+TrieDirtyCache = 256
+TrieTimeout = 3600000000000
+EnablePreimageRecording = false
+EWASMInterpreter = ""
+EVMInterpreter = ""
+
+[Eth.Miner]
+GasFloor = 8000000
+GasCeil = 8000000
+GasPrice = 1000000000
+Recommit = 3000000000
+Noverify = false
+
+[Eth.Ethash]
+CacheDir = "ethash"
+CachesInMem = 2
+CachesOnDisk = 3
+CachesLockMmap = false
+DatasetDir = "/root/.ethash"
+DatasetsInMem = 1
+DatasetsOnDisk = 2
+DatasetsLockMmap = false
+PowMode = 0
+
+[Eth.TxPool]
+Locals = []
+NoLocals = false
+Journal = "transactions.rlp"
+Rejournal = 3600000000000
+PriceLimit = 1
+PriceBump = 10
+AccountSlots = 16
+GlobalSlots = 5120
+AccountQueue = 64
+GlobalQueue = 1024
+Lifetime = 10800000000000
+
+[Eth.BlobPool]
+DataDir = "blobpool"
+DataCap = 10737418240
+PriceBump = 100
+
+[Eth.GPO]
+Blocks = 20
+Percentile = 60
+MaxHeaderHistory = 1024
+MaxBlockHistory = 1024
+MaxPrice = 500000000000
+IgnorePrice = 2
+
+[Node]
+DataDir = "/ethereum/data"
+InsecureUnlockAllowed = false
+NoUSB = true
+IPCPath = "geth.ipc"
+HTTPHost = "0.0.0.0"
+HTTPPort = 8545
+HTTPCors = ["*"]
+HTTPVirtualHosts = ["*"]
+HTTPModules = ["net", "web3", "eth", "txpool", "debug"]
+AuthAddr = "localhost"
+AuthPort = 8551
+AuthVirtualHosts = ["localhost"]
+WSHost = "0.0.0.0"
+WSPort = 8546
+WSOrigins = ["*"]
+WSModules = ["net", "web3", "eth", "txpool", "debug"]
+GraphQLCors = ["*"]
+GraphQLVirtualHosts = ["*"]
+
+[Node.P2P]
+MaxPeers = 50
+NoDiscovery = false
+DiscoveryV5 = true
+Name = "arbitragex-geth-v3.0.0"
+BootstrapNodes = [
+    "enode://d860a01f9722d78051619d1e2351aba3f43f943f6f00718d1b9baa4101932a1f5011f16bb2b1bb35db20d6fe28fa0bf09636d26a87d31de9ec6203eeedb1f666@18.138.108.67:30303",
+    "enode://22a8232c3abc76a16ae9d6c3b164f98775fe226f0917b0ca871128a74a8e9630b458460865bab457221f1d448dd9791d24c4e5d88786180ac185df813a68d4de@3.209.45.79:30303"
+]
+StaticNodes = []
+TrustedNodes = []
+ListenAddr = ":30303"
+EnableMsgEvents = false
+
+[Node.HTTPTimeouts]
+ReadTimeout = 30000000000
+ReadHeaderTimeout = 30000000000
+WriteTimeout = 30000000000
+IdleTimeout = 120000000000
+
+[Metrics]
+HTTP = "0.0.0.0"
+Port = 6060
+InfluxDBEndpoint = "http://influxdb:8086"
+InfluxDBDatabase = "geth"
+InfluxDBUsername = "geth"
+InfluxDBPassword = ""
+InfluxDBTags = "host=arbitragex-geth"
+InfluxV2Mode = false
+InfluxV2Token = ""
+InfluxV2Bucket = ""
+InfluxV2Organization = ""
+
+[Account]
+UnlockAccounts = []
+PasswordFile = ""
+ExternalSigner = ""
+DisableBorSigner = true
+UseLightweightKDF = false
+InsecureUnlockAllowed = false
+
+[Logging]
+BacktraceAt = ""
+Debug = false
+LogLevel = "info"
+VModule = ""
+JSON = true
+Colorize = false
+Rotate = true
+MaxSize = 100

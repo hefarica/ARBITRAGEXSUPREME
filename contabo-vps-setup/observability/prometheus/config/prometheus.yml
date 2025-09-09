@@ -1,0 +1,190 @@
+# ArbitrageX Supreme V3.0 - Prometheus Configuration
+# Real-Only Policy - Production monitoring for high-frequency trading system
+
+global:
+  scrape_interval: 5s        # High frequency for trading systems
+  evaluation_interval: 5s    # Fast alert evaluation
+  scrape_timeout: 3s
+  external_labels:
+    cluster: 'arbitragex-contabo'
+    environment: 'production'
+    policy: 'real-only'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rules and alerts
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations for ArbitrageX components
+scrape_configs:
+  
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 10s
+    metrics_path: /metrics
+
+  # ArbitrageX Core Services
+  
+  # Searcher-RS (Rust MEV Searcher)
+  - job_name: 'searcher-rs'
+    static_configs:
+      - targets: ['searcher-rs:8000']
+    scrape_interval: 1s      # Ultra-high frequency for MEV timing
+    scrape_timeout: 500ms    # Fast timeout for real-time data
+    metrics_path: /metrics
+    params:
+      format: ['prometheus']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: searcher-rs:8000
+
+  # Selector API (Strategy Selection)
+  - job_name: 'selector-api'
+    static_configs:
+      - targets: ['selector-api:8002']
+    scrape_interval: 2s
+    metrics_path: /metrics
+    honor_labels: true
+
+  # Recon (PnL Reconciliation System)
+  - job_name: 'recon'
+    static_configs:
+      - targets: ['recon:8001']
+    scrape_interval: 5s
+    metrics_path: /metrics
+    params:
+      module: [http_2xx]
+
+  # Sim-Ctl (Simulation Controller)
+  - job_name: 'sim-ctl'
+    static_configs:
+      - targets: ['sim-ctl:8003']
+    scrape_interval: 2s
+    metrics_path: /metrics
+
+  # Relays Client (MEV Relay Interface)
+  - job_name: 'relays-client'
+    static_configs:
+      - targets: ['relays-client:8004']
+    scrape_interval: 1s      # High frequency for relay monitoring
+    metrics_path: /metrics
+
+  # Cron (Data Updater)
+  - job_name: 'cron'
+    static_configs:
+      - targets: ['cron:8005']
+    scrape_interval: 30s     # Lower frequency for batch jobs
+    metrics_path: /metrics
+
+  # Infrastructure Monitoring
+
+  # Geth Ethereum Node
+  - job_name: 'geth'
+    static_configs:
+      - targets: ['geth:6060']  # Geth metrics port
+    scrape_interval: 10s
+    metrics_path: /debug/metrics/prometheus
+    honor_labels: true
+
+  # PostgreSQL Database
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 15s
+    params:
+      collect[]: 
+        - 'pg_stat_database'
+        - 'pg_stat_replication'
+        - 'pg_stat_activity'
+        - 'pg_locks'
+
+  # Redis Cache
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 10s
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: 
+        - 'node-exporter:9100'
+    scrape_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.+):9100'
+        target_label: instance
+        replacement: '${1}'
+
+  # cAdvisor (Container Metrics)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 10s
+    metrics_path: /metrics
+    honor_labels: true
+
+  # External Network Monitoring
+
+  # MEV-Boost Relay Monitoring
+  - job_name: 'mev-boost-relays'
+    static_configs:
+      - targets:
+        - 'boost-relay.flashbots.net'
+        - 'bloxroute.max-profit.blxrbdn.com'
+        - 'relay.ultrasound.money'
+        - 'agnostic-relay.net'
+    scrape_interval: 30s
+    metrics_path: /eth/v1/builder/status
+    scheme: https
+    honor_labels: true
+
+  # Blockchain Network Health
+  - job_name: 'chain-health'
+    static_configs:
+      - targets: ['chain-monitor:8080']
+    scrape_interval: 15s
+    params:
+      chains: ['ethereum', 'polygon', 'arbitrum', 'optimism', 'base']
+
+# Storage configuration for high-frequency data
+storage:
+  tsdb:
+    path: /prometheus/data
+    retention.time: 7d        # 7 days for high-frequency trading data
+    retention.size: 50GB      # Limit storage size
+    wal-compression: true     # Compress write-ahead logs
+    min-block-duration: 2h    # Optimize for query performance
+    max-block-duration: 24h
+
+# Remote write for long-term storage (optional)
+# remote_write:
+#   - url: "https://prometheus.example.com/api/v1/write"
+#     basic_auth:
+#       username: "arbitragex"
+#       password_file: "/etc/prometheus/remote_write_password"
+
+# Query optimization
+query:
+  timeout: 30s
+  max_concurrency: 20
+  max_samples: 50000000     # High sample limit for complex queries
+
+# Feature flags for advanced functionality
+feature_flags:
+  - exemplar-storage        # Enable exemplar storage for tracing
+  - memory-snapshot-on-shutdown
+  - expand-external-labels
+  - new-service-discovery-manager

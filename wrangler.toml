@@ -1,0 +1,38 @@
+# ⚡ CONFIGURACIÓN CLOUDFLARE PAGES - ArbitrageX Supreme Backend
+# METODOLOGÍA: Ingenio Pichichi S.A. - Disciplinado, Organizado, Metodológico
+
+name = "arbitragex-supreme-backend"
+main = "functions/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Configuración para Cloudflare Pages
+[env.production]
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Variables de entorno para producción
+[env.production.vars]
+ENVIRONMENT = "production"
+VERSION = "2.0.0"
+DATA_POLICY = "REAL_DATA_ONLY"
+
+# Configuración de funciones
+[[env.production.placement]]
+mode = "smart"
+
+# Configuración de build (si se necesita)
+[build]
+command = ""
+cwd = "."
+watch_dir = "functions"
+
+# Configuración de desarrollo
+[env.development]
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.development.vars]
+ENVIRONMENT = "development"
+VERSION = "2.0.0-dev"
+DATA_POLICY = "DEVELOPMENT_MODE"

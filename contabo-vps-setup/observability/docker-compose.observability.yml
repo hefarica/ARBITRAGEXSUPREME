@@ -1,0 +1,359 @@
+# ArbitrageX Supreme V3.0 - Observability Stack
+# Real-Only Policy - Production monitoring infrastructure
+
+version: '3.8'
+
+networks:
+  arbitragex-monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+  arbitragex-internal:
+    external: true
+
+volumes:
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+
+services:
+
+  # Prometheus - Metrics Collection and Storage
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: arbitragex-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--storage.tsdb.retention.size=50GB'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--web.external-url=http://prometheus.arbitragex.local:9090'
+      - '--log.level=info'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts/:/etc/prometheus/alerts/:ro
+      - prometheus-data:/prometheus
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.arbitragex.local`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Grafana - Visualization and Dashboards
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: arbitragex-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/config/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./grafana/dashboards/:/etc/grafana/dashboards/:ro
+      - ./grafana/provisioning/:/etc/grafana/provisioning/:ro
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=arbitragex_secure_password_change_in_production
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel
+      - GF_FEATURE_TOGGLES_ENABLE=ngalert
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.arbitragex.local`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - prometheus
+
+  # Loki - Log Aggregation
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: arbitragex-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    ports:
+      - "3100:3100"
+      - "9096:9096"
+    volumes:
+      - ./loki/config/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.loki.rule=Host(`loki.arbitragex.local`)"
+      - "traefik.http.services.loki.loadbalancer.server.port=3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Promtail - Log Shipper for Loki
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: arbitragex-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./promtail/config/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - TZ=UTC
+    depends_on:
+      - loki
+
+  # AlertManager - Alert Management
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: arbitragex-alertmanager
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://alertmanager.arbitragex.local:9093'
+      - '--log.level=info'
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.arbitragex.local`)"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Node Exporter - System Metrics
+  node-exporter:
+    image: prom/node-exporter:v1.6.0
+    container_name: arbitragex-node-exporter
+    restart: unless-stopped
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.textfile.directory=/etc/node-exporter/'
+      - '--web.listen-address=:9100'
+      - '--web.telemetry-path=/metrics'
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - ./node-exporter/textfiles:/etc/node-exporter:ro
+    networks:
+      - arbitragex-monitoring
+    environment:
+      - TZ=UTC
+    pid: host
+
+  # cAdvisor - Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: arbitragex-cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - arbitragex-monitoring
+    environment:
+      - TZ=UTC
+    privileged: true
+    devices:
+      - /dev/kmsg
+
+  # Redis Exporter - Redis Metrics
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.52.0
+    container_name: arbitragex-redis-exporter
+    restart: unless-stopped
+    command:
+      - '--redis.addr=redis://redis:6379'
+      - '--web.listen-address=:9121'
+      - '--log-format=txt'
+    ports:
+      - "9121:9121"
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - TZ=UTC
+    depends_on:
+      - redis
+
+  # PostgreSQL Exporter - Database Metrics
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.12.0
+    container_name: arbitragex-postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "9187:9187"
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-arbitragex}:${POSTGRES_PASSWORD:-secure_password}@postgres:5432/${POSTGRES_DB:-arbitragex_recon}?sslmode=disable
+      - PG_EXPORTER_WEB_LISTEN_ADDRESS=:9187
+      - PG_EXPORTER_WEB_TELEMETRY_PATH=/metrics
+      - PG_EXPORTER_EXTEND_QUERY_PATH=/etc/postgres_exporter/queries.yaml
+      - TZ=UTC
+    volumes:
+      - ./postgres-exporter/queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    depends_on:
+      - postgres
+
+  # Blackbox Exporter - External Endpoint Monitoring
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: arbitragex-blackbox-exporter
+    restart: unless-stopped
+    command:
+      - '--config.file=/config/blackbox.yml'
+      - '--web.listen-address=:9115'
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox-exporter/config/blackbox.yml:/config/blackbox.yml:ro
+    networks:
+      - arbitragex-monitoring
+      - arbitragex-internal
+    environment:
+      - TZ=UTC
+
+  # Traefik - Reverse Proxy for Monitoring Services
+  traefik:
+    image: traefik:v3.0
+    container_name: arbitragex-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.addEntryPointsLabels=true"
+      - "--metrics.prometheus.addServicesLabels=true"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "8081:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - arbitragex-monitoring
+    environment:
+      - TZ=UTC
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.arbitragex.local`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+
+# External services referenced by observability stack
+  redis:
+    image: redis:7-alpine
+    container_name: arbitragex-redis-monitoring
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - arbitragex-internal
+    command: >
+      sh -c "redis-server --appendonly yes
+             --requirepass ${REDIS_PASSWORD:-redis_password_change_in_production}
+             --maxmemory 512mb
+             --maxmemory-policy allkeys-lru
+             --save 900 1 --save 300 10 --save 60 10000"
+    environment:
+      - TZ=UTC
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: arbitragex-postgres-monitoring
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - arbitragex-internal
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-arbitragex_recon}
+      - POSTGRES_USER=${POSTGRES_USER:-arbitragex}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arbitragex} -d ${POSTGRES_DB:-arbitragex_recon}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local

@@ -1,0 +1,334 @@
+# ArbitrageX Supreme V3.0 - AlertManager Configuration
+# Real-Only Policy - Alert routing and notification for trading system
+
+global:
+  # Global configuration
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alertmanager@arbitragex.local'
+  smtp_auth_username: 'alertmanager'
+  smtp_auth_password_file: '/etc/alertmanager/smtp_password'
+  smtp_require_tls: false
+
+  # Slack configuration (optional)
+  slack_api_url_file: '/etc/alertmanager/slack_webhook_url'
+
+  # Default template paths
+  templates:
+    - '/etc/alertmanager/templates/*.tmpl'
+
+# Alert routing tree
+route:
+  # Root route configuration
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 5s           # Wait time before sending initial notification
+  group_interval: 10s      # Time between notifications for same group
+  repeat_interval: 1h      # Time before re-sending resolved alert
+  receiver: 'default-receiver'
+
+  # Routing rules for different alert types
+  routes:
+    
+    # Critical MEV Trading Alerts - Immediate notification
+    - match:
+        severity: critical
+      group_by: ['alertname', 'component']
+      group_wait: 0s         # Immediate for critical alerts
+      group_interval: 30s
+      repeat_interval: 15m   # More frequent for critical issues
+      receiver: 'trading-critical'
+      routes:
+        # Searcher component critical alerts
+        - match:
+            component: searcher-rs
+          receiver: 'mev-searcher-critical'
+        
+        # Database critical alerts
+        - match:
+            component: postgres
+          receiver: 'database-critical'
+        
+        # Infrastructure critical alerts
+        - match:
+            component: system
+          receiver: 'infrastructure-critical'
+
+    # Warning Level Alerts
+    - match:
+        severity: warning
+      group_by: ['alertname', 'component']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 2h
+      receiver: 'trading-warning'
+
+    # Revenue Impact Alerts
+    - match:
+        impact: revenue_loss
+      group_by: ['strategy', 'chain_id']
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 30m
+      receiver: 'revenue-impact'
+
+    # Performance Degradation Alerts
+    - match:
+        impact: performance_degradation
+      group_by: ['component']
+      group_wait: 1m
+      group_interval: 5m
+      repeat_interval: 1h
+      receiver: 'performance-alerts'
+
+    # Data Integrity Alerts
+    - match:
+        impact: data_integrity
+      group_by: ['reconciliation_id']
+      group_wait: 0s         # Immediate for data issues
+      group_interval: 30s
+      repeat_interval: 15m
+      receiver: 'data-integrity'
+
+    # Network and Chain Specific Alerts
+    - match_re:
+        alertname: '.*Geth.*|.*Chain.*'
+      group_by: ['chain_id']
+      group_wait: 30s
+      group_interval: 2m
+      repeat_interval: 30m
+      receiver: 'blockchain-alerts'
+
+    # MEV Market Alerts (Informational)
+    - match:
+        severity: info
+      group_by: ['alertname']
+      group_wait: 5m
+      group_interval: 30m
+      repeat_interval: 6h
+      receiver: 'market-info'
+
+# Inhibition rules to prevent alert spam
+inhibit_rules:
+  
+  # If service is down, suppress all other alerts for that service
+  - source_match:
+      alertname: 'SearcherDowntime'
+    target_match:
+      component: 'searcher-rs'
+    equal: ['component']
+
+  - source_match:
+      alertname: 'DatabaseConnectionFailure'
+    target_match:
+      component: 'postgres'
+    equal: ['component']
+
+  # If system has high resource usage, suppress individual service alerts
+  - source_match:
+      alertname: 'HighCPUEfficiency'
+    target_match_re:
+      alertname: '.*High.*Usage.*'
+    equal: ['instance']
+
+  # If major discrepancy exists, suppress minor variance alerts
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['component', 'reconciliation_id']
+
+# Receiver configurations
+receivers:
+
+  # Default receiver (minimal notifications)
+  - name: 'default-receiver'
+    slack_configs:
+      - channel: '#arbitragex-alerts'
+        title: 'ArbitrageX Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Severity:* {{ .Labels.severity }}
+          *Component:* {{ .Labels.component }}
+          *Status:* {{ .Status }}
+          {{ end }}
+
+  # Critical Trading Alerts (Multiple channels)
+  - name: 'trading-critical'
+    email_configs:
+      - to: 'trading-team@arbitragex.com'
+        from: 'alertmanager@arbitragex.com'
+        subject: '🚨 CRITICAL: ArbitrageX Trading Alert'
+        html: |
+          <h2>🚨 CRITICAL TRADING ALERT</h2>
+          {{ range .Alerts }}
+          <h3>{{ .Annotations.summary }}</h3>
+          <p><strong>Component:</strong> {{ .Labels.component }}</p>
+          <p><strong>Impact:</strong> {{ .Labels.impact }}</p>
+          <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+          <p><strong>Time:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</p>
+          {{ end }}
+    
+    slack_configs:
+      - channel: '#trading-critical'
+        title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Component:* {{ .Labels.component }}
+          *Impact:* {{ .Labels.impact }}
+          *Description:* {{ .Annotations.description }}
+          *Time:* {{ .StartsAt.Format "15:04:05 UTC" }}
+          {{ end }}
+        actions:
+          - type: button
+            text: 'View Grafana Dashboard'
+            url: 'http://grafana.arbitragex.local:3000/d/arbitragex-overview'
+          - type: button
+            text: 'Check Prometheus'
+            url: 'http://prometheus.arbitragex.local:9090'
+
+    # PagerDuty integration for critical alerts
+    pagerduty_configs:
+      - routing_key_file: '/etc/alertmanager/pagerduty_key'
+        description: '{{ .GroupLabels.alertname }} - {{ .GroupLabels.component }}'
+        details:
+          summary: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+          component: '{{ .GroupLabels.component }}'
+          impact: '{{ .GroupLabels.impact }}'
+
+  # MEV Searcher Critical Alerts
+  - name: 'mev-searcher-critical'
+    slack_configs:
+      - channel: '#mev-searcher-alerts'
+        title: '⚡ MEV SEARCHER CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          🚨 *Critical MEV searcher issue detected*
+          
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Impact:* {{ .Labels.impact }}
+          *Details:* {{ .Annotations.description }}
+          
+          *Potential Revenue Loss:* HIGH
+          *Action Required:* IMMEDIATE
+          {{ end }}
+
+  # Database Critical Alerts
+  - name: 'database-critical'
+    email_configs:
+      - to: 'devops@arbitragex.com,trading-team@arbitragex.com'
+        subject: '🚨 DATABASE CRITICAL: {{ .GroupLabels.alertname }}'
+        body: |
+          CRITICAL DATABASE ISSUE DETECTED
+          
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Component: {{ .Labels.component }}
+          Impact: {{ .Labels.impact }}
+          Description: {{ .Annotations.description }}
+          Time: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+          {{ end }}
+          
+          This may affect all trading operations. Immediate action required.
+
+  # Infrastructure Critical Alerts
+  - name: 'infrastructure-critical'
+    slack_configs:
+      - channel: '#infrastructure-alerts'
+        title: '🏗️ INFRASTRUCTURE CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *System Issue:* {{ .Annotations.summary }}
+          *Impact:* {{ .Labels.impact }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # Warning Level Alerts
+  - name: 'trading-warning'
+    slack_configs:
+      - channel: '#arbitragex-warnings'
+        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Warning:* {{ .Annotations.summary }}
+          *Component:* {{ .Labels.component }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # Revenue Impact Alerts
+  - name: 'revenue-impact'
+    slack_configs:
+      - channel: '#revenue-alerts'
+        title: '💰 REVENUE IMPACT: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Revenue Alert:* {{ .Annotations.summary }}
+          *Strategy:* {{ .Labels.strategy }}
+          *Chain:* {{ .Labels.chain_id }}
+          *Impact:* {{ .Labels.impact }}
+          *Action:* Review strategy parameters and market conditions
+          {{ end }}
+
+  # Performance Alerts
+  - name: 'performance-alerts'
+    slack_configs:
+      - channel: '#performance-alerts'
+        title: '📈 PERFORMANCE: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Performance Issue:* {{ .Annotations.summary }}
+          *Component:* {{ .Labels.component }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # Data Integrity Alerts
+  - name: 'data-integrity'
+    email_configs:
+      - to: 'data-team@arbitragex.com'
+        subject: '🔍 DATA INTEGRITY: {{ .GroupLabels.alertname }}'
+        body: |
+          DATA INTEGRITY ISSUE DETECTED
+          
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Reconciliation ID: {{ .Labels.reconciliation_id }}
+          Description: {{ .Annotations.description }}
+          Time: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+          {{ end }}
+
+  # Blockchain Network Alerts
+  - name: 'blockchain-alerts'
+    slack_configs:
+      - channel: '#blockchain-alerts'
+        title: '⛓️ BLOCKCHAIN: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Chain Alert:* {{ .Annotations.summary }}
+          *Chain ID:* {{ .Labels.chain_id }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+  # Market Information Alerts
+  - name: 'market-info'
+    slack_configs:
+      - channel: '#market-info'
+        title: '📊 MARKET INFO: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Market Update:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+
+# Mute specific alerts during maintenance
+mute_time_intervals:
+  - name: maintenance-window
+    time_intervals:
+      - times:
+          - start_time: '02:00'
+            end_time: '04:00'
+        weekdays: ['sunday']
+        months: ['1:12']
+
+# Template files for custom formatting
+templates:
+  - '/etc/alertmanager/templates/arbitragex.tmpl'

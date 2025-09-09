@@ -270,16 +270,21 @@ export class LiquidityValidator {
         const fee = this.dexConfigs[pool.dexType]?.fee || 0.003;
         const inputAmountAfterFee = inputAmountTokens * (1 - fee);
         
-        // Fórmula Constant Product: outputAmount = reserveOut * inputAmount / (reserveIn + inputAmount)\n        const numerator = reserveOut * inputAmountAfterFee;
+        // Fórmula Constant Product: outputAmount = reserveOut * inputAmount / (reserveIn + inputAmount)
+        const numerator = reserveOut * inputAmountAfterFee;
         const denominator = reserveIn + inputAmountAfterFee;
         const outputAmount = numerator / denominator;
         
-        // Price antes del trade\n        const priceBefore = reserveOut / reserveIn;
-        \n        // Price después del trade\n        const newReserveIn = reserveIn + inputAmountAfterFee;
+        // Price antes del trade
+        const priceBefore = reserveOut / reserveIn;
+        
+        // Price después del trade
+        const newReserveIn = reserveIn + inputAmountAfterFee;
         const newReserveOut = reserveOut - outputAmount;
         const priceAfter = newReserveOut / newReserveIn;
         
-        // Calcular impact\n        const priceImpact = Math.abs((priceAfter - priceBefore) / priceBefore);
+        // Calcular impact
+        const priceImpact = Math.abs((priceAfter - priceBefore) / priceBefore);
         const effectivePrice = priceBefore * (1 + (isBuyingToken0 ? priceImpact : -priceImpact));
         
         return {

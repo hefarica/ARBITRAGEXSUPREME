@@ -1,0 +1,379 @@
+# ArbitrageX Supreme V3.0 - Complete System Docker Compose
+# Real-Only Policy - Production deployment for Contabo VPS
+
+version: '3.8'
+
+networks:
+  arbitragex-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+  arbitragex-monitoring:
+    external: true
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  geth-data:
+    driver: local
+  prometheus-data:
+    external: true
+  grafana-data:
+    external: true
+  loki-data:
+    external: true
+
+services:
+
+  # ================================
+  # CORE INFRASTRUCTURE SERVICES
+  # ================================
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: arbitragex-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - arbitragex-internal
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-arbitragex_recon}
+      - POSTGRES_USER=${POSTGRES_USER:-arbitragex}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arbitragex} -d ${POSTGRES_DB:-arbitragex_recon}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # Redis Cache and Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: arbitragex-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - arbitragex-internal
+    command: >
+      sh -c "redis-server --appendonly yes
+             --requirepass ${REDIS_PASSWORD:-redis_password_change_in_production}
+             --maxmemory 2gb
+             --maxmemory-policy allkeys-lru
+             --save 900 1 --save 300 10 --save 60 10000
+             --tcp-keepalive 300
+             --timeout 0"
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "logging=promtail"
+
+  # Ethereum Geth Node
+  geth:
+    image: ethereum/client-go:v1.13.5
+    container_name: arbitragex-geth
+    restart: unless-stopped
+    ports:
+      - "8545:8545"    # HTTP RPC
+      - "8546:8546"    # WebSocket RPC
+      - "30303:30303"  # P2P discovery
+      - "6060:6060"    # Metrics
+    volumes:
+      - geth-data:/ethereum/data
+      - ./geth/config/geth.toml:/ethereum/geth.toml:ro
+    networks:
+      - arbitragex-internal
+    command:
+      - --config=/ethereum/geth.toml
+      - --datadir=/ethereum/data
+      - --mainnet
+      - --syncmode=snap
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.port=8545
+      - --http.api=net,web3,eth,txpool,debug
+      - --http.corsdomain=*
+      - --http.vhosts=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.port=8546
+      - --ws.api=net,web3,eth,txpool,debug
+      - --ws.origins=*
+      - --metrics
+      - --metrics.addr=0.0.0.0
+      - --metrics.port=6060
+      - --cache=2048
+      - --maxpeers=50
+      - --verbosity=3
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD-SHELL", "geth attach --exec 'eth.blockNumber' http://localhost:8545"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 300s
+    labels:
+      - "logging=promtail"
+
+  # ================================
+  # ARBITRAGEX CORE SERVICES
+  # ================================
+
+  # Searcher-RS (Rust MEV Searcher)
+  searcher-rs:
+    build:
+      context: ./searcher-rs
+      dockerfile: Dockerfile
+    container_name: arbitragex-searcher-rs
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./searcher-rs/config:/app/config:ro
+      - /var/log/arbitragex:/var/log/arbitragex
+    networks:
+      - arbitragex-internal
+    environment:
+      - RUST_LOG=info
+      - ETH_RPC_URL=http://geth:8545
+      - ETH_WS_URL=ws://geth:8546
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-arbitragex}:${POSTGRES_PASSWORD:-secure_password}@postgres:5432/${POSTGRES_DB:-arbitragex_recon}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - geth
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # Recon (PnL Reconciliation System)
+  recon:
+    build:
+      context: ./recon
+      dockerfile: Dockerfile
+    container_name: arbitragex-recon
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./recon/.env:/app/.env:ro
+      - /var/log/recon:/var/log/recon
+    networks:
+      - arbitragex-internal
+    environment:
+      - NODE_ENV=production
+      - RECON_PORT=8001
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-arbitragex_recon}
+      - POSTGRES_USER=${POSTGRES_USER:-arbitragex}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+    depends_on:
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD", "node", "dist/index.js", "--health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # Selector API (Strategy Selection)
+  selector-api:
+    build:
+      context: ./selector-api
+      dockerfile: Dockerfile
+    container_name: arbitragex-selector-api
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./selector-api/config:/app/config:ro
+      - /var/log/arbitragex:/var/log/arbitragex
+    networks:
+      - arbitragex-internal
+    environment:
+      - NODE_ENV=production
+      - API_PORT=8002
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-arbitragex}:${POSTGRES_PASSWORD:-secure_password}@postgres:5432/${POSTGRES_DB:-arbitragex_recon}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      - SEARCHER_RS_URL=http://searcher-rs:8000
+    depends_on:
+      - postgres
+      - redis
+      - searcher-rs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # Sim-Ctl (Simulation Controller)
+  sim-ctl:
+    build:
+      context: ./sim-ctl
+      dockerfile: Dockerfile
+    container_name: arbitragex-sim-ctl
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./sim-ctl/config:/app/config:ro
+      - /var/log/arbitragex:/var/log/arbitragex
+    networks:
+      - arbitragex-internal
+    environment:
+      - NODE_ENV=production
+      - SIM_PORT=8003
+      - ETH_RPC_URL=http://geth:8545
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-arbitragex}:${POSTGRES_PASSWORD:-secure_password}@postgres:5432/${POSTGRES_DB:-arbitragex_recon}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - geth
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # Relays Client (MEV Relay Interface)
+  relays-client:
+    build:
+      context: ./relays-client
+      dockerfile: Dockerfile
+    container_name: arbitragex-relays-client
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./relays-client/config:/app/config:ro
+      - /var/log/arbitragex:/var/log/arbitragex
+    networks:
+      - arbitragex-internal
+    environment:
+      - NODE_ENV=production
+      - RELAYS_PORT=8004
+      - FLASHBOTS_RELAY_URL=https://relay.flashbots.net
+      - BUILDER_API_URL=https://builder-api.flashbots.net
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-arbitragex}:${POSTGRES_PASSWORD:-secure_password}@postgres:5432/${POSTGRES_DB:-arbitragex_recon}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # Cron (Data Updater)
+  cron:
+    build:
+      context: ./cron
+      dockerfile: Dockerfile
+    container_name: arbitragex-cron
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./cron/.env:/app/.env:ro
+      - /var/log/arbitragex:/var/log/arbitragex
+    networks:
+      - arbitragex-internal
+    environment:
+      - NODE_ENV=production
+      - CRON_PORT=8005
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-arbitragex_recon}
+      - POSTGRES_USER=${POSTGRES_USER:-arbitragex}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secure_password}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+      - ETH_RPC_URL=http://geth:8545
+      - ENABLED_CHAINS=1,137,56,42161,10,8453
+    depends_on:
+      - postgres
+      - redis
+      - geth
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "logging=promtail"
+
+  # ================================
+  # MONITORING INTEGRATION
+  # ================================
+
+  # Connect to external monitoring network
+  prometheus-integration:
+    image: busybox
+    container_name: arbitragex-monitoring-bridge
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      - arbitragex-internal
+      - arbitragex-monitoring
+    depends_on:
+      - searcher-rs
+      - recon
+      - selector-api
+      - sim-ctl
+      - relays-client
+      - cron
+
+# Global configuration
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "100m"
+    max-file: "3"
+    labels: "service,component"

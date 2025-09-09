@@ -1,0 +1,107 @@
+# ================================
+# ArbitrageX Supreme V3.0 Backend
+# Dockerfile para Contabo VPS
+# ================================
+
+# Etapa 1: Builder de Rust
+FROM rust:1.75-bookworm as rust-builder
+
+WORKDIR /usr/src/arbitragex
+
+# Instalar dependencias del sistema para compilación
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libpq-dev \
+    cmake \
+    build-essential \
+    curl \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar manifiestos para cache de dependencias
+COPY Cargo.toml Cargo.lock ./
+COPY src/ ./src/
+
+# Compilar con optimizaciones para producción
+ENV RUSTFLAGS="-C target-cpu=native"
+RUN cargo build --release --locked
+
+# Etapa 2: Builder de Node.js para TypeScript
+FROM node:20-bookworm as node-builder
+
+WORKDIR /usr/src/arbitragex-ts
+
+# Copiar package files para cache de dependencias
+COPY package.json package-lock.json ./
+COPY tsconfig.json ./
+
+# Instalar dependencias TypeScript
+RUN npm ci --only=production --frozen-lockfile
+
+# Copiar código TypeScript y compilar
+COPY typescript/ ./typescript/
+RUN npm run build
+
+# Etapa 3: Runtime de producción
+FROM debian:bookworm-slim
+
+# Metadatos del container
+LABEL maintainer="ArbitrageX Supreme Team"
+LABEL version="3.0"
+LABEL description="Ultra-low latency arbitrage engine with Real-Only policy"
+
+# Crear usuario no-root para seguridad
+RUN groupadd -r arbitragex && useradd -r -g arbitragex arbitragex
+
+# Instalar dependencias de runtime
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    libpq5 \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Crear directorios necesarios
+WORKDIR /app
+RUN mkdir -p /app/logs /app/data /app/config /app/ts-modules \
+    && chown -R arbitragex:arbitragex /app
+
+# Copiar binarios compilados desde builders
+COPY --from=rust-builder /usr/src/arbitragex/target/release/arbitragex-engine /app/
+COPY --from=node-builder /usr/src/arbitragex-ts/dist/ /app/ts-modules/
+
+# Copiar archivos de configuración
+COPY config/ /app/config/
+COPY scripts/entrypoint.sh /app/
+
+# Configurar permisos
+RUN chmod +x /app/arbitragex-engine /app/entrypoint.sh \
+    && chown -R arbitragex:arbitragex /app
+
+# Configuración de red y puertos
+EXPOSE 8080 8081 9090
+
+# Variables de entorno
+ENV RUST_LOG=info
+ENV ARBITRAGEX_ENV=production
+ENV ARBITRAGEX_HOST=0.0.0.0
+ENV ARBITRAGEX_PORT=8080
+ENV WEBSOCKET_PORT=8081
+ENV METRICS_PORT=9090
+ENV DATABASE_URL=postgresql://arbitragex:password@postgres:5432/arbitragex_prod
+ENV REDIS_URL=redis://redis:6379/0
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Cambiar a usuario no-root
+USER arbitragex
+
+# Punto de entrada
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["--mode", "production", "--real-only"]

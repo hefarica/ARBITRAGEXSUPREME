@@ -1,0 +1,191 @@
+# ArbitrageX Supreme V3.0 - Loki Configuration
+# Real-Only Policy - Centralized logging for high-frequency trading system
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  http_server_read_timeout: 300s
+  http_server_write_timeout: 300s
+
+# Common configuration shared between ingester and querier
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+# Query scheduling and processing
+query_scheduler:
+  max_outstanding_requests_per_tenant: 2048
+
+# Frontend configuration for query distribution
+frontend:
+  max_outstanding_per_tenant: 2048
+  compress_responses: true
+  downstream_url: http://127.0.0.1:3100
+  log_queries_longer_than: 10s
+
+# Query frontend worker configuration
+frontend_worker:
+  frontend_address: 127.0.0.1:9095
+  grpc_client_config:
+    max_send_msg_size: 104857600  # 100MB
+
+# Querier configuration for log queries
+querier:
+  query_timeout: 300s
+  tail_max_duration: 1h
+  extra_query_delay: 0s
+  query_ingesters_within: 3h
+  engine:
+    timeout: 300s
+    max_look_back_period: 30s
+
+# Query range configuration
+query_range:
+  align_queries_with_step: true
+  max_retries: 5
+  parallelise_shardable_queries: true
+  cache_results: true
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 500
+        ttl: 24h
+
+# Ingester configuration for log ingestion
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+  
+  # Chunk configuration optimized for trading logs
+  chunk_idle_period: 5m       # Shorter idle period for real-time logs
+  chunk_retain_period: 30s    # Quick retention for high-frequency data
+  max_chunk_age: 1h          # Age out chunks frequently
+  chunk_target_size: 1048576  # 1MB chunk target
+  chunk_encoding: snappy      # Fast compression for trading data
+  
+  # WAL configuration for durability
+  wal:
+    enabled: true
+    dir: /loki/wal
+    checkpoint_duration: 5m
+    flush_on_shutdown: true
+
+# Schema configuration for time-based partitioning
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: arbitragex_index_
+        period: 24h
+
+# Storage configuration for chunks and indexes
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/boltdb-shipper-active
+    cache_location: /loki/boltdb-shipper-cache
+    cache_ttl: 24h
+    shared_store: filesystem
+  filesystem:
+    directory: /loki/chunks
+
+# Chunk store configuration
+chunk_store_config:
+  max_look_back_period: 168h  # 1 week lookback for trading analysis
+
+# Table manager for index lifecycle
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 168h      # 1 week retention for high-frequency data
+
+# Compactor for chunk optimization
+compactor:
+  working_directory: /loki/boltdb-shipper-compactor
+  shared_store: filesystem
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+
+# Ruler for alerting on logs
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules
+  alertmanager_url: http://alertmanager:9093
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+  enable_alertmanager_v2: true
+
+# Analytics and tracing
+analytics:
+  reporting_enabled: false
+
+# Tracing configuration
+tracing:
+  enabled: false
+
+# Limits configuration optimized for high-frequency trading logs
+limits_config:
+  # Ingestion limits
+  ingestion_rate_mb: 50           # 50MB/s per tenant
+  ingestion_burst_size_mb: 100    # 100MB burst
+  max_line_size: 256000           # 256KB max line size for structured logs
+  
+  # Query limits
+  max_query_series: 10000         # High series limit for complex queries
+  max_query_parallelism: 64       # High parallelism for fast queries
+  max_query_length: 12000h        # 500 days max query range
+  
+  # Stream limits
+  max_streams_per_user: 0         # Unlimited streams for trading data
+  max_global_streams_per_user: 50000  # Global stream limit
+  
+  # Chunk limits
+  max_chunks_per_query: 2000000   # High chunk limit for large queries
+  max_query_lookback: 168h        # 1 week lookback
+  
+  # Split queries optimization
+  split_queries_by_interval: 30m  # Split large queries for performance
+  
+  # Cardinality limits for label management
+  max_label_name_length: 1024
+  max_label_value_length: 4096
+  max_label_names_per_series: 30
+  
+  # Rejection sampling for high-volume logs
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  creation_grace_period: 10m
+  
+  # Per-stream rate limiting
+  per_stream_rate_limit: 50MB     # 50MB per stream per second
+  per_stream_rate_limit_burst: 100MB  # 100MB burst per stream
+
+# Memberlist for clustering (single node setup)
+memberlist:
+  abort_if_cluster_join_fails: false
+  bind_port: 7946
+  join_members: []

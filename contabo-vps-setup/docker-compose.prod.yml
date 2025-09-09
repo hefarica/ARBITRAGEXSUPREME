@@ -1,0 +1,528 @@
+# ================================
+# ArbitrageX Supreme V3.0 - Contabo VPS Production Stack  
+# Arquitectura de producción real (no pruebas)
+# ================================
+
+version: '3.8'
+
+services:
+  # ================================
+  # geth - Nodo EVM Local (Mempool)
+  # ================================
+  geth:
+    build:
+      context: ./geth
+      dockerfile: Dockerfile
+    container_name: arbitragex-geth
+    restart: unless-stopped
+    ports:
+      - "8545:8545"    # RPC HTTP
+      - "8546:8546"    # RPC WebSocket  
+      - "30303:30303"  # P2P Discovery
+      - "30303:30303/udp"
+    networks:
+      - arbitragex-network
+    volumes:
+      - geth-data:/root/.ethereum
+      - ./geth/config.toml:/config/config.toml:ro
+    environment:
+      - GETH_NETWORK=mainnet
+      - GETH_SYNCMODE=full
+      - GETH_HTTP_API=eth,net,web3,txpool,debug
+      - GETH_WS_API=eth,net,web3,txpool,debug
+    command: >
+      --config /config/config.toml
+      --http --http.addr 0.0.0.0 --http.port 8545
+      --http.api eth,net,web3,txpool,debug
+      --ws --ws.addr 0.0.0.0 --ws.port 8546
+      --ws.api eth,net,web3,txpool,debug
+      --txpool.pricelimit 1000000000
+      --txpool.pricebump 10
+      --cache 4096
+      --maxpeers 50
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # ================================
+  # searcher-rs - Motor Principal Rust
+  # ================================
+  searcher-rs:
+    build:
+      context: ./searcher-rs
+      dockerfile: Dockerfile
+    container_name: arbitragex-searcher-rs
+    restart: unless-stopped
+    ports:
+      - "3001:3001"    # API Principal
+      - "9091:9090"    # Métricas Prometheus
+    networks:
+      - arbitragex-network
+    depends_on:
+      - geth
+      - postgres
+      - redis
+    environment:
+      - RUST_LOG=info
+      - ARBITRAGEX_ENV=production
+      - GETH_RPC_URL=http://geth:8545
+      - DATABASE_URL=postgresql://arbitragex:${POSTGRES_PASSWORD}@postgres:5432/arbitragex_prod
+      - REDIS_URL=redis://redis:6379/0
+      - STRATEGIES_ENABLED=A,C,D,F
+      - EXECUTION_MODE=production
+      - REPORTING_ENABLED=true
+    volumes:
+      - ./searcher-rs/config:/app/config:ro
+      - searcher-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '6.0'
+          memory: 12G
+        reservations:
+          cpus: '3.0'
+          memory: 6G
+
+  # ================================
+  # selector-api - API de Selección (Node/TS)
+  # ================================
+  selector-api:
+    build:
+      context: ./selector-api
+      dockerfile: Dockerfile
+    container_name: arbitragex-selector-api
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    networks:
+      - arbitragex-network
+    depends_on:
+      - searcher-rs
+      - redis
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SEARCHER_RS_URL=http://searcher-rs:3001
+      - REDIS_URL=redis://redis:6379/1
+      - LOG_LEVEL=info
+    volumes:
+      - selector-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # sim-ctl - Controlador Anvil-Real (Node/TS)
+  # ================================
+  sim-ctl:
+    build:
+      context: ./sim-ctl
+      dockerfile: Dockerfile
+    container_name: arbitragex-sim-ctl
+    restart: unless-stopped
+    ports:
+      - "3003:3000"
+    networks:
+      - arbitragex-network
+    depends_on:
+      - geth
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GETH_RPC_URL=http://geth:8545
+      - FORK_MODE=ephemeral
+      - NO_MINING=true
+      - GAS_ESTIMATE_ENABLED=true
+      - FEE_HISTORY_ENABLED=true
+      - ROI_TWAP_ENABLED=true
+    volumes:
+      - sim-data:/app/data
+      - sim-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # ================================
+  # relays-client - Multi-relay Privado
+  # ================================
+  relays-client:
+    build:
+      context: ./relays-client
+      dockerfile: Dockerfile
+    container_name: arbitragex-relays-client
+    restart: unless-stopped
+    ports:
+      - "3004:3000"
+    networks:
+      - arbitragex-network
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - FLASHBOTS_URL=${FLASHBOTS_URL}
+      - BLOXROUTE_URL=${BLOXROUTE_URL}
+      - EDEN_URL=${EDEN_URL}
+      - PRIVATE_MODE=true
+      - TTL_BLOCKS=5
+      - BACKOFF_ENABLED=true
+      - FAILOVER_ENABLED=true
+    volumes:
+      - relays-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # recon - Reconciliación PnL
+  # ================================
+  recon:
+    build:
+      context: ./recon
+      dockerfile: Dockerfile
+    container_name: arbitragex-recon
+    restart: unless-stopped
+    ports:
+      - "3005:3000"
+    networks:
+      - arbitragex-network
+    depends_on:
+      - postgres
+      - searcher-rs
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://arbitragex:${POSTGRES_PASSWORD}@postgres:5432/arbitragex_prod
+      - SEARCHER_RS_URL=http://searcher-rs:3001
+      - SIM_CTL_URL=http://sim-ctl:3000
+      - EPSILON_THRESHOLD=0.01
+      - PNL_ANALYSIS_ENABLED=true
+    volumes:
+      - recon-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # cron - Actualizador Automático
+  # ================================
+  cron:
+    build:
+      context: ./cron
+      dockerfile: Dockerfile
+    container_name: arbitragex-cron
+    restart: unless-stopped
+    networks:
+      - arbitragex-network
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://arbitragex:${POSTGRES_PASSWORD}@postgres:5432/arbitragex_prod
+      - REDIS_URL=redis://redis:6379/2
+      - SYNC_INTERVAL=3600
+      - CHAINS_SYNC_ENABLED=true
+      - DEX_SYNC_ENABLED=true
+      - LENDING_SYNC_ENABLED=true
+      - ASSETS_SYNC_ENABLED=true
+    volumes:
+      - cron-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # ================================
+  # Base de Datos PostgreSQL
+  # ================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: arbitragex-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    networks:
+      - arbitragex-network
+    environment:
+      - POSTGRES_DB=arbitragex_prod
+      - POSTGRES_USER=arbitragex
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/postgresql/init:/docker-entrypoint-initdb.d:ro
+      - ./database/postgresql/config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # ================================
+  # Cache Redis
+  # ================================
+  redis:
+    image: redis:7-alpine
+    container_name: arbitragex-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - arbitragex-network
+    volumes:
+      - redis-data:/data
+      - ./database/redis/redis.conf:/etc/redis/redis.conf:ro
+    command: redis-server /etc/redis/redis.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # Nginx Reverse Proxy
+  # ================================
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: arbitragex-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - arbitragex-network
+    depends_on:
+      - searcher-rs
+      - selector-api
+      - sim-ctl
+      - relays-client
+      - recon
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/sites-enabled:/etc/nginx/sites-enabled:ro
+      - ./nginx/ssl:/etc/ssl/certs:ro
+      - nginx-logs:/var/log/nginx
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ================================
+  # Monitoreo - Prometheus
+  # ================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: arbitragex-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    networks:
+      - arbitragex-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=50GB'
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - ./observability/prometheus/targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # Monitoreo - Grafana
+  # ================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: arbitragex-grafana
+    restart: unless-stopped
+    ports:
+      - "3006:3000"
+    networks:
+      - arbitragex-network
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3006
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # Monitoreo - Loki (Logs)
+  # ================================
+  loki:
+    image: grafana/loki:latest
+    container_name: arbitragex-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    networks:
+      - arbitragex-network
+    volumes:
+      - ./observability/loki/config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+  # ================================
+  # Exporters de Métricas
+  # ================================
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: arbitragex-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    networks:
+      - arbitragex-network
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: arbitragex-postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "9187:9187"
+    networks:
+      - arbitragex-network
+    environment:
+      - DATA_SOURCE_NAME=postgresql://arbitragex:${POSTGRES_PASSWORD}@postgres:5432/arbitragex_prod?sslmode=disable
+    depends_on:
+      - postgres
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: arbitragex-redis-exporter
+    restart: unless-stopped
+    ports:
+      - "9121:9121"
+    networks:
+      - arbitragex-network
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    depends_on:
+      - redis
+
+# ================================
+# Redes y Volúmenes
+# ================================
+networks:
+  arbitragex-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.22.0.0/16
+          gateway: 172.22.0.1
+
+volumes:
+  # Datos persistentes
+  geth-data:
+    driver: local
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+  
+  # Datos de aplicación
+  sim-data:
+    driver: local
+  
+  # Logs
+  searcher-logs:
+    driver: local
+  selector-logs:
+    driver: local
+  sim-logs:
+    driver: local
+  relays-logs:
+    driver: local
+  recon-logs:
+    driver: local
+  cron-logs:
+    driver: local
+  nginx-logs:
+    driver: local

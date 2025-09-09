@@ -1,0 +1,226 @@
+# ArbitrageX Supreme V3.0 - Multi-Relay Client
+# Docker Compose para desarrollo local
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # relays-client - Multi-Relay Client para MEV
+  # ============================================================================
+  relays-client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: arbitragex-relays-client-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - PORT=3004
+      - HOST=0.0.0.0
+      - LOG_LEVEL=debug
+      
+      # Redis Configuration
+      - REDIS_HOST=redis-relays-dev
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=3
+      
+      # Failover Configuration
+      - FAILOVER_STRATEGY=priority_based
+      - MAX_CONSECUTIVE_FAILURES=3
+      - FAILURE_BACKOFF_SECONDS=60
+      - HEALTH_CHECK_INTERVAL=30
+      - CIRCUIT_BREAKER_THRESHOLD=0.1
+      - RECOVERY_TIME_SECONDS=300
+      
+      # Rate Limiting (más permisivo para MEV)
+      - RATE_LIMIT_MAX=500
+      
+      # Real-Only Policy - RPCs reales obligatorios
+      - RPC_URL_1=https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_API_KEY_MAINNET}
+      - RPC_URL_137=https://polygon-mainnet.alchemyapi.io/v2/${ALCHEMY_API_KEY_POLYGON}
+      - RPC_URL_42161=https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_ARBITRUM}
+      - RPC_URL_10=https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_OPTIMISM}
+      
+      # Relay API Keys (development/staging keys)
+      - FLASHBOTS_SIGNING_KEY=${FLASHBOTS_SIGNING_KEY_DEV}
+      - BLOXROUTE_API_KEY=${BLOXROUTE_API_KEY_DEV}
+      - EDEN_API_KEY=${EDEN_API_KEY_DEV}
+      
+      # Execution Wallet (development wallet)
+      - EXECUTION_PRIVATE_KEY=${EXECUTION_PRIVATE_KEY_DEV}
+      
+      # MEV Configuration
+      - MEV_PROTECTION=true
+      - PRIVATE_MEMPOOL_ONLY=true
+      - BUNDLE_TIMEOUT_DEFAULT=30
+      - MIN_RELAY_COUNT=2
+      - MAX_RELAY_COUNT=5
+      
+      # API Configuration
+      - API_HOST=localhost:3004
+      
+    ports:
+      - "3004:3004"
+    
+    volumes:
+      # Código fuente para hot reload
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      
+      # Logs persistentes
+      - relays-client-logs-dev:/app/logs
+      
+      # Data directory para cache
+      - relays-client-data-dev:/app/data
+    
+    networks:
+      - arbitragex-dev
+    
+    depends_on:
+      - redis-relays-dev
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    labels:
+      - "arbitragex.component=relays-client"
+      - "arbitragex.environment=development"
+      - "arbitragex.mev-ready=true"
+      - "arbitragex.supported-relays=flashbots,bloxroute,eden"
+
+  # ============================================================================
+  # Redis para relays-client (desarrollo)
+  # ============================================================================
+  redis-relays-dev:
+    image: redis:7-alpine
+    container_name: arbitragex-redis-relays-dev
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    
+    ports:
+      - "6383:6379"
+    
+    volumes:
+      - redis-relays-data-dev:/data
+    
+    networks:
+      - arbitragex-dev
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    labels:
+      - "arbitragex.component=redis-relays"
+      - "arbitragex.environment=development"
+
+  # ============================================================================
+  # Mock Relay Server para testing (opcional)
+  # ============================================================================
+  mock-relay-server:
+    image: node:20-alpine
+    container_name: arbitragex-mock-relay-dev
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      sh -c "
+        npm init -y &&
+        npm install fastify &&
+        cat > server.js << 'EOF'
+        const fastify = require('fastify')({ logger: true });
+        
+        // Mock Flashbots endpoint
+        fastify.post('/', async (request, reply) => {
+          console.log('Mock Relay - Bundle received:', JSON.stringify(request.body, null, 2));
+          return {
+            bundleHash: '0x' + Math.random().toString(16).substring(2, 66),
+            status: 'success'
+          };
+        });
+        
+        // Mock bloXroute ping
+        fastify.get('/ping', async (request, reply) => {
+          return { status: 'ok', timestamp: Date.now() };
+        });
+        
+        // Mock Eden health
+        fastify.get('/health', async (request, reply) => {
+          return { status: 'healthy', version: '1.0.0' };
+        });
+        
+        fastify.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
+          if (err) throw err;
+          console.log('Mock Relay Server listening at', address);
+        });
+        EOF
+        node server.js
+      "
+    
+    ports:
+      - "8080:3000"
+    
+    networks:
+      - arbitragex-dev
+    
+    labels:
+      - "arbitragex.component=mock-relay"
+      - "arbitragex.environment=development"
+
+  # ============================================================================
+  # Redis Commander para debugging
+  # ============================================================================
+  redis-commander-relays:
+    image: rediscommander/redis-commander:latest
+    container_name: arbitragex-redis-commander-relays-dev
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=relays:redis-relays-dev:6379
+    
+    ports:
+      - "8083:8081"
+    
+    networks:
+      - arbitragex-dev
+    
+    depends_on:
+      - redis-relays-dev
+    
+    labels:
+      - "arbitragex.component=redis-commander-relays"
+      - "arbitragex.environment=development"
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  arbitragex-dev:
+    name: arbitragex-development
+    driver: bridge
+    external: true
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  # relays-client data
+  relays-client-logs-dev:
+    name: arbitragex-relays-client-logs-dev
+    driver: local
+  
+  relays-client-data-dev:
+    name: arbitragex-relays-client-data-dev
+    driver: local
+  
+  # Redis data
+  redis-relays-data-dev:
+    name: arbitragex-redis-relays-dev
+    driver: local

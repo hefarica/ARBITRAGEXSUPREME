@@ -1,0 +1,309 @@
+# ArbitrageX Supreme V3.0 - Alert Rules
+# Real-Only Policy - Production alerts for trading system monitoring
+
+groups:
+
+  # MEV Searcher Critical Alerts
+  - name: arbitragex.searcher.critical
+    interval: 5s  # High frequency evaluation for trading alerts
+    rules:
+      
+      - alert: SearcherHighLatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(searcher_execution_duration_seconds_bucket[1m])
+          ) > 0.2
+        for: 10s
+        labels:
+          severity: critical
+          component: searcher-rs
+          impact: revenue_loss
+        annotations:
+          summary: "Searcher execution latency is critically high"
+          description: |
+            Searcher execution latency (95th percentile) is {{ $value }}s, 
+            exceeding the 200ms threshold. This may result in missed MEV opportunities.
+            Current latency: {{ $value | humanizeDuration }}
+
+      - alert: SearcherDowntime
+        expr: up{job="searcher-rs"} == 0
+        for: 5s
+        labels:
+          severity: critical
+          component: searcher-rs
+          impact: complete_outage
+        annotations:
+          summary: "Searcher service is down"
+          description: "The searcher-rs service is not responding. All MEV opportunities are being missed."
+
+      - alert: LowProfitabilityRate
+        expr: |
+          rate(searcher_profitable_opportunities_total[5m]) / 
+          rate(searcher_total_opportunities_total[5m]) < 0.15
+        for: 30s
+        labels:
+          severity: warning
+          component: searcher-rs
+          impact: revenue_loss
+        annotations:
+          summary: "Searcher profitability rate is low"
+          description: |
+            Only {{ $value | humanizePercentage }} of opportunities are profitable in the last 5 minutes.
+            Expected minimum: 15%
+
+      - alert: HighGasUsage
+        expr: |
+          rate(searcher_gas_used_total[5m]) > 500000
+        for: 1m
+        labels:
+          severity: warning
+          component: searcher-rs
+          impact: cost_increase
+        annotations:
+          summary: "High gas usage detected"
+          description: "Gas usage rate is {{ $value }} gas/5min, which may indicate inefficient strategies."
+
+  # Reconciliation System Alerts
+  - name: arbitragex.reconciliation.critical
+    interval: 10s
+    rules:
+
+      - alert: HighVarianceRate
+        expr: |
+          rate(recon_reconciliation_major_discrepancies_total[10m]) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+          component: recon
+          impact: data_integrity
+        annotations:
+          summary: "High rate of major reconciliation discrepancies"
+          description: |
+            {{ $value | humanizePercentage }} of reconciliations show major discrepancies.
+            This indicates systematic issues in simulation or execution.
+
+      - alert: ReconciliationBacklog
+        expr: recon_active_reconciliations > 100
+        for: 2m
+        labels:
+          severity: warning
+          component: recon
+          impact: performance_degradation
+        annotations:
+          summary: "Reconciliation processing backlog detected"
+          description: "{{ $value }} reconciliations are currently active, indicating processing delays."
+
+      - alert: DeviationInvestigationFailures
+        expr: |
+          rate(recon_investigation_failures_total[15m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          component: recon
+          impact: monitoring_degradation
+        annotations:
+          summary: "High rate of deviation investigation failures"
+          description: |
+            {{ $value | humanizePercentage }} of investigations are failing.
+            Root cause analysis may be compromised.
+
+  # Network and Infrastructure Alerts
+  - name: arbitragex.infrastructure.critical
+    interval: 15s
+    rules:
+
+      - alert: GethSyncLag
+        expr: |
+          geth_chain_head_block - geth_blockchain_height > 3
+        for: 30s
+        labels:
+          severity: critical
+          component: geth
+          impact: stale_data
+        annotations:
+          summary: "Geth node is lagging behind network"
+          description: |
+            Geth node is {{ $value }} blocks behind the network head.
+            This may cause outdated market data and missed opportunities.
+
+      - alert: DatabaseConnectionFailure
+        expr: up{job="postgres"} == 0
+        for: 15s
+        labels:
+          severity: critical
+          component: postgres
+          impact: complete_outage
+        annotations:
+          summary: "Database is unreachable"
+          description: "PostgreSQL database is not responding. All services will be affected."
+
+      - alert: HighDatabaseConnections
+        expr: |
+          pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+        for: 1m
+        labels:
+          severity: warning
+          component: postgres
+          impact: performance_degradation
+        annotations:
+          summary: "High database connection usage"
+          description: |
+            Database connection usage is {{ $value | humanizePercentage }}.
+            Consider increasing max_connections or optimizing connection pooling.
+
+      - alert: RedisMemoryUsage
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+          component: redis
+          impact: cache_eviction
+        annotations:
+          summary: "Redis memory usage is critically high"
+          description: |
+            Redis memory usage is {{ $value | humanizePercentage }}.
+            Cache evictions may impact performance.
+
+  # MEV Market Monitoring
+  - name: arbitragex.mev.market
+    interval: 30s
+    rules:
+
+      - alert: MEVMarketVolatility
+        expr: |
+          stddev_over_time(mev_opportunity_profit_eth[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: info
+          component: market-monitor
+          impact: strategy_adjustment
+        annotations:
+          summary: "High MEV market volatility detected"
+          description: |
+            MEV opportunity profit standard deviation is {{ $value }} ETH over 5 minutes.
+            Consider adjusting strategy parameters.
+
+      - alert: FlashbotsRelayDown
+        expr: up{instance=~".*flashbots.*"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          component: flashbots-relay
+          impact: reduced_opportunities
+        annotations:
+          summary: "Flashbots relay is unreachable"
+          description: "Primary MEV relay is down. Opportunities may be reduced."
+
+  # Performance and Efficiency Alerts
+  - name: arbitragex.performance
+    interval: 20s
+    rules:
+
+      - alert: LowCPUEfficiency
+        expr: |
+          (1 - rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.95
+        for: 3m
+        labels:
+          severity: warning
+          component: system
+          impact: performance_degradation
+        annotations:
+          summary: "High CPU utilization detected"
+          description: |
+            CPU utilization is {{ $value | humanizePercentage }}.
+            This may impact trading performance.
+
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+          impact: oom_risk
+        annotations:
+          summary: "Memory usage is critically high"
+          description: |
+            Memory usage is {{ $value | humanizePercentage }}.
+            Risk of out-of-memory conditions.
+
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          component: storage
+          impact: service_failure
+        annotations:
+          summary: "Disk space is critically low"
+          description: |
+            Available disk space is {{ $value | humanizePercentage }} on {{ $labels.mountpoint }}.
+            Services may fail due to insufficient storage.
+
+  # Chain-Specific Monitoring
+  - name: arbitragex.chains
+    interval: 30s
+    rules:
+
+      - alert: ChainReorgDetected
+        expr: |
+          increase(geth_chain_reorg_total[5m]) > 0
+        for: 0s  # Immediate alert for reorgs
+        labels:
+          severity: warning
+          component: blockchain
+          impact: data_inconsistency
+        annotations:
+          summary: "Blockchain reorganization detected"
+          description: |
+            {{ $value }} chain reorganizations detected in the last 5 minutes.
+            Verify transaction confirmations and update state accordingly.
+
+      - alert: HighGasPrices
+        expr: |
+          ethereum_gas_price_gwei > 100
+        for: 5m
+        labels:
+          severity: info
+          component: ethereum
+          impact: cost_increase
+        annotations:
+          summary: "High gas prices detected"
+          description: |
+            Current gas price is {{ $value }} Gwei.
+            Consider adjusting strategy parameters or pausing low-profit strategies.
+
+  # Strategy-Specific Alerts
+  - name: arbitragex.strategies
+    interval: 10s
+    rules:
+
+      - alert: ArbitrageOpportunityDrought
+        expr: |
+          rate(arbitrage_opportunities_detected_total[10m]) < 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: strategy-arbitrage
+          impact: reduced_revenue
+        annotations:
+          summary: "Low arbitrage opportunity detection rate"
+          description: |
+            Only {{ $value }} arbitrage opportunities detected per minute.
+            Market conditions may have changed.
+
+      - alert: FlashLoanFailureRate
+        expr: |
+          rate(flash_loan_failures_total[5m]) / rate(flash_loan_attempts_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: flash-loans
+          impact: execution_failure
+        annotations:
+          summary: "High flash loan failure rate"
+          description: |
+            {{ $value | humanizePercentage }} of flash loans are failing.
+            Check liquidity availability and loan parameters.

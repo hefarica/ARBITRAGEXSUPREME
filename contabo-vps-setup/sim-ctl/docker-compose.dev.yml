@@ -1,0 +1,154 @@
+# ArbitrageX Supreme V3.0 - Simulation Controller
+# Docker Compose para desarrollo local
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # sim-ctl - Anvil-Real Simulation Controller
+  # ============================================================================
+  sim-ctl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: arbitragex-sim-ctl-dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - PORT=3002
+      - HOST=0.0.0.0
+      - LOG_LEVEL=debug
+      
+      # Redis Configuration
+      - REDIS_HOST=redis-dev
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=2
+      
+      # Rate Limiting
+      - RATE_LIMIT_MAX=1000
+      
+      # Real-Only Policy - RPCs reales para desarrollo
+      - RPC_URL_1=https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_API_KEY_MAINNET}
+      - RPC_URL_137=https://polygon-mainnet.alchemyapi.io/v2/${ALCHEMY_API_KEY_POLYGON}
+      - RPC_URL_42161=https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_ARBITRUM}
+      - RPC_URL_10=https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_OPTIMISM}
+      
+      # API Configuration
+      - API_HOST=localhost:3002
+      
+    ports:
+      - "3002:3002"
+      # Puertos Anvil para estrategias (desarrollo)
+      - "8545-8584:8545-8584"
+    
+    volumes:
+      # Código fuente para hot reload
+      - ./src:/app/src:ro
+      - ./package.json:/app/package.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      
+      # Logs persistentes
+      - sim-ctl-logs-dev:/app/logs
+      
+      # Data directory para Anvil
+      - sim-ctl-data-dev:/app/data
+    
+    networks:
+      - arbitragex-dev
+    
+    depends_on:
+      - redis-dev
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    labels:
+      - "arbitragex.component=sim-ctl"
+      - "arbitragex.environment=development"
+      - "arbitragex.real-only=true"
+
+  # ============================================================================
+  # Redis para sim-ctl (desarrollo)
+  # ============================================================================
+  redis-dev:
+    image: redis:7-alpine
+    container_name: arbitragex-redis-simctl-dev
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    
+    ports:
+      - "6382:6379"
+    
+    volumes:
+      - redis-simctl-data-dev:/data
+    
+    networks:
+      - arbitragex-dev
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    labels:
+      - "arbitragex.component=redis-simctl"
+      - "arbitragex.environment=development"
+
+  # ============================================================================
+  # Redis Commander para debugging (opcional)
+  # ============================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: arbitragex-redis-commander-dev
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=simctl:redis-dev:6379
+    
+    ports:
+      - "8082:8081"
+    
+    networks:
+      - arbitragex-dev
+    
+    depends_on:
+      - redis-dev
+    
+    labels:
+      - "arbitragex.component=redis-commander"
+      - "arbitragex.environment=development"
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  arbitragex-dev:
+    name: arbitragex-development
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  # sim-ctl data
+  sim-ctl-logs-dev:
+    name: arbitragex-sim-ctl-logs-dev
+    driver: local
+  
+  sim-ctl-data-dev:
+    name: arbitragex-sim-ctl-data-dev
+    driver: local
+  
+  # Redis data
+  redis-simctl-data-dev:
+    name: arbitragex-redis-simctl-dev
+    driver: local

@@ -1,0 +1,329 @@
+# ArbitrageX Supreme V3.0 - Promtail Configuration
+# Real-Only Policy - Log shipping for centralized logging
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    timeout: 30s
+    backoff_config:
+      min_period: 500ms
+      max_period: 5m
+      max_retries: 10
+    # Optional: Add authentication if needed
+    # basic_auth:
+    #   username: arbitragex
+    #   password_file: /etc/promtail/password
+
+scrape_configs:
+
+  # ArbitrageX Application Logs
+  - job_name: arbitragex-searcher-rs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: searcher-rs
+          component: mev-searcher
+          environment: production
+          policy: real-only
+          __path__: /var/log/arbitragex/searcher-rs/*.log
+
+    pipeline_stages:
+      # Parse Rust structured logs (JSON format)
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            target: target
+            message: message
+            strategy: strategy
+            chain_id: chain_id
+            profit_eth: profit_eth
+            gas_used: gas_used
+            latency_ms: latency_ms
+
+      # Convert timestamp to RFC3339 format
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+      # Add labels based on log content
+      - labels:
+          level: level
+          strategy: strategy
+          chain_id: chain_id
+
+      # Filter high-frequency trading logs
+      - match:
+          selector: '{level="ERROR"}'
+          stages:
+            - labels:
+                severity: error
+
+      - match:
+          selector: '{level="WARN"}'
+          stages:
+            - labels:
+                severity: warning
+
+  - job_name: arbitragex-recon
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: recon
+          component: reconciliation
+          environment: production
+          policy: real-only
+          __path__: /var/log/recon/*.log
+
+    pipeline_stages:
+      # Parse Winston JSON logs
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            request_id: request_id
+            reconciliation_id: reconciliation_id
+            variance_score: variance_score
+            investigation_id: investigation_id
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+      - labels:
+          level: level
+          request_id: request_id
+
+      # Extract metrics from reconciliation logs
+      - match:
+          selector: '{message=~".*reconciliation.*"}'
+          stages:
+            - regex:
+                expression: 'variance.*?(?P<variance_pct>\d+\.\d+)%'
+            - labels:
+                variance_level: variance_pct
+
+  # Container Logs (Docker)
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["logging=promtail"]
+
+    relabel_configs:
+      # Set container name as job label
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container_name
+        replacement: '${1}'
+
+      # Set image name as label
+      - source_labels: ['__meta_docker_container_image']
+        target_label: image
+
+      # Only scrape containers with logging label
+      - source_labels: ['__meta_docker_container_label_logging']
+        regex: 'promtail'
+        action: keep
+
+      # Set log path
+      - source_labels: ['__meta_docker_container_id']
+        target_label: __path__
+        replacement: '/var/lib/docker/containers/${1}/${1}-json.log'
+
+    pipeline_stages:
+      # Parse Docker JSON logs
+      - json:
+          expressions:
+            log: log
+            stream: stream
+            timestamp: time
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+
+      # Add stream type (stdout/stderr)
+      - labels:
+          stream: stream
+
+      # Parse different log formats based on container
+      - match:
+          selector: '{container_name=~"arbitragex-.*"}'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  component: component
+                  message: message
+            - labels:
+                log_level: level
+                component: component
+
+  # System Logs
+  - job_name: system-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system
+          component: os
+          __path__: /var/log/{messages,syslog,kern.log}
+
+    pipeline_stages:
+      # Parse syslog format
+      - regex:
+          expression: '^(?P<timestamp>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<hostname>\S+)\s+(?P<process>\S+?)(\[(?P<pid>\d+)\])?\s*:\s*(?P<message>.*)$'
+
+      - timestamp:
+          source: timestamp
+          format: 'Jan 02 15:04:05'
+          location: 'Local'
+
+      - labels:
+          hostname: hostname
+          process: process
+
+  # PostgreSQL Logs
+  - job_name: postgresql-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: postgresql
+          component: database
+          __path__: /var/log/postgresql/*.log
+
+    pipeline_stages:
+      # Parse PostgreSQL log format
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+\w+\s+\[(?P<pid>\d+)\]\s+(?P<level>\w+):\s+(?P<message>.*)$'
+
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02 15:04:05.000'
+
+      - labels:
+          level: level
+          pid: pid
+
+      # Highlight slow queries
+      - match:
+          selector: '{message=~".*duration.*"}'
+          stages:
+            - regex:
+                expression: 'duration:\s*(?P<duration_ms>\d+\.\d+)\s*ms'
+            - labels:
+                slow_query: duration_ms
+
+  # Nginx/Traefik Access Logs
+  - job_name: access-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: access-logs
+          component: proxy
+          __path__: /var/log/nginx/access.log
+
+    pipeline_stages:
+      # Parse Nginx combined log format
+      - regex:
+          expression: '^(?P<remote_addr>\S+)\s+-\s+(?P<remote_user>\S+)\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<method>\S+)\s+(?P<path>\S+)\s+(?P<protocol>\S+)"\s+(?P<status>\d+)\s+(?P<body_bytes_sent>\d+)\s+"(?P<referer>[^"]*)"\s+"(?P<user_agent>[^"]*)"'
+
+      - timestamp:
+          source: timestamp
+          format: '02/Jan/2006:15:04:05 -0700'
+
+      - labels:
+          method: method
+          status_code: status
+          remote_addr: remote_addr
+
+      # Track high-latency requests
+      - match:
+          selector: '{path=~"/api/.*"}'
+          stages:
+            - labels:
+                api_request: "true"
+
+  # Custom Application Metrics Logs
+  - job_name: arbitragex-metrics
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: arbitragex-metrics
+          component: metrics
+          __path__: /var/log/arbitragex/metrics/*.log
+
+    pipeline_stages:
+      # Parse custom metrics format
+      - json:
+          expressions:
+            timestamp: timestamp
+            metric_name: metric_name
+            metric_value: metric_value
+            labels: labels
+            strategy: strategy
+            chain_id: chain_id
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+      - labels:
+          metric_name: metric_name
+          strategy: strategy
+          chain_id: chain_id
+
+  # Error and Exception Tracking
+  - job_name: error-tracking
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: error-tracking
+          component: errors
+          __path__: /var/log/arbitragex/**/error.log
+
+    pipeline_stages:
+      # Parse error logs with stack traces
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}'
+          max_wait_time: 3s
+
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            error: error
+            stack: stack
+            component: component
+
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+
+      - labels:
+          level: level
+          component: component
+          error_type: error
+
+# Rate limiting to prevent log overflow
+limits_config:
+  readline_rate: 10000        # 10k lines per second max
+  readline_burst: 20000       # 20k lines burst
+  max_streams: 0             # Unlimited streams
+  max_line_size: 256KB       # Max line size
