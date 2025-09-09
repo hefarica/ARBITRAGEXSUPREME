@@ -1,0 +1,72 @@
+# ArbitrageX Supreme V3.0 - Cloudflare Workers Configuration
+# Ingenio Pichichi S.A.
+
+name = "arbitragex-api-worker"
+main = "workers/api-worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV Namespaces
+[[kv_namespaces]]
+binding = "ARBITRAGEX_CACHE"
+preview_id = "preview-kv-namespace-id"
+id = "production-kv-namespace-id"
+
+# D1 Database
+[[d1_databases]]
+binding = "ARBITRAGEX_DB"
+database_name = "arbitragex-production"
+database_id = "production-d1-database-id"
+
+# Environment Variables
+[vars]
+ENVIRONMENT = "production"
+API_VERSION = "3.0.0"
+MAX_OPPORTUNITIES = "100"
+CACHE_TTL = "30"
+
+# Routes for API Worker
+[[routes]]
+pattern = "api.arbitragexsupreme.com/*"
+zone_name = "arbitragexsupreme.com"
+
+# Durable Objects (for real-time features)
+[[durable_objects.bindings]]
+name = "ARBITRAGE_ENGINE"
+class_name = "ArbitrageEngine"
+script_name = "arbitragex-engine-worker"
+
+# Engine Worker Configuration
+[env.engine]
+name = "arbitragex-engine-worker"
+main = "workers/engine-worker.js"
+
+[[env.engine.routes]]
+pattern = "arbitragexsupreme.com/arbitrage/*"
+zone_name = "arbitragexsupreme.com"
+
+[[env.engine.kv_namespaces]]
+binding = "ARBITRAGEX_CACHE"
+preview_id = "preview-kv-namespace-id"
+id = "production-kv-namespace-id"
+
+[[env.engine.d1_databases]]
+binding = "ARBITRAGEX_DB"
+database_name = "arbitragex-production"  
+database_id = "production-d1-database-id"
+
+[env.engine.vars]
+ENVIRONMENT = "production"
+ENGINE_VERSION = "3.0.0"
+MAX_STRATEGIES = "13"
+OPTIMIZATION_ENABLED = "true"
+
+# Analytics and Monitoring
+[analytics_engine_datasets]
+[[analytics_engine_datasets.bindings]]
+name = "ARBITRAGE_ANALYTICS"
+dataset = "arbitragex_analytics"
+
+# Rate Limiting
+[limits]
+cpu_ms = 50
