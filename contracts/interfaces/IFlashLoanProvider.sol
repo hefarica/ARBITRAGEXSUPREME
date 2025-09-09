@@ -1,77 +1,70 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 /**
  * @title IFlashLoanProvider
- * @dev Interface unificada para proveedores de flash loans (Aave, Balancer, dYdX, etc.)
+ * @dev Interface for flash loan providers (Aave V3, Balancer V2, etc.)
+ * @notice Standardizes flash loan operations across different protocols
  */
 interface IFlashLoanProvider {
     
     /**
-     * @dev Solicita un flash loan
-     * @param asset Dirección del token a pedir prestado
-     * @param amount Cantidad a pedir prestado
-     * @param params Parámetros adicionales para el callback
+     * @dev Struct for flash loan parameters
+     * @param asset The address of the asset to flash loan
+     * @param amount The amount to flash loan
+     * @param mode Flash loan mode (0 = no debt, 1 = stable debt, 2 = variable debt)
+     * @param onBehalfOf Address to receive the debt (for Aave)
+     * @param params Additional parameters for the flash loan callback
      */
-    function flashLoan(
-        address asset,
-        uint256 amount,
-        bytes calldata params
-    ) external;
+    struct FlashLoanParams {
+        address asset;
+        uint256 amount;
+        uint256 mode;
+        address onBehalfOf;
+        bytes params;
+    }
     
     /**
-     * @dev Solicita múltiples flash loans
-     * @param assets Array de tokens
-     * @param amounts Array de cantidades
-     * @param params Parámetros adicionales
+     * @dev Initiates a flash loan
+     * @param params Flash loan parameters
+     * @return success Whether the flash loan was successful
      */
-    function flashLoanMultiple(
-        address[] calldata assets,
-        uint256[] calldata amounts,
-        bytes calldata params
-    ) external;
+    function executeFlashLoan(FlashLoanParams calldata params) external returns (bool success);
     
     /**
-     * @dev Obtiene el fee del flash loan
-     * @param asset Token
-     * @param amount Cantidad
-     * @return fee Fee a pagar
+     * @dev Calculates the flash loan fee for a given amount
+     * @param asset The asset address
+     * @param amount The flash loan amount
+     * @return fee The fee amount
      */
-    function getFlashLoanFee(address asset, uint256 amount) external view returns (uint256 fee);
+    function calculateFlashLoanFee(address asset, uint256 amount) external view returns (uint256 fee);
     
     /**
-     * @dev Verifica si un asset soporta flash loans
-     * @param asset Token a verificar
-     * @return supported Si está soportado
+     * @dev Gets the total amount that needs to be repaid (principal + fee)
+     * @param asset The asset address
+     * @param amount The flash loan amount
+     * @return repayAmount Total amount to repay
      */
-    function supportsAsset(address asset) external view returns (bool supported);
+    function getRepayAmount(address asset, uint256 amount) external view returns (uint256 repayAmount);
     
     /**
-     * @dev Obtiene la liquidez disponible para flash loan
-     * @param asset Token
-     * @return liquidity Liquidez disponible
+     * @dev Checks if an asset is supported for flash loans
+     * @param asset The asset address
+     * @return supported Whether the asset is supported
      */
-    function getAvailableLiquidity(address asset) external view returns (uint256 liquidity);
-}
-
-/**
- * @title IFlashLoanReceiver
- * @dev Interface que debe implementar el receptor de flash loans
- */
-interface IFlashLoanReceiver {
+    function isAssetSupported(address asset) external view returns (bool supported);
     
     /**
-     * @dev Callback ejecutado durante el flash loan
-     * @param asset Token prestado
-     * @param amount Cantidad prestada
-     * @param fee Fee a pagar
-     * @param params Parámetros del flash loan
-     * @return success Si la operación fue exitosa
+     * @dev Gets the maximum flash loan amount for an asset
+     * @param asset The asset address
+     * @return maxAmount Maximum flash loan amount
      */
-    function executeOperation(
-        address asset,
-        uint256 amount,
-        uint256 fee,
-        bytes calldata params
-    ) external returns (bool success);
+    function getMaxFlashLoan(address asset) external view returns (uint256 maxAmount);
+    
+    /**
+     * @dev Gets provider-specific information
+     * @return name Provider name
+     * @return version Provider version
+     */
+    function getProviderInfo() external view returns (string memory name, string memory version);
 }

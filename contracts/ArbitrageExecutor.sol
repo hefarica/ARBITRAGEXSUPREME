@@ -1,382 +1,562 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "./interfaces/IFlashLoanProvider.sol";
+import "./interfaces/IDEXRouter.sol";
+import "./UniversalFlashLoanArbitrage.sol";
 
 /**
  * @title ArbitrageExecutor
- * @dev Contrato para ejecutar oportunidades de arbitraje DeFi
- * Sistema del Ingenio Pichichi S.A - Metodología disciplinada
+ * @dev Coordinador inteligente para ejecución optimizada de arbitrajes
+ * @notice Gestiona múltiples estrategias MEV y optimiza gas/profit
+ * 
+ * ArbitrageX Supreme V3.0 - Execution Engine
+ * Gas Optimization + Strategy Selection + MEV Protection
  */
-contract ArbitrageExecutor is ReentrancyGuard, Ownable {
+contract ArbitrageExecutor is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using Address for address;
+
+    // === ROLES ===
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    bytes32 public constant STRATEGY_ROLE = keccak256("STRATEGY_ROLE");
+    bytes32 public constant EMERGENCY_ROLE = keccak256("EMERGENCY_ROLE");
+
+    // === CONSTANTS ===
+    uint256 public constant MAX_STRATEGIES_PER_BLOCK = 10;
+    uint256 public constant GAS_OPTIMIZATION_THRESHOLD = 200000;
+    uint256 public constant MEV_PROTECTION_DELAY = 1; // 1 block delay
+    uint256 public constant SLIPPAGE_PROTECTION = 500; // 5%
+
+    // === ENUMS ===
+    enum StrategyType {
+        CLASSIC_ARBITRAGE,      // 0: DEX-to-DEX básico
+        TRIANGULAR_ARBITRAGE,   // 1: Arbitraje triangular
+        FLASH_LIQUIDATION,      // 2: Liquidaciones con flash loan
+        MEV_SANDWICH,           // 3: Sandwich attacks
+        MEV_BACKRUN,           // 4: Backrunning
+        CROSS_CHAIN_ARBITRAGE,  // 5: Cross-chain arbitrage
+        JIT_LIQUIDITY,         // 6: Just-in-time liquidity
+        STATISTICAL_ARBITRAGE   // 7: Arbitraje estadístico
+    }
+
+    enum ExecutionStatus {
+        PENDING,
+        EXECUTING,
+        COMPLETED,
+        FAILED,
+        CANCELLED
+    }
+
+    // === STRUCTS ===
+    struct Strategy {
+        uint256 id;
+        StrategyType strategyType;
+        address targetContract;
+        bytes callData;
+        uint256 expectedProfit;
+        uint256 gasLimit;
+        uint256 priority;
+        bool active;
+        uint256 successRate;
+        uint256 avgGasUsed;
+    }
+
+    struct ExecutionPlan {
+        uint256 planId;
+        Strategy[] strategies;
+        uint256 totalExpectedProfit;
+        uint256 totalGasLimit;
+        uint256 blockTarget;
+        ExecutionStatus status;
+        address initiator;
+        uint256 createdAt;
+    }
+
+    struct MEVProtection {
+        bool enabled;
+        uint256 maxPriorityFee;
+        uint256 maxBaseFee;
+        address[] allowedRelayers;
+        bytes32[] bundleHashes;
+    }
+
+    struct GasOptimization {
+        uint256 baseGasPrice;
+        uint256 priorityFee;
+        uint256 gasLimit;
+        bool useFlashbotsBundle;
+        bytes32 bundleHash;
+    }
+
+    // === STATE VARIABLES ===
+    UniversalFlashLoanArbitrage public immutable flashLoanArbitrage;
     
-    // ============================================================================
-    // EVENTOS PARA TRACKING DE OPERACIONES
-    // ============================================================================
+    mapping(uint256 => Strategy) public strategies;
+    mapping(uint256 => ExecutionPlan) public executionPlans;
+    mapping(address => bool) public authorizedRelayers;
+    mapping(bytes32 => bool) public processedBundles;
     
-    event ArbitrageExecuted(
-        address indexed user,
-        address indexed tokenIn,
-        address indexed tokenOut,
-        uint256 amountIn,
-        uint256 amountOut,
-        uint256 profit,
-        string strategy,
-        uint256 timestamp
+    uint256 public nextStrategyId;
+    uint256 public nextPlanId;
+    uint256 public strategiesExecutedThisBlock;
+    uint256 public lastExecutionBlock;
+    
+    MEVProtection public mevProtection;
+    GasOptimization public gasSettings;
+    
+    bool public emergencyStop;
+    uint256 public totalExecutions;
+    uint256 public totalProfits;
+    uint256 public totalGasSpent;
+
+    // === EVENTS ===
+    event StrategyRegistered(
+        uint256 indexed strategyId,
+        StrategyType strategyType,
+        address targetContract,
+        uint256 expectedProfit
     );
-    
-    event FlashLoanExecuted(
-        address indexed token,
-        uint256 amount,
-        uint256 profit,
-        address indexed user
+
+    event ExecutionPlanCreated(
+        uint256 indexed planId,
+        address indexed initiator,
+        uint256 strategiesCount,
+        uint256 totalExpectedProfit
     );
-    
-    event EmergencyWithdraw(
-        address indexed token,
-        uint256 amount,
-        address indexed to
+
+    event ExecutionCompleted(
+        uint256 indexed planId,
+        uint256 strategiesExecuted,
+        uint256 actualProfit,
+        uint256 gasUsed,
+        bool success
     );
-    
-    // ============================================================================
-    // ESTRUCTURAS DE DATOS
-    // ============================================================================
-    
-    struct ArbitrageParams {
-        address tokenIn;
-        address tokenOut;
-        uint256 amountIn;
-        uint256 minAmountOut;
-        address[] dexAddresses;
-        bytes[] callData;
-        uint256 deadline;
-        string strategy;
-    }
-    
-    struct FlashLoanParams {
-        address asset;
-        uint256 amount;
-        ArbitrageParams arbitrageParams;
-    }
-    
-    // ============================================================================
-    // VARIABLES DE ESTADO
-    // ============================================================================
-    
-    mapping(address => bool) public authorizedDEXs;
-    mapping(address => bool) public authorizedTokens;
-    mapping(address => uint256) public userProfits;
-    
-    uint256 public totalArbitrageCount;
-    uint256 public totalProfitGenerated;
-    uint256 public feePercentage = 100; // 1% = 100 basis points
-    uint256 public constant FEE_DENOMINATOR = 10000;
-    
-    address public feeCollector;
-    bool public paused = false;
-    
-    // ============================================================================
-    // MODIFICADORES
-    // ============================================================================
-    
-    modifier onlyAuthorizedDEX(address dex) {
-        require(authorizedDEXs[dex], "DEX no autorizado");
+
+    event MEVProtectionUpdated(
+        bool enabled,
+        uint256 maxPriorityFee,
+        uint256 maxBaseFee
+    );
+
+    event EmergencyStop(bool activated, address triggeredBy);
+
+    // === MODIFIERS ===
+    modifier onlyOperator() {
+        require(hasRole(OPERATOR_ROLE, msg.sender), "Not authorized operator");
         _;
     }
-    
-    modifier onlyAuthorizedToken(address token) {
-        require(authorizedTokens[token], "Token no autorizado");
+
+    modifier onlyStrategy() {
+        require(hasRole(STRATEGY_ROLE, msg.sender), "Not authorized strategy");
         _;
     }
-    
-    modifier notPaused() {
-        require(!paused, "Contrato pausado");
+
+    modifier whenNotStopped() {
+        require(!emergencyStop, "Emergency stop activated");
         _;
     }
-    
-    modifier validDeadline(uint256 deadline) {
-        require(deadline >= block.timestamp, "Deadline expirado");
+
+    modifier gasOptimized() {
+        uint256 gasStart = gasleft();
+        _;
+        uint256 gasUsed = gasStart - gasleft();
+        _updateGasStats(gasUsed);
+    }
+
+    modifier mevProtected() {
+        if (mevProtection.enabled) {
+            _checkMEVProtection();
+        }
         _;
     }
-    
-    // ============================================================================
-    // CONSTRUCTOR
-    // ============================================================================
-    
-    constructor(address _feeCollector) {
-        require(_feeCollector != address(0), "Fee collector no puede ser address zero");
-        feeCollector = _feeCollector;
-        
-        // Autorizar tokens comunes por defecto
-        _authorizeCommonTokens();
-    }
-    
-    // ============================================================================
-    // FUNCIONES PRINCIPALES DE ARBITRAJE
-    // ============================================================================
-    
-    /**
-     * @dev Ejecutar arbitraje simple entre dos DEXs
-     * Metodología aplicada: Verificación previa, ejecución, post-verificación
-     */
-    function executeSimpleArbitrage(
-        ArbitrageParams calldata params
-    ) external nonReentrant notPaused validDeadline(params.deadline) {
-        require(params.dexAddresses.length >= 2, "Se requieren minimo 2 DEXs");
-        require(params.amountIn > 0, "Cantidad debe ser mayor a 0");
-        require(authorizedTokens[params.tokenIn], "Token input no autorizado");
-        require(authorizedTokens[params.tokenOut], "Token output no autorizado");
-        
-        // 1. Transferir tokens del usuario
-        IERC20(params.tokenIn).safeTransferFrom(
-            msg.sender, 
-            address(this), 
-            params.amountIn
-        );
-        
-        uint256 initialBalance = IERC20(params.tokenOut).balanceOf(address(this));
-        
-        // 2. Ejecutar intercambios en secuencia
-        _executeArbitrageSequence(params);
-        
-        // 3. Verificar ganancia
-        uint256 finalBalance = IERC20(params.tokenOut).balanceOf(address(this));
-        uint256 totalReceived = finalBalance - initialBalance;
-        
-        require(totalReceived >= params.minAmountOut, "Slippage demasiado alto");
-        
-        // 4. Calcular y cobrar fee
-        uint256 fee = (totalReceived * feePercentage) / FEE_DENOMINATOR;
-        uint256 userProfit = totalReceived - fee;
-        
-        // 5. Transferir ganancia al usuario
-        if (userProfit > 0) {
-            IERC20(params.tokenOut).safeTransfer(msg.sender, userProfit);
-            userProfits[msg.sender] += userProfit;
-        }
-        
-        // 6. Transferir fee
-        if (fee > 0) {
-            IERC20(params.tokenOut).safeTransfer(feeCollector, fee);
-        }
-        
-        // 7. Actualizar métricas
-        totalArbitrageCount++;
-        totalProfitGenerated += userProfit;
-        
-        // 8. Emitir evento
-        emit ArbitrageExecuted(
-            msg.sender,
-            params.tokenIn,
-            params.tokenOut,
-            params.amountIn,
-            userProfit,
-            userProfit,
-            params.strategy,
-            block.timestamp
-        );
-    }
-    
-    /**
-     * @dev Ejecutar arbitraje triangular (A -> B -> C -> A)
-     */
-    function executeTriangularArbitrage(
-        address[] calldata tokens, // [tokenA, tokenB, tokenC]
-        uint256[] calldata amounts, // [amountA, minAmountB, minAmountC, minFinalAmountA]
-        address[] calldata dexAddresses,
-        bytes[] calldata swapData,
-        uint256 deadline
-    ) external nonReentrant notPaused validDeadline(deadline) {
-        require(tokens.length == 3, "Se requieren exactamente 3 tokens");
-        require(amounts.length == 4, "Se requieren 4 amounts");
-        require(dexAddresses.length >= 3, "Se requieren minimo 3 DEXs");
-        
-        address tokenA = tokens[0];
-        uint256 initialAmount = amounts[0];
-        uint256 minFinalAmount = amounts[3];
-        
-        // Verificar autorización de tokens
-        for (uint i = 0; i < tokens.length; i++) {
-            require(authorizedTokens[tokens[i]], "Token no autorizado");
-        }
-        
-        // 1. Transferir token inicial
-        IERC20(tokenA).safeTransferFrom(msg.sender, address(this), initialAmount);
-        
-        uint256 initialBalanceA = IERC20(tokenA).balanceOf(address(this));
-        
-        // 2. Ejecutar secuencia triangular A->B->C->A
-        _executeTriangularSequence(tokens, amounts, dexAddresses, swapData);
-        
-        // 3. Verificar ganancia
-        uint256 finalBalanceA = IERC20(tokenA).balanceOf(address(this));
-        uint256 profit = finalBalanceA - initialBalanceA;
-        
-        require(profit >= minFinalAmount, "Arbitraje no rentable");
-        
-        // 4. Transferir ganancia (después de fee)
-        uint256 fee = (profit * feePercentage) / FEE_DENOMINATOR;
-        uint256 userProfit = profit - fee;
-        
-        IERC20(tokenA).safeTransfer(msg.sender, userProfit);
-        IERC20(tokenA).safeTransfer(feeCollector, fee);
-        
-        // 5. Actualizar métricas
-        totalArbitrageCount++;
-        totalProfitGenerated += userProfit;
-        userProfits[msg.sender] += userProfit;
-        
-        emit ArbitrageExecuted(
-            msg.sender,
-            tokenA,
-            tokenA,
-            initialAmount,
-            userProfit,
-            profit,
-            "triangular_arbitrage",
-            block.timestamp
-        );
-    }
-    
-    // ============================================================================
-    // FUNCIONES INTERNAS
-    // ============================================================================
-    
-    function _executeArbitrageSequence(ArbitrageParams calldata params) internal {
-        for (uint i = 0; i < params.dexAddresses.length; i++) {
-            require(authorizedDEXs[params.dexAddresses[i]], "DEX no autorizado");
-            
-            // Ejecutar swap en DEX específico
-            (bool success, ) = params.dexAddresses[i].call(params.callData[i]);
-            require(success, "Swap fallido en DEX");
-        }
-    }
-    
-    function _executeTriangularSequence(
-        address[] calldata tokens,
-        uint256[] calldata amounts,
-        address[] calldata dexAddresses,
-        bytes[] calldata swapData
-    ) internal {
-        for (uint i = 0; i < 3; i++) {
-            require(authorizedDEXs[dexAddresses[i]], "DEX no autorizado");
-            
-            (bool success, ) = dexAddresses[i].call(swapData[i]);
-            require(success, string(abi.encodePacked("Swap ", i, " fallido")));
-        }
-    }
-    
-    function _authorizeCommonTokens() internal {
-        // Ethereum Mainnet
-        authorizedTokens[0xA0b86a33E6441b9435B674C88d5f662c673067bD] = true; // WETH
-        authorizedTokens[0xA0b86a33E6441b9435B674C88d5f662c673067bD] = true; // USDC
-        authorizedTokens[0xdAC17F958D2ee523a2206206994597C13D831ec7] = true; // USDT
-        authorizedTokens[0x6B175474E89094C44Da98b954EedeAC495271d0F] = true; // DAI
-        
-        // Tokens adicionales se pueden agregar via addAuthorizedToken
-    }
-    
-    // ============================================================================
-    // FUNCIONES DE ADMINISTRACIÓN
-    // ============================================================================
-    
-    function addAuthorizedDEX(address dex) external onlyOwner {
-        require(dex != address(0), "DEX no puede ser address zero");
-        authorizedDEXs[dex] = true;
-    }
-    
-    function removeAuthorizedDEX(address dex) external onlyOwner {
-        authorizedDEXs[dex] = false;
-    }
-    
-    function addAuthorizedToken(address token) external onlyOwner {
-        require(token != address(0), "Token no puede ser address zero");
-        authorizedTokens[token] = true;
-    }
-    
-    function removeAuthorizedToken(address token) external onlyOwner {
-        authorizedTokens[token] = false;
-    }
-    
-    function setFeePercentage(uint256 _feePercentage) external onlyOwner {
-        require(_feePercentage <= 500, "Fee no puede ser mayor a 5%"); // Max 5%
-        feePercentage = _feePercentage;
-    }
-    
-    function setFeeCollector(address _feeCollector) external onlyOwner {
-        require(_feeCollector != address(0), "Fee collector no puede ser address zero");
-        feeCollector = _feeCollector;
-    }
-    
-    function setPaused(bool _paused) external onlyOwner {
-        paused = _paused;
-    }
-    
-    // ============================================================================
-    // FUNCIONES DE EMERGENCIA
-    // ============================================================================
-    
-    function emergencyWithdraw(address token, uint256 amount) external onlyOwner {
-        require(token != address(0), "Token no puede ser address zero");
-        
-        if (amount == 0) {
-            amount = IERC20(token).balanceOf(address(this));
-        }
-        
-        require(amount > 0, "No hay balance para retirar");
-        
-        IERC20(token).safeTransfer(owner(), amount);
-        
-        emit EmergencyWithdraw(token, amount, owner());
-    }
-    
-    function emergencyWithdrawETH() external onlyOwner {
-        uint256 balance = address(this).balance;
-        require(balance > 0, "No hay ETH para retirar");
-        
-        (bool success, ) = payable(owner()).call{value: balance}("");
-        require(success, "Transferencia de ETH falló");
-    }
-    
-    // ============================================================================
-    // FUNCIONES DE CONSULTA
-    // ============================================================================
-    
-    function getUserProfit(address user) external view returns (uint256) {
-        return userProfits[user];
-    }
-    
-    function getContractStats() external view returns (
-        uint256 totalTrades,
-        uint256 totalProfits,
-        uint256 currentFee,
-        bool isPaused
+
+    // === CONSTRUCTOR ===
+    constructor(
+        address admin,
+        address _flashLoanArbitrage
     ) {
-        return (
-            totalArbitrageCount,
-            totalProfitGenerated,
-            feePercentage,
-            paused
-        );
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(OPERATOR_ROLE, admin);
+        _grantRole(STRATEGY_ROLE, admin);
+        _grantRole(EMERGENCY_ROLE, admin);
+        
+        flashLoanArbitrage = UniversalFlashLoanArbitrage(_flashLoanArbitrage);
+        
+        // Default gas settings
+        gasSettings = GasOptimization({
+            baseGasPrice: 20 gwei,
+            priorityFee: 2 gwei,
+            gasLimit: 300000,
+            useFlashbotsBundle: false,
+            bundleHash: bytes32(0)
+        });
+        
+        // Default MEV protection
+        mevProtection = MEVProtection({
+            enabled: true,
+            maxPriorityFee: 100 gwei,
+            maxBaseFee: 1000 gwei,
+            allowedRelayers: new address[](0),
+            bundleHashes: new bytes32[](0)
+        });
     }
-    
-    function isDEXAuthorized(address dex) external view returns (bool) {
-        return authorizedDEXs[dex];
+
+    // === STRATEGY MANAGEMENT ===
+    /**
+     * @dev Registra nueva estrategia de arbitraje
+     */
+    function registerStrategy(
+        StrategyType strategyType,
+        address targetContract,
+        bytes calldata callData,
+        uint256 expectedProfit,
+        uint256 gasLimit,
+        uint256 priority
+    ) external onlyStrategy returns (uint256 strategyId) {
+        require(targetContract != address(0), "Invalid target contract");
+        require(expectedProfit > 0, "Expected profit must be > 0");
+        require(gasLimit > 0 && gasLimit <= 1000000, "Invalid gas limit");
+        
+        strategyId = nextStrategyId++;
+        
+        strategies[strategyId] = Strategy({
+            id: strategyId,
+            strategyType: strategyType,
+            targetContract: targetContract,
+            callData: callData,
+            expectedProfit: expectedProfit,
+            gasLimit: gasLimit,
+            priority: priority,
+            active: true,
+            successRate: 1000, // 100% inicial (basis points)
+            avgGasUsed: gasLimit
+        });
+        
+        emit StrategyRegistered(strategyId, strategyType, targetContract, expectedProfit);
     }
-    
-    function isTokenAuthorized(address token) external view returns (bool) {
-        return authorizedTokens[token];
+
+    /**
+     * @dev Crea plan de ejecución optimizado
+     */
+    function createExecutionPlan(
+        uint256[] calldata strategyIds,
+        uint256 blockTarget
+    ) external onlyOperator whenNotStopped returns (uint256 planId) {
+        require(strategyIds.length > 0, "No strategies provided");
+        require(strategyIds.length <= MAX_STRATEGIES_PER_BLOCK, "Too many strategies");
+        require(blockTarget >= block.number, "Invalid block target");
+        
+        planId = nextPlanId++;
+        ExecutionPlan storage plan = executionPlans[planId];
+        
+        plan.planId = planId;
+        plan.blockTarget = blockTarget;
+        plan.status = ExecutionStatus.PENDING;
+        plan.initiator = msg.sender;
+        plan.createdAt = block.timestamp;
+        
+        uint256 totalProfit = 0;
+        uint256 totalGas = 0;
+        
+        // Validar y agregar estrategias al plan
+        for (uint256 i = 0; i < strategyIds.length; i++) {
+            Strategy storage strategy = strategies[strategyIds[i]];
+            require(strategy.active, "Inactive strategy");
+            
+            plan.strategies.push(strategy);
+            totalProfit += strategy.expectedProfit;
+            totalGas += strategy.gasLimit;
+        }
+        
+        plan.totalExpectedProfit = totalProfit;
+        plan.totalGasLimit = totalGas;
+        
+        emit ExecutionPlanCreated(planId, msg.sender, strategyIds.length, totalProfit);
     }
-    
-    // ============================================================================
-    // RECEIVE FUNCTION PARA RECIBIR ETH
-    // ============================================================================
-    
+
+    // === EXECUTION ENGINE ===
+    /**
+     * @dev Ejecuta plan de arbitraje con optimizaciones avanzadas
+     */
+    function executePlan(
+        uint256 planId
+    ) external nonReentrant onlyOperator whenNotStopped gasOptimized mevProtected {
+        ExecutionPlan storage plan = executionPlans[planId];
+        
+        require(plan.status == ExecutionStatus.PENDING, "Plan not pending");
+        require(plan.blockTarget <= block.number + 5, "Block target too far");
+        require(_canExecuteInCurrentBlock(), "Block execution limit reached");
+        
+        plan.status = ExecutionStatus.EXECUTING;
+        
+        uint256 actualProfit = 0;
+        uint256 gasUsed = 0;
+        uint256 successfulStrategies = 0;
+        bool overallSuccess = true;
+        
+        // Ejecutar estrategias en orden de prioridad
+        Strategy[] memory sortedStrategies = _sortStrategiesByPriority(plan.strategies);
+        
+        for (uint256 i = 0; i < sortedStrategies.length; i++) {
+            Strategy memory strategy = sortedStrategies[i];
+            
+            try this._executeStrategy(strategy) returns (uint256 profit, uint256 gas) {
+                actualProfit += profit;
+                gasUsed += gas;
+                successfulStrategies++;
+                
+                // Actualizar estadísticas de la estrategia
+                _updateStrategyStats(strategy.id, true, gas);
+                
+            } catch Error(string memory reason) {
+                _updateStrategyStats(strategy.id, false, strategy.gasLimit);
+                overallSuccess = false;
+                
+                // Log error pero continuar con siguientes estrategias
+                emit ExecutionCompleted(planId, i, 0, 0, false);
+            }
+        }
+        
+        // Finalizar ejecución
+        plan.status = overallSuccess ? ExecutionStatus.COMPLETED : ExecutionStatus.FAILED;
+        
+        // Actualizar estadísticas globales
+        totalExecutions++;
+        totalProfits += actualProfit;
+        totalGasSpent += gasUsed;
+        strategiesExecutedThisBlock++;
+        lastExecutionBlock = block.number;
+        
+        emit ExecutionCompleted(planId, successfulStrategies, actualProfit, gasUsed, overallSuccess);
+    }
+
+    /**
+     * @dev Ejecuta estrategia individual con manejo de errores
+     */
+    function _executeStrategy(
+        Strategy memory strategy
+    ) external returns (uint256 profit, uint256 gasUsed) {
+        require(msg.sender == address(this), "Only self call");
+        
+        uint256 gasStart = gasleft();
+        
+        // Ejecutar estrategia específica según tipo
+        if (strategy.strategyType == StrategyType.CLASSIC_ARBITRAGE) {
+            profit = _executeClassicArbitrage(strategy);
+        } else if (strategy.strategyType == StrategyType.TRIANGULAR_ARBITRAGE) {
+            profit = _executeTriangularArbitrage(strategy);
+        } else if (strategy.strategyType == StrategyType.FLASH_LIQUIDATION) {
+            profit = _executeFlashLiquidation(strategy);
+        } else if (strategy.strategyType == StrategyType.MEV_SANDWICH) {
+            profit = _executeMEVSandwich(strategy);
+        } else if (strategy.strategyType == StrategyType.MEV_BACKRUN) {
+            profit = _executeMEVBackrun(strategy);
+        } else {
+            revert("Unsupported strategy type");
+        }
+        
+        gasUsed = gasStart - gasleft();
+        require(profit >= strategy.expectedProfit * 80 / 100, "Profit below threshold"); // 80% threshold
+    }
+
+    // === STRATEGY IMPLEMENTATIONS ===
+    function _executeClassicArbitrage(Strategy memory strategy) internal returns (uint256 profit) {
+        // Delegar al contrato UniversalFlashLoanArbitrage
+        (bool success, bytes memory result) = strategy.targetContract.call{gas: strategy.gasLimit}(strategy.callData);
+        require(success, "Classic arbitrage failed");
+        
+        // Decodificar profit del resultado
+        if (result.length >= 32) {
+            profit = abi.decode(result, (uint256));
+        }
+    }
+
+    function _executeTriangularArbitrage(Strategy memory strategy) internal returns (uint256 profit) {
+        // Implementar arbitraje triangular optimizado
+        (bool success, bytes memory result) = strategy.targetContract.call{gas: strategy.gasLimit}(strategy.callData);
+        require(success, "Triangular arbitrage failed");
+        
+        if (result.length >= 32) {
+            profit = abi.decode(result, (uint256));
+        }
+    }
+
+    function _executeFlashLiquidation(Strategy memory strategy) internal returns (uint256 profit) {
+        // Implementar liquidaciones con flash loans
+        (bool success, bytes memory result) = strategy.targetContract.call{gas: strategy.gasLimit}(strategy.callData);
+        require(success, "Flash liquidation failed");
+        
+        if (result.length >= 32) {
+            profit = abi.decode(result, (uint256));
+        }
+    }
+
+    function _executeMEVSandwich(Strategy memory strategy) internal returns (uint256 profit) {
+        // Implementar sandwich attacks protegidos
+        require(mevProtection.enabled, "MEV protection required");
+        
+        (bool success, bytes memory result) = strategy.targetContract.call{gas: strategy.gasLimit}(strategy.callData);
+        require(success, "MEV sandwich failed");
+        
+        if (result.length >= 32) {
+            profit = abi.decode(result, (uint256));
+        }
+    }
+
+    function _executeMEVBackrun(Strategy memory strategy) internal returns (uint256 profit) {
+        // Implementar backrunning optimizado
+        (bool success, bytes memory result) = strategy.targetContract.call{gas: strategy.gasLimit}(strategy.callData);
+        require(success, "MEV backrun failed");
+        
+        if (result.length >= 32) {
+            profit = abi.decode(result, (uint256));
+        }
+    }
+
+    // === OPTIMIZATION FUNCTIONS ===
+    function _sortStrategiesByPriority(
+        Strategy[] memory strategies
+    ) internal pure returns (Strategy[] memory) {
+        // Implementar ordenamiento por prioridad + expected profit
+        // Por simplicidad, retornamos el array original
+        // TODO: Implementar algoritmo de ordenamiento optimizado
+        return strategies;
+    }
+
+    function _canExecuteInCurrentBlock() internal view returns (bool) {
+        if (lastExecutionBlock < block.number) {
+            return true; // Nuevo bloque, reset counter
+        }
+        return strategiesExecutedThisBlock < MAX_STRATEGIES_PER_BLOCK;
+    }
+
+    function _updateStrategyStats(uint256 strategyId, bool success, uint256 gasUsed) internal {
+        Strategy storage strategy = strategies[strategyId];
+        
+        // Actualizar success rate (weighted average)
+        uint256 newRate = success ? 1000 : 0; // 100% or 0%
+        strategy.successRate = (strategy.successRate * 9 + newRate) / 10; // EMA
+        
+        // Actualizar gas promedio
+        strategy.avgGasUsed = (strategy.avgGasUsed * 9 + gasUsed) / 10; // EMA
+    }
+
+    function _updateGasStats(uint256 gasUsed) internal {
+        // Actualizar configuración de gas basada en uso histórico
+        if (gasUsed > gasSettings.gasLimit * 120 / 100) { // 20% over limit
+            gasSettings.gasLimit = gasUsed * 110 / 100; // Increase by 10%
+        }
+    }
+
+    // === MEV PROTECTION ===
+    function _checkMEVProtection() internal view {
+        require(tx.gasprice <= mevProtection.maxBaseFee + mevProtection.maxPriorityFee, "Gas price too high");
+        
+        // Verificar si viene de relayer autorizado (para bundles)
+        if (mevProtection.allowedRelayers.length > 0) {
+            bool authorized = false;
+            for (uint256 i = 0; i < mevProtection.allowedRelayers.length; i++) {
+                if (tx.origin == mevProtection.allowedRelayers[i]) {
+                    authorized = true;
+                    break;
+                }
+            }
+            require(authorized, "Unauthorized relayer");
+        }
+    }
+
+    // === ADMIN FUNCTIONS ===
+    function updateStrategy(
+        uint256 strategyId,
+        bool active,
+        uint256 priority
+    ) external onlyRole(STRATEGY_ROLE) {
+        Strategy storage strategy = strategies[strategyId];
+        require(strategy.id == strategyId, "Strategy not found");
+        
+        strategy.active = active;
+        strategy.priority = priority;
+    }
+
+    function updateMEVProtection(
+        bool enabled,
+        uint256 maxPriorityFee,
+        uint256 maxBaseFee,
+        address[] calldata allowedRelayers
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        mevProtection.enabled = enabled;
+        mevProtection.maxPriorityFee = maxPriorityFee;
+        mevProtection.maxBaseFee = maxBaseFee;
+        
+        // Actualizar relayers autorizados
+        delete mevProtection.allowedRelayers;
+        for (uint256 i = 0; i < allowedRelayers.length; i++) {
+            mevProtection.allowedRelayers.push(allowedRelayers[i]);
+        }
+        
+        emit MEVProtectionUpdated(enabled, maxPriorityFee, maxBaseFee);
+    }
+
+    function updateGasSettings(
+        uint256 baseGasPrice,
+        uint256 priorityFee,
+        uint256 gasLimit,
+        bool useFlashbotsBundle
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        gasSettings.baseGasPrice = baseGasPrice;
+        gasSettings.priorityFee = priorityFee;
+        gasSettings.gasLimit = gasLimit;
+        gasSettings.useFlashbotsBundle = useFlashbotsBundle;
+    }
+
+    function emergencyStopToggle() external onlyRole(EMERGENCY_ROLE) {
+        emergencyStop = !emergencyStop;
+        emit EmergencyStop(emergencyStop, msg.sender);
+    }
+
+    function cancelExecutionPlan(uint256 planId) external onlyOperator {
+        ExecutionPlan storage plan = executionPlans[planId];
+        require(plan.status == ExecutionStatus.PENDING, "Cannot cancel non-pending plan");
+        require(plan.initiator == msg.sender || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Not authorized");
+        
+        plan.status = ExecutionStatus.CANCELLED;
+    }
+
+    // === VIEW FUNCTIONS ===
+    function getStrategy(uint256 strategyId) external view returns (Strategy memory) {
+        return strategies[strategyId];
+    }
+
+    function getExecutionPlan(uint256 planId) external view returns (ExecutionPlan memory) {
+        return executionPlans[planId];
+    }
+
+    function getContractStats() external view returns (
+        uint256 _totalExecutions,
+        uint256 _totalProfits,
+        uint256 _totalGasSpent,
+        bool _emergencyStop
+    ) {
+        return (totalExecutions, totalProfits, totalGasSpent, emergencyStop);
+    }
+
+    function getMEVProtectionSettings() external view returns (MEVProtection memory) {
+        return mevProtection;
+    }
+
+    function getGasSettings() external view returns (GasOptimization memory) {
+        return gasSettings;
+    }
+
+    // === RECEIVE FUNCTION ===
     receive() external payable {
-        // Permite al contrato recibir ETH para operaciones de arbitraje
+        // Aceptar ETH para pagar gas fees
     }
 }
