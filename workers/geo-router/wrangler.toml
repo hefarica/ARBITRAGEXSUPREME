@@ -1,0 +1,108 @@
+# ArbitrageX Supreme V3.0 - Geo-Router Configuration
+# Ultra-Low Latency Multi-Region Setup - Ingenio Pichichi S.A.
+
+name = "arbitragex-geo-router"
+main = "src/index.ts"
+compatibility_date = "2024-09-10"
+compatibility_flags = ["nodejs_compat"]
+
+# Multi-environment configuration
+[env.production]
+name = "arbitragex-geo-router-prod"
+route = { pattern = "api.arbitragex.com/*", zone_name = "arbitragex.com" }
+
+[env.staging]
+name = "arbitragex-geo-router-staging"
+route = { pattern = "staging-api.arbitragex.com/*", zone_name = "arbitragex.com" }
+
+[env.development]
+name = "arbitragex-geo-router-dev"
+
+# Variables (regional backend URLs)
+[vars]
+US_EAST_BACKEND = "https://us-east.backend.arbitragex.com"
+EU_CENTRAL_BACKEND = "https://eu-central.backend.arbitragex.com" 
+AP_NORTHEAST_BACKEND = "https://ap-northeast.backend.arbitragex.com"
+
+# Production overrides
+[env.production.vars]
+US_EAST_BACKEND = "https://us-east-prod.backend.arbitragex.com"
+EU_CENTRAL_BACKEND = "https://eu-central-prod.backend.arbitragex.com"
+AP_NORTHEAST_BACKEND = "https://ap-northeast-prod.backend.arbitragex.com"
+
+# KV Namespaces for configuration and caching
+[[kv_namespaces]]
+binding = "GEO_CONFIG"
+id = "geo_config_namespace_id"
+preview_id = "geo_config_preview_id"
+
+# Analytics Engine for metrics
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+
+# Durable Objects for rate limiting
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+script_name = "arbitragex-rate-limiter"
+
+# R2 for static assets (optional)
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "arbitragex-static-assets"
+
+# Queue for async processing (optional)
+[[queues.producers]]
+binding = "METRICS_QUEUE"
+queue = "arbitragex-metrics"
+
+# WebSocket hibernation for connection persistence
+[websocket]
+hibernation = true
+
+# Limits and performance tuning
+[limits]
+cpu_ms = 30000  # 30 seconds max CPU time
+memory_mb = 128 # 128MB memory limit
+
+# Cron triggers for health checks
+[[triggers.crons]]
+cron = "*/1 * * * *"  # Every minute
+route = "/internal/health-check"
+
+# Build configuration
+[build]
+command = "npm run build"
+cwd = "."
+
+# Miniflare configuration for local development
+[miniflare]
+kv_persist = true
+cache_persist = true
+d1_persist = true
+
+# HTTP/3 and performance optimizations
+[http3]
+enabled = true
+
+# Security headers
+[security]
+csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+hsts = "max-age=31536000; includeSubDomains"
+
+# Logging configuration  
+[observability]
+enabled = true
+head_sampling_rate = 0.01  # 1% sampling for traces
+
+# Custom domains with HTTP/3
+[[custom_domains]]
+domain = "api.arbitragex.com"
+certificate_id = "ssl_cert_id_here"
+
+# Regional routing rules (advanced)
+[routing]
+# Route based on CF-IPCountry header
+us_countries = ["US", "CA", "MX"]
+eu_countries = ["GB", "DE", "FR", "IT", "ES", "NL", "BE", "CH", "AT", "SE", "NO", "DK", "FI"]
+ap_countries = ["JP", "KR", "SG", "AU", "NZ", "IN", "CN", "HK", "TW"]

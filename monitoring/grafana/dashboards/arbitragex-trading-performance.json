@@ -1,0 +1,444 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "ArbitrageX Supreme V3.0 - Trading Performance & PnL Analysis",
+    "tags": ["arbitragex", "trading", "pnl", "mev", "ingenio-pichichi"],
+    "style": "dark",
+    "timezone": "UTC",
+    "panels": [
+      {
+        "id": 1,
+        "title": "💰 Real-Time P&L Dashboard",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "arbitragex_total_realized_profit_eth",
+            "legendFormat": "Total Profit (ETH)",
+            "refId": "A"
+          },
+          {
+            "expr": "arbitragex_total_realized_profit_usd",
+            "legendFormat": "Total Profit (USD)",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(arbitragex_realized_profit_eth[1h])",
+            "legendFormat": "Hourly Rate (ETH/h)",
+            "refId": "C"
+          },
+          {
+            "expr": "arbitragex_profit_roi_percentage",
+            "legendFormat": "ROI (%)",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0},
+                {"color": "green", "value": 0.001}
+              ]
+            },
+            "unit": "short",
+            "decimals": 6
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Total Profit (USD)"},
+              "properties": [{"id": "unit", "value": "currencyUSD"}]
+            },
+            {
+              "matcher": {"id": "byName", "options": "ROI (%)"},
+              "properties": [{"id": "unit", "value": "percent"}]
+            }
+          ]
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "orientation": "auto",
+          "textMode": "value_and_name",
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center"
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "📈 Profit Trend Analysis (24h)",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "increase(arbitragex_realized_profit_eth[1h])",
+            "legendFormat": "Hourly Profit (ETH)",
+            "refId": "A"
+          },
+          {
+            "expr": "increase(arbitragex_successful_arbitrages_total[1h])",
+            "legendFormat": "Successful Arbitrages/h",
+            "refId": "B"
+          },
+          {
+            "expr": "arbitragex_average_profit_per_arbitrage",
+            "legendFormat": "Avg Profit per Trade (ETH)",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "barAlignment": 0,
+              "lineWidth": 2,
+              "fillOpacity": 15,
+              "gradientMode": "opacity",
+              "spanNulls": false,
+              "insertNulls": false,
+              "showPoints": "never",
+              "pointSize": 5,
+              "stacking": {"mode": "none", "group": "A"},
+              "axisPlacement": "auto",
+              "axisLabel": "",
+              "axisColorMode": "text",
+              "scaleDistribution": {"type": "linear"},
+              "axisCenteredZero": false,
+              "hideFrom": {"legend": false, "tooltip": false, "vis": false},
+              "thresholdsStyle": {"mode": "off"}
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 80}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "options": {
+          "tooltip": {"mode": "multi", "sort": "none"},
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "showLegend": true,
+            "calcs": ["last", "max", "mean"]
+          }
+        },
+        "gridPos": {"h": 8, "w": 16, "x": 0, "y": 8}
+      },
+      {
+        "id": 3,
+        "title": "🎯 Success Rate Metrics",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "arbitragex_bundle_inclusion_rate * 100",
+            "legendFormat": "Bundle Inclusion Rate",
+            "refId": "A"
+          },
+          {
+            "expr": "arbitragex_arbitrage_success_rate * 100",
+            "legendFormat": "Arbitrage Success Rate",
+            "refId": "B"
+          },
+          {
+            "expr": "arbitragex_ml_prediction_accuracy * 100",
+            "legendFormat": "ML Prediction Accuracy",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "green", "value": 80},
+                {"color": "dark-green", "value": 95}
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "orientation": "auto",
+          "textMode": "auto",
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "displayMode": "basic",
+          "minVizWidth": 75,
+          "minVizHeight": 75
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "🏆 Top Performing DEX Pairs",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, sum by (dex_pair) (arbitragex_profit_by_dex_pair))",
+            "legendFormat": "{{dex_pair}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "custom": {
+              "align": "auto",
+              "cellOptions": {"type": "auto"},
+              "inspect": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 80}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "options": {
+          "showHeader": true,
+          "cellHeight": "sm",
+          "footer": {
+            "show": false,
+            "reducer": ["sum"],
+            "countRows": false,
+            "fields": ""
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 5,
+        "title": "⚡ Gas Usage & Optimization",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(arbitragex_total_gas_used[1h])",
+            "legendFormat": "Gas Used/h",
+            "refId": "A"
+          },
+          {
+            "expr": "arbitragex_average_gas_price_gwei",
+            "legendFormat": "Avg Gas Price (Gwei)",
+            "refId": "B"
+          },
+          {
+            "expr": "arbitragex_gas_efficiency_ratio",
+            "legendFormat": "Gas Efficiency Ratio",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "fillOpacity": 10,
+              "gradientMode": "none"
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "🔍 MEV Strategy Performance Breakdown",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "arbitragex_profit_by_strategy_type",
+            "legendFormat": "{{strategy_type}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "hideFrom": {"legend": false, "tooltip": false, "vis": false}
+            },
+            "mappings": [],
+            "unit": "short"
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "pieType": "pie",
+          "tooltip": {"mode": "single", "sort": "none"},
+          "legend": {
+            "displayMode": "list",
+            "placement": "right",
+            "showLegend": true,
+            "values": ["percent"]
+          },
+          "displayLabels": ["name", "percent"]
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 7,
+        "title": "🌐 Regional Performance Comparison",
+        "type": "bargauge",
+        "targets": [
+          {
+            "expr": "sum by (region) (arbitragex_profit_by_region)",
+            "legendFormat": "{{region}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "continuous-GrYlRd"},
+            "custom": {
+              "orientation": "horizontal",
+              "barRadius": 0,
+              "xTickLabelRotation": 0,
+              "xTickLabelSpacing": 0,
+              "xTickLabelMaxLength": 0,
+              "displayMode": "basic",
+              "minVizWidth": 0,
+              "minVizHeight": 10
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 80}
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "orientation": "horizontal",
+          "displayMode": "basic",
+          "minVizWidth": 0,
+          "minVizHeight": 10,
+          "namePlacement": "auto",
+          "valuePlacement": "auto",
+          "barRadius": 0,
+          "xTickLabelRotation": 0,
+          "xTickLabelSpacing": 100
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "🚨 Risk Management & Alerts",
+        "type": "logs",
+        "targets": [
+          {
+            "expr": "{job=\"arbitragex\"} |= \"ERROR\" or \"WARN\" or \"failed\" or \"timeout\"",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showTime": true,
+          "showLabels": false,
+          "showCommonLabels": false,
+          "wrapLogMessage": false,
+          "prettifyLogMessage": false,
+          "enableLogDetails": true,
+          "dedupStrategy": "none",
+          "sortOrder": "Descending"
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+      }
+    ],
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "refresh": "10s",
+    "schemaVersion": 38,
+    "version": 1,
+    "links": [
+      {
+        "asDropdown": false,
+        "icon": "external link",
+        "includeVars": false,
+        "keepTime": false,
+        "tags": ["arbitragex"],
+        "targetBlank": true,
+        "title": "ArbitrageX Dashboards",
+        "tooltip": "Navigate to other ArbitrageX dashboards",
+        "type": "dashboards",
+        "url": ""
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "definition": "label_values(arbitragex_profit_by_region, region)",
+          "hide": 0,
+          "includeAll": true,
+          "label": "Region",
+          "multi": true,
+          "name": "region",
+          "options": [],
+          "query": {
+            "query": "label_values(arbitragex_profit_by_region, region)",
+            "refId": "StandardVariableQuery"
+          },
+          "refresh": 1,
+          "regex": "",
+          "skipUrlSync": false,
+          "sort": 0,
+          "type": "query"
+        }
+      ]
+    }
+  }
+}

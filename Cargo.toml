@@ -1,0 +1,162 @@
+# ArbitrageX Supreme V3.0 - Rust Workspace Configuration
+# Ultra-Low Latency Trading System - Ingenio Pichichi S.A.
+# Target: <100ms P95 E2E, <15ms scanner, <5ms routing, <2ms ML inference
+
+[workspace]
+members = [
+    "crates/opportunity-scanner",
+    "crates/router-executor", 
+    "crates/ml-inference"
+]
+
+resolver = "2"
+
+# Workspace-level dependencies for consistency
+[workspace.dependencies]
+# Core async runtime
+tokio = { version = "1.39", features = ["full"] }
+futures = "0.3"
+
+# HTTP and networking
+hyper = { version = "1.0", features = ["server", "http1", "http2"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.4", features = ["trace", "cors", "compression", "timeout"] }
+reqwest = { version = "0.11", features = ["json", "stream", "gzip", "rustls-tls"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+simd-json = "0.13"
+bytes = "1.5"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Concurrency and data structures
+parking_lot = "0.12"
+dashmap = "5.5"
+crossbeam = "0.8"
+rayon = "1.8"
+once_cell = "1.19"
+
+# Blockchain and crypto
+ethers = { version = "2.0", features = ["ws", "rustls"] }
+ethers-signers = { version = "2.0", features = ["aws", "ledger", "trezor"] }
+alloy-primitives = "0.4"
+secp256k1 = "0.28"
+sha3 = "0.10"
+
+# Machine Learning
+ort = { version = "2.0", features = ["cuda", "tensorrt", "load-dynamic"] }
+ndarray = "0.15"
+
+# EVM simulation and revm
+revm = { version = "3.5", features = ["std", "serde"] }
+
+# Redis and caching
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Metrics and monitoring
+prometheus = "0.13"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utilities
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Profile configurations for maximum performance
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+
+# CPU-specific optimizations can be enabled with RUSTFLAGS environment variable
+# RUSTFLAGS="-C target-cpu=native" cargo build --release
+
+# Development profile with some optimizations for faster iteration
+[profile.dev]
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
+
+# Profile for testing with optimizations
+[profile.test]
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = true
+
+# Workspace-level features for conditional compilation
+[workspace.metadata.features]
+# ML features
+default-ml = ["ort/cpu"]
+cuda-ml = ["ort/cuda", "ort/tensorrt"]
+cpu-optimized = ["simd-json/swar-number-parsing"]
+
+# Network features  
+http3 = ["reqwest/http3"]
+quic = ["reqwest/http3"]
+
+# Security features
+secure = ["ethers/rustls", "reqwest/rustls-tls"]
+
+# Performance features
+performance = ["parking_lot", "dashmap", "simd-json"]
+
+# Development features
+dev = ["tracing-subscriber/env-filter"]
+
+# Workspace metadata for build scripts and tools
+[workspace.metadata.arbitragex]
+name = "ArbitrageX Supreme V3.0"
+version = "3.0.0"
+company = "Ingenio Pichichi S.A."
+target_latency_ms = 100
+scanner_target_ms = 15
+routing_target_ms = 5
+ml_inference_target_ms = 2
+
+# Build metadata
+build_date = "2024-09-10"
+git_commit = "latest"
+deployment_env = "production"
+
+# Performance targets and SLOs
+slo_p95_latency_ms = 100
+slo_p99_latency_ms = 150
+slo_error_rate_percent = 0.1
+slo_uptime_percent = 99.95
+
+# Regional configuration
+regions = ["us-east-1", "eu-central-1", "ap-northeast-1"]
+
+# Docker configuration for multi-stage builds
+[workspace.metadata.docker]
+base_image = "ubuntu:22.04"
+rust_version = "1.75"
+target_triple = "x86_64-unknown-linux-gnu"
+
+# CI/CD metadata
+[workspace.metadata.ci]
+rust_toolchain = "stable"
+additional_targets = ["x86_64-unknown-linux-musl"]
+test_timeout = "300s"
+benchmark_timeout = "600s"
+
+# Documentation metadata
+[workspace.metadata.docs]
+features = ["default-ml", "secure", "performance"]
+no-default-features = true
