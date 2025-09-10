@@ -1,0 +1,12 @@
+# System numa_topology tuning
+# Technique: memory_locality
+# Expected improvement: 8ms
+
+[system]
+optimization_type = "numa_topology"
+technique = "memory_locality"
+enabled = true
+
+[performance]
+expected_improvement_ms = 8
+priority = "realtime"

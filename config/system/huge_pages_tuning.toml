@@ -1,0 +1,12 @@
+# System huge_pages tuning
+# Technique: reduced_tlb_misses
+# Expected improvement: 3ms
+
+[system]
+optimization_type = "huge_pages"
+technique = "reduced_tlb_misses"
+enabled = true
+
+[performance]
+expected_improvement_ms = 3
+priority = "realtime"

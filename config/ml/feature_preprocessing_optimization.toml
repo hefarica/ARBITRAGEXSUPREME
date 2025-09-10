@@ -1,0 +1,14 @@
+# ML feature_preprocessing optimization
+# Technique: simd_operations
+# Expected improvement: 3ms
+
+[ml_optimization]
+type = "feature_preprocessing"
+technique = "simd_operations"
+enabled = true
+
+[inference]
+batch_size = 32
+precision = "int8"
+graph_optimization = "aggressive"
+expected_improvement_ms = 3

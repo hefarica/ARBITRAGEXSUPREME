@@ -1,0 +1,12 @@
+# System cpu_affinity tuning
+# Technique: core_pinning
+# Expected improvement: 6ms
+
+[system]
+optimization_type = "cpu_affinity"
+technique = "core_pinning"
+enabled = true
+
+[performance]
+expected_improvement_ms = 6
+priority = "realtime"

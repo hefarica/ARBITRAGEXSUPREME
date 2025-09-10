@@ -1,0 +1,12 @@
+# System scheduler_policy tuning
+# Technique: real_time_priorities
+# Expected improvement: 4ms
+
+[system]
+optimization_type = "scheduler_policy"
+technique = "real_time_priorities"
+enabled = true
+
+[performance]
+expected_improvement_ms = 4
+priority = "realtime"

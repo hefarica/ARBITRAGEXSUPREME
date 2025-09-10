@@ -1,0 +1,14 @@
+# ML model_warmup optimization
+# Technique: preloaded_cache
+# Expected improvement: 2ms
+
+[ml_optimization]
+type = "model_warmup"
+technique = "preloaded_cache"
+enabled = true
+
+[inference]
+batch_size = 32
+precision = "int8"
+graph_optimization = "aggressive"
+expected_improvement_ms = 2

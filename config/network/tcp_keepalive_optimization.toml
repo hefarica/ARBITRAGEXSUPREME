@@ -1,0 +1,13 @@
+# Network tcp_keepalive optimization
+# Method: reduced_handshakes
+# Expected improvement: 7ms
+
+[network]
+optimization_type = "tcp_keepalive"
+method = "reduced_handshakes"
+enabled = true
+
+[performance]
+expected_improvement_ms = 7
+connection_timeout_ms = 5000
+read_timeout_ms = 10000

@@ -1,0 +1,13 @@
+# Network dns_caching optimization
+# Method: local_resolver
+# Expected improvement: 3ms
+
+[network]
+optimization_type = "dns_caching"
+method = "local_resolver"
+enabled = true
+
+[performance]
+expected_improvement_ms = 3
+connection_timeout_ms = 5000
+read_timeout_ms = 10000

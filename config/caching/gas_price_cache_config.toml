@@ -1,0 +1,17 @@
+# gas_price_cache caching configuration
+# Implementation: rolling_average
+# Expected improvement: 4ms
+
+[cache]
+type = "gas_price_cache"
+implementation = "rolling_average"
+enabled = true
+
+[performance]
+expected_improvement_ms = 4
+ttl_seconds = 300
+max_size = 10000
+
+[redis]
+cluster_mode = true
+compression = true
