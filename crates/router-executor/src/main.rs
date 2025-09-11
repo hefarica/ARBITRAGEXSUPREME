@@ -13,6 +13,8 @@ mod bundle_builder;
 mod flashbots_client;
 mod metrics;
 mod config;
+mod eip712_signer;
+mod mev_protection;
 
 use routing_engine::RoutingEngine;
 use gas_estimator::GasEstimator;
@@ -23,6 +25,8 @@ use bundle_builder::BundleBuilder;
 use flashbots_client::FlashbotsClient;
 use metrics::ExecutorMetrics;
 use config::ExecutorConfig;
+use eip712_signer::EIP712Signer;
+use mev_protection::{MEVProtectionEngine, MEVProtectionConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {

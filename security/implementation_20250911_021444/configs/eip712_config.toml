@@ -1,0 +1,25 @@
+# EIP-712 Domain Configuration for ArbitrageX Supreme V3.0
+
+[eip712_domain]
+name = "ArbitrageX Supreme"
+version = "3.0"
+chain_id = 1  # Ethereum Mainnet
+verifying_contract = "0x0000000000000000000000000000000000000000"  # Update with actual contract
+
+[signature_validation]
+strict_mode = true
+nonce_validation = true
+timestamp_validation = true
+replay_protection = true
+malleability_protection = true
+
+[performance]
+signature_cache_size = 10000
+nonce_cleanup_interval_seconds = 3600
+validation_timeout_ms = 5
+
+[security]
+max_transaction_age_seconds = 300
+require_fresh_nonces = true
+zero_address_protection = true
+s_value_validation = true

@@ -1,0 +1,32 @@
+# MEV Protection Configuration for ArbitrageX Supreme V3.0
+
+[mev_protection]
+flashbots_enabled = true
+private_mempool_enabled = true
+max_slippage_bps = 50  # 0.5%
+front_running_detection = true
+bundle_simulation = true
+max_bundle_size = 5
+bundle_timeout_ms = 2000
+
+[flashbots_relays]
+primary = "https://relay.flashbots.net"
+secondary = "https://api.edennetwork.io/v1/bundle"
+tertiary = "https://rpc.titanbuilder.xyz"
+
+[slippage_protection]
+max_price_impact_bps = 100  # 1%
+enable_dynamic_slippage = true
+price_oracle_validation = true
+
+[front_running_detection]
+mempool_monitoring = true
+gas_price_anomaly_detection = true
+pattern_analysis = true
+detection_window_seconds = 300
+
+[timing_protection]
+enable_jitter = true
+min_jitter_ms = 1
+max_jitter_ms = 100
+randomize_relay_selection = true

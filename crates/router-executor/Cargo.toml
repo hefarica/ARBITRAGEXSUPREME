@@ -35,3 +35,11 @@ chrono = { version = "0.4", features = ["serde"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 
 # Profiles are configured at workspace level
+# EIP-712 and cryptographic dependencies
+[dependencies.k256]
+version = "0.13"
+features = ["ecdsa", "sha256"]
+
+[dependencies.ethers-core]
+version = "2.0"
+features = ["eip712"]
