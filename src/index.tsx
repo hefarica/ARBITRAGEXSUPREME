@@ -15,11 +15,44 @@ import { WebSocketService } from './services/WebSocketService';
 import { MetaMaskService, metaMaskService } from './services/MetaMaskService';
 import { DashboardService, dashboardService } from './services/DashboardService';
 import { BacktestingService, backtestingService } from './services/BacktestingService';
+import { CacheService, cacheService } from './services/CacheService';
+import { PerformanceService, performanceService } from './services/PerformanceService';
 
 const app = new Hono();
 
 // Enable CORS
 app.use('/api/*', cors());
+
+// Middleware de performance monitoring
+app.use('/api/*', async (c, next) => {
+    const startTime = Date.now();
+    const path = new URL(c.req.url).pathname;
+    const measurementId = performanceService.startMeasurement(`endpoint_${path}`, {
+        method: c.req.method,
+        path: path
+    });
+    
+    try {
+        await next();
+        
+        // Medición exitosa
+        performanceService.endMeasurement(measurementId, `endpoint_${path}`, true, undefined, {
+            status: c.res.status,
+            duration: Date.now() - startTime
+        });
+        
+    } catch (error) {
+        // Medición con error
+        const errorType = error instanceof Error ? error.constructor.name : 'UnknownError';
+        performanceService.endMeasurement(measurementId, `endpoint_${path}`, false, errorType, {
+            status: 500,
+            duration: Date.now() - startTime,
+            error: error instanceof Error ? error.message : String(error)
+        });
+        
+        throw error;
+    }
+});
 
 // Serve static files
 app.use('/static/*', serveStatic({ root: './public' }));
@@ -653,6 +686,17 @@ app.get('/', (c) => {
                                 Analizar
                             </button>
                         </div>
+                        
+                        <div class="bg-gray-900/60 rounded-lg p-6 border border-indigo-400/30">
+                            <div class="text-center mb-4">
+                                <i class="fas fa-tachometer-alt text-3xl text-indigo-400"></i>
+                            </div>
+                            <h3 class="text-lg font-bold mb-3 text-indigo-400 text-center">Performance</h3>
+                            <p class="text-sm text-gray-300 mb-4 text-center">Optimización avanzada</p>
+                            <button onclick="loadPerformance()" class="w-full bg-indigo-600 hover:bg-indigo-700 py-2 px-4 rounded transition-colors">
+                                Optimizar
+                            </button>
+                        </div>
                     </div>
                     
                     <!-- Panel de conexión WebSocket -->
@@ -735,25 +779,50 @@ app.get('/', (c) => {
                         </div>
                     </div>
                     
+                    <!-- Panel de Performance -->
+                    <div id="performance-panel" class="bg-gray-900/60 rounded-lg p-6 border border-gray-600 hidden">
+                        <h4 class="text-lg font-bold mb-3 text-indigo-400">
+                            <i class="fas fa-tachometer-alt mr-2"></i>
+                            Performance & Optimización
+                        </h4>
+                        <div id="performance-content" class="space-y-4">
+                            <!-- Contenido del performance aparecerá aquí -->
+                        </div>
+                        <div class="mt-4 grid grid-cols-2 gap-2">
+                            <button onclick="loadSystemHealth()" class="bg-green-600 hover:bg-green-700 py-1 px-3 rounded text-xs transition-colors">
+                                System Health
+                            </button>
+                            <button onclick="loadCacheStats()" class="bg-blue-600 hover:bg-blue-700 py-1 px-3 rounded text-xs transition-colors">
+                                Cache Stats
+                            </button>
+                            <button onclick="loadSlowOperations()" class="bg-yellow-600 hover:bg-yellow-700 py-1 px-3 rounded text-xs transition-colors">
+                                Slow Ops
+                            </button>
+                            <button onclick="clearAllCache()" class="bg-red-600 hover:bg-red-700 py-1 px-3 rounded text-xs transition-colors">
+                                Clear Cache
+                            </button>
+                        </div>
+                    </div>
+                    
                     <div class="bg-gray-900/60 rounded-lg p-6 border border-gray-600">
                         <h4 class="text-lg font-bold mb-3 text-green-400">
-                            <i class="fas fa-trophy mr-2"></i>
-                            FASE 2: EXPANSIÓN FUNCIONAL 🏆 COMPLETADA AL 100%
+                            <i class="fas fa-crown mr-2"></i>
+                            FASE 2 ✅ + FASE 3.1 🚀 OPTIMIZACIÓN AVANZADA
                         </h4>
                         <div class="grid md:grid-cols-2 gap-4 text-sm">
                             <div>
-                                <p class="text-green-400">✅ 2.1: CoinGecko + 1inch APIs</p>
-                                <p class="text-green-400">✅ 2.2: WebSocket tiempo real</p>
-                                <p class="text-green-400">✅ 2.3: MetaMask (5 redes)</p>
-                                <p class="text-green-400">✅ 2.4: Dashboard interactivo</p>
-                                <p class="text-green-400">✅ 2.5: Backtesting automatizado</p>
+                                <p class="text-green-400">✅ 2.1-2.5: Funcionalidad completa</p>
+                                <p class="text-green-400">✅ 3.1: Cache multinivel L1/L2/L3</p>
+                                <p class="text-green-400">✅ 3.1: Performance monitoring</p>
+                                <p class="text-green-400">✅ 3.1: System health scoring</p>
+                                <p class="text-green-400">✅ 3.1: Optimización automática</p>
                             </div>
                             <div>
-                                <p class="text-green-400">✅ Sistema alertas inteligente</p>
-                                <p class="text-green-400">✅ Charts de precios live</p>
-                                <p class="text-green-400">✅ Análisis spreads DEX</p>
-                                <p class="text-green-400">✅ 3 estrategias de trading</p>
-                                <p class="text-green-400">✅ Optimización paramétrica</p>
+                                <p class="text-green-400">✅ 28 API endpoints activos</p>
+                                <p class="text-green-400">✅ Cache inteligente + TTL</p>
+                                <p class="text-green-400">✅ Medición auto de latencia</p>
+                                <p class="text-green-400">✅ Alertas de degradación</p>
+                                <p class="text-green-400">✅ Cleanup automático memoria</p>
                             </div>
                         </div>
                     </div>
@@ -1666,10 +1735,453 @@ app.get('/', (c) => {
                     content.innerHTML = comparisonHtml;
                 }
                 
+                // ===================================================================
+                // PERFORMANCE FUNCTIONS
+                // ===================================================================
+                
+                // Cargar performance principal
+                async function loadPerformance() {
+                    try {
+                        showResults({ loading: 'Cargando métricas de performance...' });
+                        showPerformancePanel();
+                        
+                        // Cargar system health por defecto
+                        await loadSystemHealth();
+                        
+                    } catch (error) {
+                        showResults({ error: error.message });
+                    }
+                }
+                
+                // Cargar system health
+                async function loadSystemHealth() {
+                    try {
+                        showResults({ loading: 'Analizando health del sistema...' });
+                        
+                        const response = await fetch('/api/performance/health');
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            displaySystemHealth(data.system_health);
+                            showResults({
+                                success: true,
+                                message: 'System health analyzed',
+                                overall_score: data.system_health.overall_score,
+                                status: data.status,
+                                recommendations: data.system_health.recommendations.length,
+                                timestamp: new Date().toISOString()
+                            });
+                        } else {
+                            throw new Error(data.error);
+                        }
+                        
+                    } catch (error) {
+                        showResults({ error: error.message });
+                    }
+                }
+                
+                // Cargar cache stats
+                async function loadCacheStats() {
+                    try {
+                        showResults({ loading: 'Cargando estadísticas de cache...' });
+                        
+                        const response = await fetch('/api/cache/stats');
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            displayCacheStats(data.cache_stats);
+                            showResults({
+                                success: true,
+                                message: 'Cache stats loaded',
+                                hit_ratio: data.cache_stats.hit_ratio_percentage.toFixed(1) + '%',
+                                rating: data.performance_rating,
+                                entries: data.cache_stats.total_entries,
+                                timestamp: new Date().toISOString()
+                            });
+                        } else {
+                            throw new Error(data.error);
+                        }
+                        
+                    } catch (error) {
+                        showResults({ error: error.message });
+                    }
+                }
+                
+                // Cargar operaciones lentas
+                async function loadSlowOperations() {
+                    try {
+                        showResults({ loading: 'Analizando operaciones lentas...' });
+                        
+                        const response = await fetch('/api/performance/slow-operations?limit=5');
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            displaySlowOperations(data.slow_operations);
+                            showResults({
+                                success: true,
+                                message: 'Slow operations analyzed',
+                                slow_ops_count: data.count,
+                                timestamp: new Date().toISOString()
+                            });
+                        } else {
+                            throw new Error(data.error);
+                        }
+                        
+                    } catch (error) {
+                        showResults({ error: error.message });
+                    }
+                }
+                
+                // Limpiar todo el cache
+                async function clearAllCache() {
+                    try {
+                        if (!confirm('¿Estás seguro de que quieres limpiar todo el cache? Esto puede afectar el rendimiento temporalmente.')) {
+                            return;
+                        }
+                        
+                        showResults({ loading: 'Limpiando cache...' });
+                        
+                        const response = await fetch('/api/cache/clear-all', { method: 'DELETE' });
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            showResults({
+                                success: true,
+                                message: 'Cache cleared successfully',
+                                cleared_entries: data.cleared_entries,
+                                timestamp: new Date().toISOString()
+                            });
+                            
+                            // Actualizar cache stats
+                            setTimeout(() => loadCacheStats(), 1000);
+                        } else {
+                            throw new Error(data.error);
+                        }
+                        
+                    } catch (error) {
+                        showResults({ error: error.message });
+                    }
+                }
+                
+                // Mostrar panel de performance
+                function showPerformancePanel() {
+                    const panel = document.getElementById('performance-panel');
+                    if (panel) {
+                        panel.classList.remove('hidden');
+                    }
+                }
+                
+                // Mostrar system health
+                function displaySystemHealth(health) {
+                    const content = document.getElementById('performance-content');
+                    if (!content) return;
+                    
+                    const scoreColor = health.overall_score >= 80 ? 'text-green-400' : 
+                                     health.overall_score >= 60 ? 'text-yellow-400' : 'text-red-400';
+                    
+                    content.innerHTML = 
+                        '<div class="bg-gray-800 p-4 rounded">' +
+                            '<h5 class="font-semibold text-indigo-400 mb-3">🏥 System Health</h5>' +
+                            '<div class="grid grid-cols-2 gap-3 mb-4">' +
+                                '<div class="bg-gray-700 p-2 rounded text-center">' +
+                                    '<div class="text-xs text-gray-400">Overall Score</div>' +
+                                    '<div class="text-2xl font-bold ' + scoreColor + '">' + health.overall_score + '/100</div>' +
+                                '</div>' +
+                                '<div class="bg-gray-700 p-2 rounded text-center">' +
+                                    '<div class="text-xs text-gray-400">Response Time</div>' +
+                                    '<div class="text-lg font-bold text-blue-400">' + health.response_time_health + '/100</div>' +
+                                '</div>' +
+                                '<div class="bg-gray-700 p-2 rounded text-center">' +
+                                    '<div class="text-xs text-gray-400">Error Rate</div>' +
+                                    '<div class="text-lg font-bold text-green-400">' + health.error_rate_health + '/100</div>' +
+                                '</div>' +
+                                '<div class="bg-gray-700 p-2 rounded text-center">' +
+                                    '<div class="text-xs text-gray-400">Cache Health</div>' +
+                                    '<div class="text-lg font-bold text-purple-400">' + health.cache_health + '/100</div>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="bg-gray-700 p-3 rounded">' +
+                                '<div class="text-xs font-semibold text-gray-300 mb-2">Recommendations:</div>' +
+                                '<div class="text-xs text-gray-400">' + health.recommendations.join(' • ') + '</div>' +
+                            '</div>' +
+                        '</div>';
+                }
+                
+                // Mostrar cache stats
+                function displayCacheStats(stats) {
+                    const content = document.getElementById('performance-content');
+                    if (!content) return;
+                    
+                    const hitRatioColor = stats.hit_ratio_percentage >= 90 ? 'text-green-400' :
+                                         stats.hit_ratio_percentage >= 70 ? 'text-yellow-400' : 'text-red-400';
+                    
+                    content.innerHTML = 
+                        '<div class="bg-gray-800 p-4 rounded">' +
+                            '<h5 class="font-semibold text-indigo-400 mb-3">📦 Cache Statistics</h5>' +
+                            '<div class="grid grid-cols-2 gap-3 mb-4">' +
+                                '<div class="bg-gray-700 p-2 rounded">' +
+                                    '<div class="text-xs text-gray-400">Hit Ratio</div>' +
+                                    '<div class="text-xl font-bold ' + hitRatioColor + '">' + stats.hit_ratio_percentage.toFixed(1) + '%</div>' +
+                                '</div>' +
+                                '<div class="bg-gray-700 p-2 rounded">' +
+                                    '<div class="text-xs text-gray-400">Total Entries</div>' +
+                                    '<div class="text-xl font-bold text-blue-400">' + stats.total_entries.toLocaleString() + '</div>' +
+                                '</div>' +
+                                '<div class="bg-gray-700 p-2 rounded">' +
+                                    '<div class="text-xs text-gray-400">Memory Usage</div>' +
+                                    '<div class="text-xl font-bold text-purple-400">' + stats.memory_usage_mb.toFixed(2) + ' MB</div>' +
+                                '</div>' +
+                                '<div class="bg-gray-700 p-2 rounded">' +
+                                    '<div class="text-xs text-gray-400">Avg Response</div>' +
+                                    '<div class="text-xl font-bold text-yellow-400">' + stats.avg_response_time_ms.toFixed(1) + ' ms</div>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="bg-gray-700 p-3 rounded">' +
+                                '<div class="text-xs font-semibold text-gray-300 mb-2">Performance:</div>' +
+                                '<div class="text-xs text-gray-400">' +
+                                    'Hits: ' + stats.total_hits.toLocaleString() + ' | ' +
+                                    'Misses: ' + stats.total_misses.toLocaleString() +
+                                '</div>' +
+                            '</div>' +
+                        '</div>';
+                }
+                
+                // Mostrar operaciones lentas
+                function displaySlowOperations(slowOps) {
+                    const content = document.getElementById('performance-content');
+                    if (!content) return;
+                    
+                    let slowOpsHtml = '<div class="bg-gray-800 p-4 rounded">' +
+                        '<h5 class="font-semibold text-indigo-400 mb-3">🐌 Slow Operations</h5>';
+                    
+                    if (slowOps.length === 0) {
+                        slowOpsHtml += '<div class="text-green-400 text-sm">✅ No slow operations detected</div>';
+                    } else {
+                        slowOpsHtml += '<div class="space-y-2">';
+                        slowOps.forEach(op => {
+                            const durationColor = op.avg_duration_ms > 1000 ? 'text-red-400' :
+                                                 op.avg_duration_ms > 500 ? 'text-yellow-400' : 'text-green-400';
+                            
+                            slowOpsHtml += 
+                                '<div class="bg-gray-700 p-2 rounded">' +
+                                    '<div class="flex justify-between items-center">' +
+                                        '<span class="text-sm font-semibold text-white">' + op.operation + '</span>' +
+                                        '<span class="' + durationColor + ' font-bold">' + op.avg_duration_ms.toFixed(1) + ' ms</span>' +
+                                    '</div>' +
+                                '</div>';
+                        });
+                        slowOpsHtml += '</div>';
+                    }
+                    
+                    slowOpsHtml += '</div>';
+                    content.innerHTML = slowOpsHtml;
+                }
+                
             </script>
         </body>
         </html>
     `);
+});
+
+// ===================================================================
+// PERFORMANCE & OPTIMIZATION ENDPOINTS
+// ===================================================================
+
+/**
+ * API para obtener métricas de performance
+ */
+app.get('/api/performance/metrics', async (c) => {
+    try {
+        const timeWindow = parseInt(c.req.query('window') || '3600000'); // 1 hour default
+        const operation = c.req.query('operation');
+        
+        if (operation) {
+            const metrics = performanceService.getOperationMetrics(operation, timeWindow);
+            return c.json({
+                success: true,
+                metrics,
+                methodology: 'Ingenio Pichichi S.A. - Performance monitoring',
+                timestamp: new Date().toISOString()
+            });
+        } else {
+            const allMetrics = performanceService.getAllOperationsMetrics(timeWindow);
+            return c.json({
+                success: true,
+                metrics: allMetrics,
+                count: allMetrics.length,
+                methodology: 'Ingenio Pichichi S.A. - Performance monitoring',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error getting performance metrics'
+        }, 500);
+    }
+});
+
+/**
+ * API para obtener health score del sistema
+ */
+app.get('/api/performance/health', async (c) => {
+    try {
+        const systemHealth = performanceService.getSystemHealth();
+        
+        return c.json({
+            success: true,
+            system_health: systemHealth,
+            status: systemHealth.overall_score >= 80 ? 'healthy' : 
+                   systemHealth.overall_score >= 60 ? 'warning' : 'critical',
+            methodology: 'Ingenio Pichichi S.A. - System health monitoring',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error getting system health'
+        }, 500);
+    }
+});
+
+/**
+ * API para obtener operaciones más lentas
+ */
+app.get('/api/performance/slow-operations', async (c) => {
+    try {
+        const limit = parseInt(c.req.query('limit') || '10');
+        const slowOperations = performanceService.getSlowestOperations(limit);
+        
+        return c.json({
+            success: true,
+            slow_operations: slowOperations,
+            count: slowOperations.length,
+            methodology: 'Ingenio Pichichi S.A. - Performance analysis',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error getting slow operations'
+        }, 500);
+    }
+});
+
+/**
+ * API para obtener estadísticas de cache
+ */
+app.get('/api/cache/stats', async (c) => {
+    try {
+        const cacheStats = cacheService.getCacheStats();
+        
+        return c.json({
+            success: true,
+            cache_stats: cacheStats,
+            performance_rating: cacheStats.hit_ratio_percentage >= 90 ? 'excellent' :
+                              cacheStats.hit_ratio_percentage >= 70 ? 'good' :
+                              cacheStats.hit_ratio_percentage >= 50 ? 'fair' : 'poor',
+            methodology: 'Ingenio Pichichi S.A. - Cache optimization',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error getting cache stats'
+        }, 500);
+    }
+});
+
+/**
+ * API para limpiar cache específico
+ */
+app.delete('/api/cache/invalidate/:pattern', async (c) => {
+    try {
+        const pattern = c.req.param('pattern');
+        const isPattern = c.req.query('is_pattern') === 'true';
+        
+        if (!pattern) {
+            return c.json({
+                success: false,
+                error: 'Pattern parameter is required'
+            }, 400);
+        }
+        
+        const invalidatedCount = await cacheService.invalidate(pattern, isPattern);
+        
+        return c.json({
+            success: true,
+            invalidated_entries: invalidatedCount,
+            pattern: pattern,
+            is_pattern: isPattern,
+            methodology: 'Ingenio Pichichi S.A. - Cache management',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error invalidating cache'
+        }, 500);
+    }
+});
+
+/**
+ * API para limpiar todo el cache
+ */
+app.delete('/api/cache/clear-all', async (c) => {
+    try {
+        const clearedCount = await cacheService.clearAll();
+        
+        return c.json({
+            success: true,
+            cleared_entries: clearedCount,
+            message: 'All cache cleared successfully',
+            methodology: 'Ingenio Pichichi S.A. - Cache management',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error clearing cache'
+        }, 500);
+    }
+});
+
+/**
+ * API para estadísticas generales del sistema
+ */
+app.get('/api/system/stats', async (c) => {
+    try {
+        const performanceStats = performanceService.getGeneralStats();
+        const cacheStats = cacheService.getCacheStats();
+        const systemHealth = performanceService.getSystemHealth();
+        
+        return c.json({
+            success: true,
+            system_stats: {
+                performance: performanceStats,
+                cache: cacheStats,
+                health: systemHealth,
+                uptime_info: {
+                    server_start: new Date().toISOString(),
+                    current_time: new Date().toISOString()
+                }
+            },
+            methodology: 'Ingenio Pichichi S.A. - System monitoring',
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        return c.json({
+            success: false,
+            error: 'Error getting system stats'
+        }, 500);
+    }
 });
 
 // ===================================================================

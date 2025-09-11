@@ -61,11 +61,24 @@ export class PriceService {
      * Obtener precios de CoinGecko (datos históricos y actuales)
      */
     async getCoinGeckoPrices(symbols: string[]): Promise<PriceData[]> {
+        // Implementar caching optimizado
+        const cacheKey = `prices_coingecko_${symbols.sort().join(',')}`;
+        
         try {
+            // Intentar obtener del cache primero (si cacheService está disponible)
+            if (typeof window !== 'undefined' && (window as any).cacheService) {
+                const cachedResult = await (window as any).cacheService.get(cacheKey);
+                if (cachedResult) {
+                    console.log('📦 Cache hit for CoinGecko prices:', symbols);
+                    return cachedResult;
+                }
+            }
+            
             // CoinGecko API (gratuita, 50 calls/min)
             const ids = this.mapSymbolsToCoinGeckoIds(symbols);
             const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true`;
             
+            console.log('🌐 Fetching from CoinGecko API:', symbols);
             const response = await fetch(url);
             
             if (!response.ok) {
@@ -73,8 +86,15 @@ export class PriceService {
             }
             
             const data = await response.json();
+            const transformedData = this.transformCoinGeckoData(data, symbols);
             
-            return this.transformCoinGeckoData(data, symbols);
+            // Cachear resultado (si cacheService está disponible)
+            if (typeof window !== 'undefined' && (window as any).cacheService) {
+                await (window as any).cacheService.set(cacheKey, transformedData);
+                console.log('💾 Cached CoinGecko prices for:', symbols);
+            }
+            
+            return transformedData;
             
         } catch (error) {
             console.error('❌ Error fetching CoinGecko prices:', error);
