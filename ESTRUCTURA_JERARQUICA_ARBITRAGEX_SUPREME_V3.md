@@ -19,6 +19,64 @@
 
 ---
 
+## 🔥 **PLAN DE CORRECCIÓN ARQUITECTURAL INMEDIATO**
+
+### **📋 Componentes Mal Ubicados Identificados**
+
+```
+🚨 ARCHIVOS EN REPOSITORIO INCORRECTO (hefarica/ARBITRAGEXSUPREME):
+
+├── 🦀 CÓDIGO RUST BACKEND:
+│   ├── crates/router-executor/src/eip712_signer.rs (13.9KB) 
+│   ├── crates/router-executor/src/mev_protection.rs (20.8KB)
+│   ├── crates/router-executor/src/lib.rs
+│   ├── crates/router-executor/src/mod.rs  
+│   ├── crates/router-executor/Cargo.toml
+│   └── Todo el directorio crates/ completo
+│
+├── 🔒 SEGURIDAD BACKEND:
+│   ├── security/audit_20250910_134623/ (completo)
+│   ├── security/eip712/ (si existe)
+│   ├── security/mev_protection/ (si existe)
+│   └── Todos los reports de seguridad
+│
+├── ⚙️ CONFIGURACIÓN RUST:
+│   ├── Cargo.toml (raíz)
+│   ├── Cargo.lock
+│   ├── rust-toolchain.toml (si existe)
+│   └── .cargo/config.toml (si existe)
+│
+└── 🧪 TESTS BACKEND RUST:
+    ├── tests/ (si contiene tests Rust)
+    ├── benches/ (si existe)
+    └── examples/ (si contiene ejemplos Rust)
+```
+
+### **🎯 Destino Correcto (hefarica/ARBITRAGEX-CONTABO-BACKEND)**
+
+```
+UBICACIÓN CORRECTA TRAS MIGRACIÓN:
+
+├── searcher-rs/src/core/
+│   ├── eip712_signer.rs ← MIGRAR DESDE CLOUDFLARE
+│   └── mev_protection.rs ← MIGRAR DESDE CLOUDFLARE
+│
+├── security/audits/
+│   └── audit_20250910_134623/ ← MIGRAR DESDE CLOUDFLARE
+│
+└── Cargo.toml (workspace) ← CONSOLIDAR CONFIG
+```
+
+### **⚡ Acciones Correctivas Inmediatas**
+
+1. **PASO 1**: Crear estructura correcta en ARBITRAGEX-CONTABO-BACKEND
+2. **PASO 2**: Migrar todos los archivos Rust desde ARBITRAGEXSUPREME
+3. **PASO 3**: Limpiar ARBITRAGEXSUPREME de contaminación backend  
+4. **PASO 4**: Validar separación de responsabilidades
+5. **PASO 5**: Actualizar documentación arquitectural
+
+---
+
 ## 🖥️ **MÓDULO 1: CONTABO VPS - ESTRUCTURA BACKEND COMPLETA**
 
 ### **📁 Estructura de Directorios Completa**
@@ -1221,32 +1279,51 @@ show-my-github-gems/
 
 ### **🖥️ CONTABO (Backend Infrastructure)**
 ```
-📊 Estado Implementación: 10% Completado
-├── ✅ EXISTENTE (5/50):
+📊 Estado Implementación: 15% Completado (Post-Auditoría Seguridad)
+📊 Estado Arquitectural: COMPROMETIDO - Código backend en CLOUDFLARE
+
+├── ✅ EXISTENTE (7.5/50):
 │   ├── ✅ Documentación arquitectural completa
 │   ├── ✅ Schema PostgreSQL creado
 │   ├── ✅ Configuración Docker base
 │   ├── ✅ README backend documentation
-│   └── ✅ Estructura directorios base
+│   ├── ✅ Estructura directorios base
+│   ├── ✅ EIP-712 Signer implementado (MAL UBICADO - en CLOUDFLARE)
+│   └── ✅ MEV Protection engine implementado (MAL UBICADO - en CLOUDFLARE)
 │
-└── ❌ FALTANTE (45/50):
+├── 🚨 MAL UBICADOS - REQUIEREN MIGRACIÓN:
+│   ├── 🔄 eip712_signer.rs (13.9KB) - Actualmente en ARBITRAGEXSUPREME
+│   ├── 🔄 mev_protection.rs (20.8KB) - Actualmente en ARBITRAGEXSUPREME
+│   ├── 🔄 Auditoría de seguridad completa - Actualmente en ARBITRAGEXSUPREME
+│   └── 🔄 Todo el directorio crates/ - Actualmente en ARBITRAGEXSUPREME
+│
+└── ❌ FALTANTE (42.5/50):
     ├── ❌ 5 Servicios Rust (searcher-rs, selector-api, sim-ctl, relays-client, recon)
     ├── ❌ 5 Dockerfiles específicos para servicios
     ├── ❌ Configuración nginx completa
     ├── ❌ Stack monitoreo (Prometheus + Grafana)
-    ├── ❌ Configuración seguridad completa
     ├── ❌ Scripts deployment automatizado
     ├── ❌ Tests unitarios e integración
-    └── ❌ 25+ archivos configuración y scripts
+    └── ❌ 22+ archivos configuración y scripts
 ```
 
 ### **☁️ CLOUDFLARE (Edge Computing Backend)**
 ```
 📊 Estado Implementación: 8% Completado
+📊 Estado Arquitectural: COMPROMETIDO - Contiene código backend Rust
+
 ├── ✅ EXISTENTE (3/35):
 │   ├── ✅ 1 Worker (opportunities.ts)
 │   ├── ✅ 1 Schema D1 (opportunities.sql)  
 │   └── ✅ README edge documentation
+│
+├── 🚨 CONTAMINACIÓN ARQUITECTURAL:
+│   ├── ❌ crates/router-executor/ (directorio Rust completo)
+│   ├── ❌ eip712_signer.rs (13.9KB código Rust backend)
+│   ├── ❌ mev_protection.rs (20.8KB código Rust backend)
+│   ├── ❌ security/audit_20250910_134623/ (auditoría backend)
+│   ├── ❌ Cargo.toml y Cargo.lock (configuración Rust)
+│   └── ❌ Multiple archivos backend en repositorio edge
 │
 └── ❌ FALTANTE (32/35):
     ├── ❌ 11 Workers críticos (auth, security, performance, analytics)
@@ -1290,10 +1367,18 @@ show-my-github-gems/
 
 ## 🎯 **PRIORIZACIÓN DESARROLLO**
 
-### **🚨 CRÍTICO - Fase 1 (Semanas 1-4)**
+### **🚨 CRÍTICO INMEDIATO - Corrección Arquitectural (Días 1-2)**
 ```
+0. CORRECCIÓN ARQUITECTURAL URGENTE:
+   ├── Migrar crates/ completo a ARBITRAGEX-CONTABO-BACKEND
+   ├── Migrar eip712_signer.rs a CONTABO/searcher-rs/src/core/
+   ├── Migrar mev_protection.rs a CONTABO/searcher-rs/src/core/
+   ├── Migrar security/audit_20250910_134623/ a CONTABO/security/
+   ├── Limpiar ARBITRAGEXSUPREME de código Rust backend
+   └── Validar separación correcta de responsabilidades
+
 1. CONTABO Backend Core:
-   ├── searcher-rs (Motor MEV principal)
+   ├── searcher-rs (Motor MEV principal) - CONTINUAR desde migración
    ├── selector-api (REST API + WebSocket)
    ├── PostgreSQL optimizado
    ├── Docker compose funcional
@@ -1351,20 +1436,33 @@ show-my-github-gems/
 
 ## 🏁 **CONCLUSIÓN ESTRUCTURA JERÁRQUICA**
 
-**Estado Actual**: Arquitectura bien documentada pero **implementación 0% funcional**
+**Estado Actual**: Arquitectura violada - **código backend en repositorio incorrecto**
+
+**Situación Post-Auditoría**:
+- ✅ **Mejora Seguridad**: 26% → 76% (lograda)
+- ✅ **Módulos Críticos**: EIP-712 + MEV Protection implementados
+- ❌ **Violación Arquitectural**: Backend Rust en repositorio Cloudflare
+- ❌ **Separación Comprometida**: Responsabilidades mezcladas
 
 **Componentes Totales Requeridos**: 165 componentes
-- **CONTABO**: 50 componentes (10% completo)
-- **CLOUDFLARE**: 35 componentes (8% completo)  
+- **CONTABO**: 50 componentes (15% completo) + **2.5 MAL UBICADOS**
+- **CLOUDFLARE**: 35 componentes (8% completo) - **CONTAMINADO CON BACKEND**
 - **LOVABLE**: 80 componentes (19% completo)
 
-**Tiempo Estimado Completación**: 12-15 semanas con equipo completo
-**Inversión Requerida**: $150,000 - $200,000 USD
-**Riesgo**: Alto - Sistema completamente no funcional actualmente
+**Tiempo Estimado Completación**: 
+- **Corrección Arquitectural**: 1-2 días (CRÍTICO)
+- **Implementación Total**: 11-14 semanas con equipo completo
 
-**Recomendación**: Proceder con implementación por fases según priorización establecida, comenzando por backend core en CONTABO como fundación crítica del sistema.
+**Inversión Requerida**: $140,000 - $180,000 USD (reducida por trabajo completado)
+**Riesgo**: **CRÍTICO** - Arquitectura comprometida requiere corrección inmediata
+
+**Recomendación URGENTE**: 
+1. **INMEDIATO**: Corregir violación arquitectural migrando código Rust a CONTABO
+2. **SEGUIMIENTO**: Continuar implementación desde arquitectura corregida
+3. **VALIDACIÓN**: Asegurar separación estricta de responsabilidades por repositorio
 
 ---
 
-*Documento actualizado según auditoría exhaustiva - Septiembre 2025*  
+*Documento actualizado post-auditoría de seguridad - Septiembre 11, 2025*  
 *Metodología: Ingenio Pichichi S.A - Buenas Prácticas*
+*Estado: ARQUITECTURA COMPROMETIDA - Corrección arquitectural requerida*

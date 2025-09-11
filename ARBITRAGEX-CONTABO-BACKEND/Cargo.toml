@@ -1,0 +1,29 @@
+[workspace]
+members = [
+    "searcher-rs",
+    "opportunity-scanner", 
+    "router-executor",
+    "ml-inference"
+]
+
+[workspace.dependencies]
+# Core dependencies
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+tracing = "0.1"
+
+# Ethereum & Web3
+ethers = "2.0"
+web3 = "0.19"
+
+# Async & Networking  
+reqwest = { version = "0.11", features = ["json"] }
+axum = "0.6"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres"] }
+
+# Utilities
+parking_lot = "0.12"
+dashmap = "5.4"
