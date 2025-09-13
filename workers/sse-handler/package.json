@@ -1,0 +1,33 @@
+{
+  "name": "arbitragex-sse-handler",
+  "version": "3.0.0",
+  "description": "ArbitrageX SSE Handler - Reemplaza Pusher con Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --outfile=dist/worker.js --external:cloudflare:*",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "test": "echo 'Tests coming soon'"
+  },
+  "keywords": [
+    "sse", 
+    "websockets", 
+    "cloudflare-workers", 
+    "arbitrage", 
+    "real-time"
+  ],
+  "author": "ArbitrageX Supreme Engineering Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20230922.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  },
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tu-usuario/arbitragex-supreme"
+  }
+}

@@ -1,0 +1,33 @@
+# ArbitrageX SSE Handler - Cloudflare Worker Configuration
+# Reemplaza Pusher ($49/mes → $0/mes)
+
+name = "arbitragex-sse-handler"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects para manejo de conexiones persistentes
+[[durable_objects.bindings]]
+name = "SSE_CONNECTIONS"
+class_name = "SSEConnections"
+
+# Variables de entorno
+[vars]
+NODE_ENV = "production"
+LOG_LEVEL = "info"
+SERVICE_NAME = "sse-handler"
+VERSION = "3.0.0"
+
+# Configuración de Workers
+[placement]
+mode = "smart"
+
+# Límites optimizados
+[limits]
+cpu_ms = 50
+memory_mb = 128
+
+# Build configuration
+[build]
+command = "npm run build"
+cwd = "."
