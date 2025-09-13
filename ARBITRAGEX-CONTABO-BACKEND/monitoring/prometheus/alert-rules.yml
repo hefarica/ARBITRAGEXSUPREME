@@ -1,0 +1,366 @@
+# Reglas de Alertas para ArbitrageX Supreme
+# Ingenio Pichichi S.A. - Metodología Cumplidor, disciplinado, organizado
+# 
+# Alertas completas para monitoreo de:
+# - Disponibilidad del sistema
+# - Performance de APIs
+# - Métricas de trading y arbitraje
+# - Seguridad y anomalías
+# - Blockchain y transacciones
+# 
+# Autor: Hector Fabio Riascos C.
+# Versión: 1.0.0
+# Fecha: 2025-01-15
+
+groups:
+  # Alertas de disponibilidad del sistema
+  - name: system_availability
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Servicio {{ $labels.job }} está down"
+          description: "El servicio {{ $labels.job }} en {{ $labels.instance }} no responde hace más de 1 minuto."
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(arbitragex_http_requests_total{status=~"5.."}[5m]) /
+            rate(arbitragex_http_requests_total[5m])
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "Alta tasa de errores en {{ $labels.job }}"
+          description: "La tasa de errores HTTP 5xx es {{ $value | humanizePercentage }} en los últimos 5 minutos."
+
+      - alert: APIResponseTimeTooHigh
+        expr: histogram_quantile(0.95, rate(arbitragex_http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Tiempo de respuesta alto en API"
+          description: "El percentil 95 del tiempo de respuesta es {{ $value | humanizeDuration }} en {{ $labels.endpoint }}"
+
+  # Alertas de trading y arbitraje
+  - name: trading_alerts
+    interval: 15s
+    rules:
+      - alert: TradingVolumeAnomaly
+        expr: |
+          (
+            arbitragex_trading_volume_24h > 
+            (avg_over_time(arbitragex_trading_volume_24h[7d]) * 3)
+          ) or (
+            arbitragex_trading_volume_24h < 
+            (avg_over_time(arbitragex_trading_volume_24h[7d]) * 0.3)
+          )
+        for: 10m
+        labels:
+          severity: warning
+          category: trading
+        annotations:
+          summary: "Anomalía en volumen de trading detectada"
+          description: "El volumen de trading actual ({{ $value }}) está significativamente fuera del rango normal (últimos 7 días)."
+
+      - alert: ArbitrageOpportunitySuccess
+        expr: rate(arbitragex_arbitrage_opportunities_executed_total[5m]) / rate(arbitragex_arbitrage_opportunities_found_total[5m]) < 0.1
+        for: 15m
+        labels:
+          severity: info
+          category: arbitrage
+        annotations:
+          summary: "Baja tasa de éxito en arbitraje"
+          description: "La tasa de ejecución exitosa de oportunidades de arbitraje es solo {{ $value | humanizePercentage }} en los últimos 5 minutos."
+
+      - alert: LargeOrderAlert
+        expr: arbitragex_trading_order_value_usd > 10000
+        for: 0s
+        labels:
+          severity: info
+          category: trading
+        annotations:
+          summary: "Orden grande detectada"
+          description: "Se detectó una orden de trading por valor de ${{ $value }} USD en {{ $labels.exchange }}."
+
+      - alert: TradingEngineDown
+        expr: arbitragex_trading_engine_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          category: trading
+        annotations:
+          summary: "Motor de trading no disponible"
+          description: "El motor de trading está inactivo o no responde."
+
+  # Alertas de blockchain
+  - name: blockchain_alerts
+    interval: 30s
+    rules:
+      - alert: BlockchainConnectionLost
+        expr: arbitragex_blockchain_connection_status{network=~"ethereum|polygon|arbitrum|optimism|base"} == 0
+        for: 3m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "Conexión a blockchain {{ $labels.network }} perdida"
+          description: "Se perdió la conexión a la red {{ $labels.network }} hace más de 3 minutos."
+
+      - alert: HighGasPrices
+        expr: arbitragex_blockchain_gas_price_gwei{network="ethereum"} > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "Precios de gas altos en Ethereum"
+          description: "El precio del gas en Ethereum es {{ $value }} Gwei, por encima del umbral de 100 Gwei."
+
+      - alert: TransactionFailureRate
+        expr: |
+          (
+            rate(arbitragex_blockchain_transactions_total{status="failed"}[10m]) /
+            rate(arbitragex_blockchain_transactions_total[10m])
+          ) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "Alta tasa de fallo en transacciones blockchain"
+          description: "La tasa de fallo de transacciones en {{ $labels.network }} es {{ $value | humanizePercentage }}."
+
+      - alert: MEVProtectionTriggered
+        expr: increase(arbitragex_mev_protection_triggered_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: info
+          category: blockchain
+        annotations:
+          summary: "Protección MEV activada frecuentemente"
+          description: "La protección MEV se ha activado {{ $value }} veces en los últimos 5 minutos."
+
+  # Alertas de seguridad
+  - name: security_alerts
+    interval: 10s
+    rules:
+      - alert: SecurityAttackDetected
+        expr: increase(arbitragex_security_attacks_total[1m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Ataque de seguridad detectado"
+          description: "Se detectaron {{ $value }} intentos de ataque de tipo {{ $labels.attack_type }} desde {{ $labels.source_ip }}."
+
+      - alert: FailedLoginAttempts
+        expr: increase(arbitragex_auth_failed_logins_total[5m]) > 20
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Múltiples intentos de login fallidos"
+          description: "Se detectaron {{ $value }} intentos de login fallidos en los últimos 5 minutos."
+
+      - alert: RateLimitExceeded
+        expr: increase(arbitragex_rate_limit_exceeded_total[1m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Rate limit excedido frecuentemente"
+          description: "El rate limit se ha excedido {{ $value }} veces en el último minuto para {{ $labels.endpoint }}."
+
+      - alert: SuspiciousUserActivity
+        expr: arbitragex_security_suspicious_users > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Actividad de usuario sospechosa detectada"
+          description: "Se detectaron {{ $value }} usuarios con actividad sospechosa."
+
+  # Alertas de métricas de negocio
+  - name: business_metrics
+    interval: 60s
+    rules:
+      - alert: LowActiveUsers
+        expr: arbitragex_active_users_5min < 10
+        for: 10m
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "Bajo número de usuarios activos"
+          description: "Solo {{ $value }} usuarios activos en los últimos 5 minutos."
+
+      - alert: ArbitrageRevenueDrop
+        expr: |
+          (
+            rate(arbitragex_arbitrage_revenue_usd[1h]) < 
+            (avg_over_time(arbitragex_arbitrage_revenue_usd[24h]) * 0.5)
+          )
+        for: 2h
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Caída significativa en ingresos por arbitraje"
+          description: "Los ingresos por arbitraje han caído significativamente en la última hora."
+
+      - alert: WalletDisconnectionRate
+        expr: |
+          (
+            rate(arbitragex_wallet_disconnections_total[10m]) /
+            rate(arbitragex_wallet_connections_total[10m])
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Alta tasa de desconexión de wallets"
+          description: "La tasa de desconexión de wallets es {{ $value | humanizePercentage }}."
+
+  # Alertas de infraestructura y recursos
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            arbitragex_memory_usage_bytes / arbitragex_memory_total_bytes
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Alto uso de memoria"
+          description: "El uso de memoria es {{ $value | humanizePercentage }} del total disponible."
+
+      - alert: CloudflareWorkerErrors
+        expr: rate(cloudflare_worker_errors_total[5m]) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Errores en Cloudflare Workers"
+          description: "Tasa de errores de {{ $value | humanizePercentage }} en Cloudflare Workers."
+
+      - alert: ExternalAPIDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "API externa no disponible"
+          description: "La API externa {{ $labels.instance }} no está respondiendo."
+
+      - alert: WebSocketConnectionsHigh
+        expr: arbitragex_websocket_connections_active > 1000
+        for: 10m
+        labels:
+          severity: info
+          category: infrastructure
+        annotations:
+          summary: "Alto número de conexiones WebSocket"
+          description: "Actualmente hay {{ $value }} conexiones WebSocket activas."
+
+  # Alertas de compliance y auditoría
+  - name: compliance_alerts
+    interval: 300s
+    rules:
+      - alert: AuditLogFailure
+        expr: increase(arbitragex_audit_log_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: compliance
+        annotations:
+          summary: "Fallo en sistema de auditoría"
+          description: "Se detectaron {{ $value }} fallos en el sistema de logging de auditoría."
+
+      - alert: DataRetentionViolation
+        expr: arbitragex_data_retention_violations_total > 0
+        for: 0s
+        labels:
+          severity: warning
+          category: compliance
+        annotations:
+          summary: "Violación de política de retención de datos"
+          description: "Se detectaron {{ $value }} violaciones de la política de retención de datos."
+
+      - alert: GDPRRequestBacklog
+        expr: arbitragex_gdpr_requests_pending > 5
+        for: 24h
+        labels:
+          severity: warning
+          category: compliance
+        annotations:
+          summary: "Acumulación de solicitudes GDPR"
+          description: "Hay {{ $value }} solicitudes GDPR pendientes por más de 24 horas."
+
+  # Alertas de métricas específicas de ArbitrageX
+  - name: arbitragex_specific
+    interval: 30s
+    rules:
+      - alert: CrossChainBridgeDelay
+        expr: arbitragex_bridge_transaction_duration_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+          category: arbitrage
+        annotations:
+          summary: "Retraso en bridge cross-chain"
+          description: "Una transacción de bridge está tomando {{ $value | humanizeDuration }} para completarse."
+
+      - alert: LiquidityPoolImbalance
+        expr: |
+          abs(
+            (arbitragex_liquidity_pool_token0 - arbitragex_liquidity_pool_token1) /
+            (arbitragex_liquidity_pool_token0 + arbitragex_liquidity_pool_token1)
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: info
+          category: arbitrage
+        annotations:
+          summary: "Desbalance significativo en pool de liquidez"
+          description: "El pool {{ $labels.pool_address }} tiene un desbalance del {{ $value | humanizePercentage }}."
+
+      - alert: SlippageThresholdExceeded
+        expr: arbitragex_trade_slippage_percentage > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: trading
+        annotations:
+          summary: "Slippage alto detectado"
+          description: "Se detectó un slippage del {{ $value }}% en el trade {{ $labels.trade_id }}."
+
+      - alert: FrontRunningDetected
+        expr: increase(arbitragex_frontrunning_detected_total[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Posible front-running detectado"
+          description: "Se detectaron {{ $value }} casos posibles de front-running en los últimos 5 minutos."

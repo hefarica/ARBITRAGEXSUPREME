@@ -1,0 +1,14 @@
+# transaction_builder cache_line_alignment optimization
+# Expected savings: 5ms
+
+[optimization]
+type = "cache_line_alignment"
+component = "transaction_builder"
+expected_savings_ms = 5
+enabled = true
+priority = "high"
+
+[parameters]
+# Component-specific optimization parameters
+# Generated automatically by production tuning optimizer
+timestamp = "2025-09-10T13:38:38Z"

@@ -1,0 +1,17 @@
+# route_cache caching configuration
+# Implementation: in_memory_graph
+# Expected improvement: 15ms
+
+[cache]
+type = "route_cache"
+implementation = "in_memory_graph"
+enabled = true
+
+[performance]
+expected_improvement_ms = 15
+ttl_seconds = 300
+max_size = 10000
+
+[redis]
+cluster_mode = true
+compression = true

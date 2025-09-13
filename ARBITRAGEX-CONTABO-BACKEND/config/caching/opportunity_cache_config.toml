@@ -1,0 +1,17 @@
+# opportunity_cache caching configuration
+# Implementation: lru_with_ttl
+# Expected improvement: 8ms
+
+[cache]
+type = "opportunity_cache"
+implementation = "lru_with_ttl"
+enabled = true
+
+[performance]
+expected_improvement_ms = 8
+ttl_seconds = 300
+max_size = 10000
+
+[redis]
+cluster_mode = true
+compression = true

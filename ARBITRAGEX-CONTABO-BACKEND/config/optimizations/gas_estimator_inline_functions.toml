@@ -1,0 +1,14 @@
+# gas_estimator inline_functions optimization
+# Expected savings: 3ms
+
+[optimization]
+type = "inline_functions"
+component = "gas_estimator"
+expected_savings_ms = 3
+enabled = true
+priority = "high"
+
+[parameters]
+# Component-specific optimization parameters
+# Generated automatically by production tuning optimizer
+timestamp = "2025-09-10T13:38:40Z"

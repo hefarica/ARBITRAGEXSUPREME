@@ -1,0 +1,14 @@
+# ML onnx_runtime_tuning optimization
+# Technique: graph_optimization
+# Expected improvement: 5ms
+
+[ml_optimization]
+type = "onnx_runtime_tuning"
+technique = "graph_optimization"
+enabled = true
+
+[inference]
+batch_size = 32
+precision = "int8"
+graph_optimization = "aggressive"
+expected_improvement_ms = 5

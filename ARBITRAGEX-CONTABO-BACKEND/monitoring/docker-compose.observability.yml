@@ -1,0 +1,311 @@
+# ArbitrageX Supreme V3.0 - Ultra-Low Latency Observability Stack
+# Ingenio Pichichi S.A. - Trader-Grade Monitoring
+# Stack: Prometheus + Mimir + Loki + Tempo + Grafana + AlertManager
+
+version: '3.8'
+
+services:
+  # 📊 METRICS: Prometheus (collection) + Mimir (long-term storage)
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: arbitragex-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/config:/etc/prometheus
+      - ./prometheus/alerts:/etc/prometheus/alerts
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--enable-feature=exemplar-storage'
+      - '--enable-feature=memory-snapshot-on-shutdown'
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.arbitragex.local`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  mimir:
+    image: grafana/mimir:2.10.0
+    container_name: arbitragex-mimir
+    ports:
+      - "9009:9009"
+    volumes:
+      - ./mimir/config:/etc/mimir
+      - mimir-data:/data
+    command:
+      - -config.file=/etc/mimir/mimir.yml
+      - -target=all
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9009/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 📝 LOGS: Loki (storage) + Promtail (collection)
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: arbitragex-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/config:/etc/loki
+      - loki-data:/loki
+    command:
+      - -config.file=/etc/loki/loki.yml
+      - -target=all
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: arbitragex-promtail
+    volumes:
+      - ./promtail/config:/etc/promtail
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - -config.file=/etc/promtail/promtail.yml
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  # 🕵️ TRACES: Tempo (distributed tracing)
+  tempo:
+    image: grafana/tempo:2.2.0
+    container_name: arbitragex-tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "14268:14268" # Jaeger ingest
+    volumes:
+      - ./tempo/config:/etc/tempo
+      - tempo-data:/var/tempo
+    command:
+      - -config.file=/etc/tempo/tempo.yml
+      - -target=all
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3200/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 📊 VISUALIZATION: Grafana
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: arbitragex-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/config:/etc/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=arbitragex-admin-2024
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor,flameGraph
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-polystat-panel,natel-discrete-panel
+      - GF_LIVE_ALLOWED_ORIGINS=*
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.arbitragex.local`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # 🚨 ALERTING: AlertManager + Webhook notifications
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: arbitragex-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/config:/etc/alertmanager
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--cluster.advertise-address=0.0.0.0:9093'
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9093/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 📈 PERFORMANCE: BlackBox Exporter (synthetic monitoring)
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: arbitragex-blackbox
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox/config:/etc/blackbox_exporter
+    command:
+      - '--config.file=/etc/blackbox_exporter/config.yml'
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+
+  # 🌐 REVERSE PROXY: Traefik for service discovery
+  traefik:
+    image: traefik:v3.0
+    container_name: arbitragex-traefik
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/config:/etc/traefik
+      - traefik-data:/data
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.email=admin@arbitragex.com
+      - --certificatesresolvers.letsencrypt.acme.storage=/data/acme.json
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.arbitragex.local`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+
+  # 🔧 UTILITIES: Redis for caching and message queues
+  redis:
+    image: redis:7.2-alpine
+    container_name: arbitragex-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 512mb 
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 📊 METRICS EXPORTERS
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.54.0
+    container_name: arbitragex-redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: arbitragex-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: arbitragex-cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - arbitragex-monitoring
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+    driver: local
+  mimir-data:
+    driver: local
+  loki-data:
+    driver: local
+  tempo-data:
+    driver: local
+  grafana-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+  traefik-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  arbitragex-monitoring:
+    driver: bridge
+    name: arbitragex-monitoring
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,14 @@
+# ML model_quantization optimization
+# Technique: int8_precision
+# Expected improvement: 4ms
+
+[ml_optimization]
+type = "model_quantization"
+technique = "int8_precision"
+enabled = true
+
+[inference]
+batch_size = 32
+precision = "int8"
+graph_optimization = "aggressive"
+expected_improvement_ms = 4

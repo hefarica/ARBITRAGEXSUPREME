@@ -1,0 +1,17 @@
+# signature_cache caching configuration
+# Implementation: precomputed_pool
+# Expected improvement: 6ms
+
+[cache]
+type = "signature_cache"
+implementation = "precomputed_pool"
+enabled = true
+
+[performance]
+expected_improvement_ms = 6
+ttl_seconds = 300
+max_size = 10000
+
+[redis]
+cluster_mode = true
+compression = true

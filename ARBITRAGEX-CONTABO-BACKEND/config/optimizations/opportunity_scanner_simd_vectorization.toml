@@ -1,0 +1,14 @@
+# opportunity_scanner simd_vectorization optimization
+# Expected savings: 15ms
+
+[optimization]
+type = "simd_vectorization"
+component = "opportunity_scanner"
+expected_savings_ms = 15
+enabled = true
+priority = "high"
+
+[parameters]
+# Component-specific optimization parameters
+# Generated automatically by production tuning optimizer
+timestamp = "2025-09-10T13:38:36Z"

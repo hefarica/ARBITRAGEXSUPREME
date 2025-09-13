@@ -1,56 +1,70 @@
-// ArbitrageX Pro 2025 - PM2 Configuration
-// Production-grade process management for all services
+/**
+ * 🚀 PM2 CONFIGURATION - ArbitrageX Supreme V3.0 
+ * 
+ * METODOLOGÍA: INGENIO PICHICHI S.A.
+ * - Disciplinado: Solo Edge functions de Cloudflare (0% backend)
+ * - Organizado: Configuración específica para Workers
+ * - Metodológico: Separación clara de responsabilidades
+ * 
+ * ARQUITECTURA: CLOUDFLARE EDGE ONLY
+ * - SSE Handler Worker
+ * - API Gateway Worker  
+ * - Cache Proxy Worker
+ * 
+ * @version 3.0.0 - EDGE ONLY
+ * @author ArbitrageX Supreme Engineering Team
+ */
 
 module.exports = {
   apps: [
     {
-      name: 'arbitragex-api',
-      script: './apps/api/dist/index.blockchain-integrated.js',
-      cwd: './',
-      instances: 1,
-      exec_mode: 'fork',
+      name: 'arbitragex-sse-handler',
+      script: 'npx',
+      args: 'wrangler dev workers/sse-handler/src/index.ts --port 3001',
+      cwd: '/home/user/webapp',
       env: {
         NODE_ENV: 'development',
-        PORT: 3001
+        CLOUDFLARE_WORKER_TYPE: 'sse-handler'
       },
-      env_production: {
-        NODE_ENV: 'production',
-        PORT: 3001
-      },
-      error_file: './logs/api-error.log',
-      out_file: './logs/api-out.log',
-      log_file: './logs/api-combined.log',
-      time: true,
-      max_memory_restart: '1G',
       watch: false,
-      ignore_watch: ['node_modules', 'logs', 'coverage'],
-      min_uptime: '10s',
-      max_restarts: 5
+      instances: 1,
+      exec_mode: 'fork',
+      log_file: './logs/sse-handler.log',
+      error_file: './logs/sse-handler-error.log',
+      out_file: './logs/sse-handler-out.log'
     },
     {
-      name: 'arbitragex-web',
-      script: 'npm',
-      args: 'start',
-      cwd: './apps/web',
-      instances: 1,
-      exec_mode: 'fork',
+      name: 'arbitragex-api-gateway', 
+      script: 'npx',
+      args: 'wrangler dev workers/api-gateway/src/index.ts --port 3002',
+      cwd: '/home/user/webapp',
       env: {
         NODE_ENV: 'development',
-        PORT: 3000
+        CLOUDFLARE_WORKER_TYPE: 'api-gateway',
+        CONTABO_BACKEND_URL: 'https://your-contabo-vps.com:8080'
       },
-      env_production: {
-        NODE_ENV: 'production',
-        PORT: 3000
-      },
-      error_file: './logs/web-error.log',
-      out_file: './logs/web-out.log',
-      log_file: './logs/web-combined.log',
-      time: true,
-      max_memory_restart: '1G',
       watch: false,
-      ignore_watch: ['node_modules', 'logs', 'coverage'],
-      min_uptime: '10s',
-      max_restarts: 5
+      instances: 1,
+      exec_mode: 'fork',
+      log_file: './logs/api-gateway.log',
+      error_file: './logs/api-gateway-error.log',
+      out_file: './logs/api-gateway-out.log'
+    },
+    {
+      name: 'arbitragex-static-serve',
+      script: 'npx',
+      args: 'wrangler pages dev dist --port 3000 --ip 0.0.0.0',
+      cwd: '/home/user/webapp',
+      env: {
+        NODE_ENV: 'development',
+        CLOUDFLARE_PAGES: true
+      },
+      watch: false,
+      instances: 1,
+      exec_mode: 'fork',
+      log_file: './logs/pages.log',
+      error_file: './logs/pages-error.log',
+      out_file: './logs/pages-out.log'
     }
   ]
-}
+};

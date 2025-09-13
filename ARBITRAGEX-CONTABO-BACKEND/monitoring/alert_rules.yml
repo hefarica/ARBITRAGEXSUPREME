@@ -1,0 +1,249 @@
+# ================================
+# ArbitrageX Supreme V3.0 - Alert Rules
+# Alertas críticas para operación Real-Only
+# ================================
+
+groups:
+  # ================================
+  # Alertas Críticas de Latencia
+  # ================================
+  - name: arbitragex_latency_critical
+    interval: 1s
+    rules:
+      - alert: ArbitrageLatencyExceeded
+        expr: arbitragex_response_time_ms > 200
+        for: 5s
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Latencia de arbitraje excede objetivo de 200ms"
+          description: "La latencia de respuesta es {{ $value }}ms, excediendo el objetivo de 200ms por {{ $for }}"
+          
+      - alert: ArbitrageOpportunityMissed
+        expr: increase(arbitragex_missed_opportunities_total[1m]) > 5
+        for: 30s
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "Oportunidades de arbitraje perdidas"
+          description: "{{ $value }} oportunidades perdidas en el último minuto"
+
+  # ================================
+  # Alertas de Sistema Backend
+  # ================================
+  - name: arbitragex_system_critical
+    interval: 10s
+    rules:
+      - alert: ArbitrageXBackendDown
+        expr: up{job="arbitragex-backend"} == 0
+        for: 10s
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Backend ArbitrageX inaccesible"
+          description: "El backend principal de ArbitrageX ha estado inaccesible por {{ $for }}"
+          
+      - alert: ArbitrageXHighErrorRate
+        expr: rate(arbitragex_errors_total[1m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: reliability
+        annotations:
+          summary: "Alta tasa de errores en ArbitrageX"
+          description: "Tasa de errores: {{ $value | humanizePercentage }}"
+
+  # ================================
+  # Alertas de Blockchain Connectivity
+  # ================================
+  - name: blockchain_connectivity
+    interval: 5s
+    rules:
+      - alert: BlockchainRPCDown
+        expr: arbitragex_blockchain_rpc_status == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: connectivity
+        annotations:
+          summary: "RPC Blockchain desconectado"
+          description: "RPC para {{ $labels.chain_name }} (ID: {{ $labels.chain_id }}) inaccesible por {{ $for }}"
+          
+      - alert: BlockchainHighLatency
+        expr: arbitragex_blockchain_rpc_latency_ms > 1000
+        for: 1m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Alta latencia en RPC Blockchain"
+          description: "Latencia RPC {{ $labels.chain_name }}: {{ $value }}ms"
+
+  # ================================
+  # Alertas de Flash Loans
+  # ================================
+  - name: flash_loan_system
+    interval: 5s
+    rules:
+      - alert: FlashLoanProviderDown
+        expr: arbitragex_flash_loan_provider_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: capital
+        annotations:
+          summary: "Proveedor de Flash Loan inaccesible"
+          description: "{{ $labels.provider_name }} inaccesible por {{ $for }}"
+          
+      - alert: FlashLoanFailureRate
+        expr: rate(arbitragex_flash_loan_failures_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: reliability
+        annotations:
+          summary: "Alta tasa de fallos en Flash Loans"
+          description: "Tasa de fallos: {{ $value | humanizePercentage }} en {{ $labels.provider_name }}"
+
+  # ================================
+  # Alertas Anti-Rugpull
+  # ================================
+  - name: anti_rugpull_system
+    interval: 1s
+    rules:
+      - alert: RugpullTokenDetected
+        expr: increase(arbitragex_rugpull_detections_total[1m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Token rugpull detectado"
+          description: "Token sospechoso detectado: {{ $labels.token_address }} en {{ $labels.chain_name }}"
+          
+      - alert: SuspiciousLiquidityDrop
+        expr: arbitragex_token_liquidity_change_percent < -50
+        for: 30s
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Caída sospechosa de liquidez"
+          description: "Liquidez de {{ $labels.token_symbol }} cayó {{ $value }}% en {{ $labels.dex_name }}"
+
+  # ================================
+  # Alertas de Recursos del Sistema
+  # ================================
+  - name: system_resources
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Alto uso de CPU"
+          description: "CPU usage: {{ $value | humanizePercentage }} en {{ $labels.instance }}"
+          
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 3m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Alto uso de memoria"
+          description: "Memoria usage: {{ $value | humanizePercentage }} en {{ $labels.instance }}"
+          
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          category: resources
+        annotations:
+          summary: "Poco espacio en disco"
+          description: "Espacio disponible: {{ $value | humanizePercentage }} en {{ $labels.mountpoint }}"
+
+  # ================================
+  # Alertas de Base de Datos
+  # ================================
+  - name: database_health
+    interval: 30s
+    rules:
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "PostgreSQL inaccesible"
+          description: "Base de datos PostgreSQL inaccesible por {{ $for }}"
+          
+      - alert: PostgreSQLHighConnections
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Alto número de conexiones PostgreSQL"
+          description: "Conexiones activas: {{ $value }}"
+
+  # ================================
+  # Alertas de Redis Cache
+  # ================================
+  - name: redis_cache
+    interval: 30s
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: cache
+        annotations:
+          summary: "Redis cache inaccesible"
+          description: "Cache Redis inaccesible por {{ $for }}"
+          
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: cache
+        annotations:
+          summary: "Alto uso de memoria en Redis"
+          description: "Memoria Redis: {{ $value | humanizePercentage }}"
+
+  # ================================
+  # Alertas de Anvil-Real
+  # ================================
+  - name: anvil_real_engine
+    interval: 5s
+    rules:
+      - alert: AnvilRealDown
+        expr: anvil_real_status == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: simulation
+        annotations:
+          summary: "Anvil-Real simulation engine inaccesible"
+          description: "Motor de simulación Anvil-Real inaccesible por {{ $for }}"
+          
+      - alert: AnvilRealHighLatency
+        expr: anvil_real_response_time_ms > 100
+        for: 1m
+        labels:
+          severity: warning
+          category: simulation
+        annotations:
+          summary: "Alta latencia en Anvil-Real"
+          description: "Latencia de simulación: {{ $value }}ms"

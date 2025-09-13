@@ -1,0 +1,234 @@
+# ArbitrageX Supreme V3.0 - SLO Alert Rules
+# Ultra-Low Latency Trading System - Ingenio Pichichi S.A.
+# Target SLOs: <100ms P95 E2E, >95% uptime, <0.1% error rate
+
+groups:
+- name: arbitragex.latency.slo
+  interval: 10s
+  rules:
+  
+  # 🎯 CRITICAL LATENCY SLO VIOLATIONS
+  - alert: ArbitrageXLatencySLOViolation
+    expr: histogram_quantile(0.95, rate(arbitragex_total_execution_duration_bucket[1m])) > 100
+    for: 30s
+    labels:
+      severity: critical
+      team: trading
+      service: arbitragex-supreme-v3
+      slo: latency
+    annotations:
+      summary: "ArbitrageX P95 latency exceeds 100ms SLO"
+      description: "P95 execution latency is {{ $value }}ms, exceeding 100ms SLO for {{ $labels.instance }}"
+      runbook_url: "https://docs.arbitragex.com/runbooks/latency-slo"
+      dashboard_url: "https://grafana.arbitragex.com/d/arbitragex-latency-e2e"
+
+  - alert: ArbitrageXScannerLatencyHigh
+    expr: histogram_quantile(0.95, rate(arbitragex_opportunity_scanner_processing_duration_bucket[1m])) > 15
+    for: 15s
+    labels:
+      severity: critical
+      component: opportunity-scanner
+      slo: scanner-latency
+    annotations:
+      summary: "Opportunity scanner exceeding 15ms P95 budget"
+      description: "Scanner P95 latency: {{ $value }}ms > 15ms budget"
+
+  - alert: ArbitrageXMLInferenceLatencyHigh
+    expr: histogram_quantile(0.95, rate(arbitragex_ml_inference_duration_bucket[1m])) > 2
+    for: 10s
+    labels:
+      severity: critical
+      component: ml-inference
+      slo: ml-latency
+    annotations:
+      summary: "ML inference exceeding 2ms P95 budget"
+      description: "ML inference P95 latency: {{ $value }}ms > 2ms budget"
+
+  - alert: ArbitrageXFlashbotsLatencyHigh
+    expr: histogram_quantile(0.95, rate(arbitragex_flashbots_submission_duration_bucket[1m])) > 10
+    for: 15s
+    labels:
+      severity: warning
+      component: flashbots-client
+      slo: submission-latency
+    annotations:
+      summary: "Flashbots submission exceeding 10ms P95 budget"
+      description: "Flashbots P95 latency: {{ $value }}ms > 10ms budget"
+
+  # 🚨 ERROR RATE SLO VIOLATIONS  
+  - alert: ArbitrageXErrorRateHigh
+    expr: rate(arbitragex_failed_submissions_total[5m]) / rate(arbitragex_total_submissions_total[5m]) > 0.001
+    for: 1m
+    labels:
+      severity: critical
+      slo: error-rate
+    annotations:
+      summary: "ArbitrageX error rate exceeds 0.1% SLO"
+      description: "Error rate: {{ $value | humanizePercentage }} > 0.1% SLO"
+
+  - alert: ArbitrageXBundleInclusionRateLow
+    expr: arbitragex_bundle_inclusion_rate < 0.8
+    for: 2m
+    labels:
+      severity: warning
+      slo: inclusion-rate
+    annotations:
+      summary: "Bundle inclusion rate below 80% threshold"
+      description: "Bundle inclusion rate: {{ $value | humanizePercentage }} < 80%"
+
+  # 💰 PROFIT & PERFORMANCE ALERTS
+  - alert: ArbitrageXProfitabilityDrop
+    expr: rate(arbitragex_realized_profit_eth[1h]) < 0.001
+    for: 5m
+    labels:
+      severity: warning
+      business_impact: revenue
+    annotations:
+      summary: "ArbitrageX profitability below threshold"
+      description: "Hourly profit rate: {{ $value }} ETH/h < 0.001 ETH/h threshold"
+
+  - alert: ArbitrageXNoOpportunitiesDetected
+    expr: rate(arbitragex_opportunities_detected_total[5m]) == 0
+    for: 3m
+    labels:
+      severity: critical
+      component: opportunity-detection
+    annotations:
+      summary: "No arbitrage opportunities detected"
+      description: "Zero opportunities detected in last 5 minutes - check DEX feeds"
+
+  # 🌍 REGIONAL HEALTH ALERTS
+  - alert: ArbitrageXRegionDown
+    expr: up{job="arbitragex-backend"} == 0
+    for: 30s
+    labels:
+      severity: critical
+      slo: availability
+    annotations:
+      summary: "ArbitrageX region {{ $labels.region }} is down"
+      description: "Backend in region {{ $labels.region }} is unreachable"
+
+  - alert: ArbitrageXEdgeLatencyHigh
+    expr: histogram_quantile(0.95, rate(arbitragex_geo_router_backend_latency_bucket[1m])) > 25
+    for: 1m
+    labels:
+      severity: warning
+      component: geo-router
+    annotations:
+      summary: "Edge-to-backend latency high for {{ $labels.region }}"
+      description: "P95 edge latency: {{ $value }}ms > 25ms threshold"
+
+  # 🔌 CONNECTIVITY & INFRASTRUCTURE
+  - alert: ArbitrageXWebSocketConnectionsLow
+    expr: arbitragex_websocket_connections_active < 10
+    for: 2m
+    labels:
+      severity: warning
+      component: websocket-manager
+    annotations:
+      summary: "Low WebSocket connection count"
+      description: "Active WebSocket connections: {{ $value }} < 10"
+
+  - alert: ArbitrageXHighWebSocketReconnectRate
+    expr: rate(arbitragex_websocket_reconnects_total[1m]) > 0.1
+    for: 1m
+    labels:
+      severity: warning
+      component: websocket-manager
+    annotations:
+      summary: "High WebSocket reconnection rate"
+      description: "Reconnect rate: {{ $value }}/min > 0.1/min threshold"
+
+  # 🧠 ML MODEL HEALTH
+  - alert: ArbitrageXMLModelAccuracyLow
+    expr: arbitragex_ml_prediction_accuracy < 0.7
+    for: 5m
+    labels:
+      severity: warning
+      component: ml-inference
+    annotations:
+      summary: "ML model accuracy below 70% threshold"
+      description: "Prediction accuracy: {{ $value | humanizePercentage }} < 70%"
+
+  - alert: ArbitrageXMLInferenceFailureHigh
+    expr: rate(arbitragex_ml_failed_predictions_total[5m]) > 0.01
+    for: 2m
+    labels:
+      severity: critical
+      component: ml-inference
+    annotations:
+      summary: "High ML inference failure rate"
+      description: "ML failure rate: {{ $value }}/sec > 0.01/sec"
+
+- name: arbitragex.business.slo
+  interval: 30s
+  rules:
+  
+  # 💸 FINANCIAL HEALTH ALERTS
+  - alert: ArbitrageXNegativePnL
+    expr: arbitragex_cumulative_pnl_eth < 0
+    for: 10m
+    labels:
+      severity: critical
+      business_impact: critical
+      escalation: immediate
+    annotations:
+      summary: "ArbitrageX showing negative cumulative P&L"
+      description: "Cumulative P&L: {{ $value }} ETH (negative for 10+ minutes)"
+
+  - alert: ArbitrageXGasEfficiencyLow
+    expr: arbitragex_gas_efficiency_ratio < 0.5
+    for: 5m
+    labels:
+      severity: warning
+      optimization: gas
+    annotations:
+      summary: "Gas efficiency below 50% threshold"
+      description: "Gas efficiency ratio: {{ $value | humanizePercentage }} < 50%"
+
+  # 🔄 OPERATIONAL HEALTH
+  - alert: ArbitrageXSystemOverloaded
+    expr: arbitragex_queue_depth > 1000
+    for: 1m
+    labels:
+      severity: critical
+      component: message-queue
+    annotations:
+      summary: "ArbitrageX system queue overloaded"
+      description: "Queue depth: {{ $value }} > 1000 messages"
+
+- name: arbitragex.security.slo
+  interval: 15s
+  rules:
+
+  # 🛡️ SECURITY & MEV PROTECTION
+  - alert: ArbitrageXSandwichAttackDetected
+    expr: increase(arbitragex_sandwich_attacks_detected_total[1m]) > 0
+    for: 0s
+    labels:
+      severity: warning
+      security: mev-protection
+    annotations:
+      summary: "Sandwich attack detected and mitigated"
+      description: "{{ $value }} sandwich attacks detected in last minute"
+
+  - alert: ArbitrageXFrontRunAttemptsHigh
+    expr: rate(arbitragex_frontrun_attempts_blocked_total[1m]) > 0.1
+    for: 30s
+    labels:
+      severity: warning
+      security: front-running
+    annotations:
+      summary: "High front-running attempt rate detected"
+      description: "Front-run attempts: {{ $value }}/min > 0.1/min"
+
+  # 🔒 ACCESS & AUTHENTICATION
+  - alert: ArbitrageXUnauthorizedAccess
+    expr: increase(arbitragex_unauthorized_requests_total[5m]) > 10
+    for: 1m
+    labels:
+      severity: critical
+      security: access-control
+    annotations:
+      summary: "High unauthorized access attempt rate"
+      description: "{{ $value }} unauthorized requests in last 5 minutes"

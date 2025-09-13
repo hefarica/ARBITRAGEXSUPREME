@@ -1,0 +1,12 @@
+# System interrupt_coalescing tuning
+# Technique: reduced_context_switches
+# Expected improvement: 5ms
+
+[system]
+optimization_type = "interrupt_coalescing"
+technique = "reduced_context_switches"
+enabled = true
+
+[performance]
+expected_improvement_ms = 5
+priority = "realtime"

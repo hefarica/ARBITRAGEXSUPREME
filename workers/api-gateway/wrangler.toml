@@ -1,0 +1,30 @@
+# ArbitrageX API Gateway - Cloudflare Worker Configuration
+# Routes API requests to Contabo backend with rate limiting
+
+name = "arbitragex-api-gateway"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables
+[vars]
+NODE_ENV = "production"
+LOG_LEVEL = "info"
+SERVICE_NAME = "api-gateway"
+VERSION = "3.0.0"
+RATE_LIMIT_WINDOW_MS = "60000"
+
+# Production secrets (set via wrangler secret put)
+# CONTABO_BACKEND_URL = "https://backend.tu-dominio.com"
+# RATE_LIMIT_MAX = "1000"
+# API_KEY_SECRET = "your_api_key_secret"
+
+# Routes configuration
+[[routes]]
+pattern = "*/api/*"
+zone_name = "tu-dominio.com"
+
+# Build configuration  
+[build]
+command = "npm run build"
+cwd = "."

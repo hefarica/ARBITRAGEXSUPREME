@@ -1,0 +1,210 @@
+# Configuración de Prometheus para ArbitrageX Supreme
+# Ingenio Pichichi S.A. - Metodología Cumplidor, disciplinado, organizado
+# 
+# Configuración completa de Prometheus para monitoreo de:
+# - Métricas de aplicación y negocio
+# - Métricas de sistema y infraestructura
+# - Métricas de Cloudflare Workers
+# - Integración con Grafana para visualización
+# 
+# Autor: Hector Fabio Riascos C.
+# Versión: 1.0.0
+# Fecha: 2025-01-15
+
+global:
+  scrape_interval: 15s          # Intervalo de scraping por defecto
+  evaluation_interval: 15s       # Evaluación de reglas cada 15s
+  scrape_timeout: 10s           # Timeout para scraping
+  external_labels:
+    cluster: 'arbitragex-supreme'
+    environment: 'production'
+    organization: 'ingenio-pichichi'
+
+# Configuración de almacenamiento
+storage:
+  tsdb:
+    path: /prometheus/data
+    retention.time: 30d          # Retener métricas por 30 días
+    retention.size: 10GB         # Máximo 10GB de almacenamiento
+    no-lockfile: false
+    wal-compression: true        # Comprimir WAL
+
+# Configuración de reglas
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+# Configuración de alertas
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+      timeout: 10s
+      api_version: v2
+
+# Configuración de scrape jobs
+scrape_configs:
+  # Self-monitoring de Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # ArbitrageX Supreme Application Metrics
+  - job_name: 'arbitragex-app'
+    static_configs:
+      - targets: ['arbitragex-supreme.pages.dev']
+    scheme: https
+    scrape_interval: 30s
+    metrics_path: /api/metrics/prometheus
+    scrape_timeout: 10s
+    honor_labels: true
+    params:
+      format: ['prometheus']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: arbitragex-supreme.pages.dev
+
+  # Trading Engine Metrics
+  - job_name: 'arbitragex-trading'
+    static_configs:
+      - targets: ['arbitragex-supreme.pages.dev']
+    scheme: https
+    scrape_interval: 10s          # Más frecuente para trading
+    metrics_path: /api/metrics/trading
+    honor_labels: true
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'trading_(.+)'
+        target_label: __name__
+        replacement: 'arbitragex_trading_${1}'
+
+  # Blockchain Metrics
+  - job_name: 'arbitragex-blockchain'
+    static_configs:
+      - targets: ['arbitragex-supreme.pages.dev']
+    scheme: https
+    scrape_interval: 30s
+    metrics_path: /api/metrics/blockchain
+    honor_labels: true
+    metric_relabel_configs:
+      - source_labels: [network]
+        regex: '(.+)'
+        target_label: blockchain_network
+        replacement: '${1}'
+
+  # Security Metrics
+  - job_name: 'arbitragex-security'
+    static_configs:
+      - targets: ['arbitragex-supreme.pages.dev']
+    scheme: https
+    scrape_interval: 15s
+    metrics_path: /api/metrics/security
+    honor_labels: true
+
+  # Business Metrics
+  - job_name: 'arbitragex-business'
+    static_configs:
+      - targets: ['arbitragex-supreme.pages.dev']
+    scheme: https
+    scrape_interval: 60s          # Menos frecuente para métricas de negocio
+    metrics_path: /api/metrics/business
+    honor_labels: true
+
+  # Cloudflare Workers Analytics (si disponible)
+  - job_name: 'cloudflare-analytics'
+    static_configs:
+      - targets: ['api.cloudflare.com']
+    scheme: https
+    scrape_interval: 300s         # Cada 5 minutos
+    metrics_path: /client/v4/accounts/__ACCOUNT_ID__/analytics/dashboard
+    params:
+      since: ['-300']             # Últimos 5 minutos
+      until: ['0']
+    bearer_token: __CLOUDFLARE_API_TOKEN__
+    honor_labels: true
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'cf_(.+)'
+        target_label: __name__
+        replacement: 'cloudflare_${1}'
+
+  # External Service Monitoring
+  - job_name: 'external-apis'
+    static_configs:
+      - targets: 
+        - 'api.coingecko.com'
+        - 'api.coinmarketcap.com'
+        - 'mainnet.infura.io'
+        - 'polygon-rpc.com'
+    scheme: https
+    scrape_interval: 120s
+    metrics_path: /api/health
+    scrape_timeout: 5s
+
+  # Node Exporter (si hay servidores adicionales)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: []                # Configurar si hay servidores físicos
+    scrape_interval: 15s
+    metrics_path: /metrics
+
+  # Blackbox Exporter para health checks
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://arbitragex-supreme.pages.dev/health
+        - https://arbitragex-supreme.pages.dev/api/health/trading
+        - https://arbitragex-supreme.pages.dev/api/health/blockchain
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # WebSocket Health Checks
+  - job_name: 'blackbox-websocket'
+    metrics_path: /probe
+    params:
+      module: [websocket]
+    static_configs:
+      - targets:
+        - wss://arbitragex-supreme.pages.dev/ws/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+# Configuración de remote storage (opcional)
+remote_write:
+  - url: "https://prometheus-remote-write-endpoint.example.com/api/v1/write"
+    name: "remote-storage"
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'arbitragex_(.+)'
+        action: keep
+    queue_config:
+      capacity: 10000
+      max_shards: 100
+      min_shards: 1
+      max_samples_per_send: 2000
+      batch_send_deadline: 5s
+
+# Configuración de remote read (opcional)
+remote_read:
+  - url: "https://prometheus-remote-read-endpoint.example.com/api/v1/read"
+    name: "remote-storage"
+    read_recent: true

@@ -1,0 +1,17 @@
+# price_feed_cache caching configuration
+# Implementation: redis_cluster
+# Expected improvement: 12ms
+
+[cache]
+type = "price_feed_cache"
+implementation = "redis_cluster"
+enabled = true
+
+[performance]
+expected_improvement_ms = 12
+ttl_seconds = 300
+max_size = 10000
+
+[redis]
+cluster_mode = true
+compression = true

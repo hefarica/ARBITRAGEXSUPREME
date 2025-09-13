@@ -1,0 +1,14 @@
+# ML batch_inference optimization
+# Technique: vectorized_ops
+# Expected improvement: 7ms
+
+[ml_optimization]
+type = "batch_inference"
+technique = "vectorized_ops"
+enabled = true
+
+[inference]
+batch_size = 32
+precision = "int8"
+graph_optimization = "aggressive"
+expected_improvement_ms = 7

@@ -1,0 +1,583 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "business-intelligence-arbitragex",
+    "title": "ArbitrageX Supreme - Business Intelligence",
+    "description": "Dashboard de inteligencia de negocio para ArbitrageX Supreme - Ingenio Pichichi S.A.",
+    "tags": ["business", "trading", "arbitrage", "revenue", "ingenio-pichichi"],
+    "style": "dark",
+    "timezone": "utc",
+    "refresh": "1m",
+    "schemaVersion": 27,
+    "version": 1,
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+      "time_options": ["1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "exchange",
+          "type": "query",
+          "query": "label_values(arbitragex_trading_volume_usd, exchange)",
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          },
+          "options": [],
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "network",
+          "type": "query", 
+          "query": "label_values(arbitragex_blockchain_transactions_total, network)",
+          "current": {
+            "selected": false,
+            "text": "All",
+            "value": "$__all"
+          },
+          "options": [],
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Revenue (24h)",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(arbitragex_revenue_usd_total[24h]))",
+            "legendFormat": "Revenue USD",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 1000},
+                {"color": "green", "value": 10000}
+              ]
+            },
+            "unit": "currencyUSD",
+            "decimals": 2
+          }
+        },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center",
+          "orientation": "horizontal"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Trading Volume (24h)",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(increase(arbitragex_trading_volume_usd[24h]))",
+            "legendFormat": "Volume USD",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 50000},
+                {"color": "green", "value": 500000}
+              ]
+            },
+            "unit": "currencyUSD",
+            "decimals": 0
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Active Users",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "arbitragex_active_users_24h",
+            "legendFormat": "Users (24h)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "green", "value": 100}
+              ]
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Arbitrage Success Rate",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "(sum(increase(arbitragex_arbitrage_opportunities_executed_total[24h])) / sum(increase(arbitragex_arbitrage_opportunities_found_total[24h]))) * 100",
+            "legendFormat": "Success Rate %",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "green", "value": 25}
+              ]
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "options": {
+          "orientation": "auto",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        }
+      },
+      {
+        "id": 5,
+        "title": "Revenue Trend",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "sum(rate(arbitragex_revenue_usd_total[$__rate_interval]) * 3600)",
+            "legendFormat": "Revenue per Hour",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(arbitragex_arbitrage_revenue_usd[$__rate_interval]) * 3600)",
+            "legendFormat": "Arbitrage Revenue per Hour",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(rate(arbitragex_trading_fees_usd[$__rate_interval]) * 3600)",
+            "legendFormat": "Trading Fees per Hour",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "barAlignment": 0,
+              "lineWidth": 2,
+              "fillOpacity": 20,
+              "gradientMode": "opacity",
+              "spanNulls": false,
+              "insertNulls": false,
+              "showPoints": "never",
+              "pointSize": 5,
+              "stacking": {"mode": "none", "group": "A"}
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Trading Volume by Exchange",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "sum by (exchange) (increase(arbitragex_trading_volume_usd[24h]))",
+            "legendFormat": "{{exchange}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD",
+            "custom": {
+              "hideFrom": {"legend": false, "tooltip": false, "vis": false}
+            }
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "pieType": "pie",
+          "tooltip": {"mode": "single", "sort": "none"},
+          "legend": {"displayMode": "visible", "placement": "right"},
+          "displayLabels": ["name", "percent"]
+        }
+      },
+      {
+        "id": 7,
+        "title": "Arbitrage Opportunities Timeline",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "sum(rate(arbitragex_arbitrage_opportunities_found_total[$__rate_interval]))",
+            "legendFormat": "Opportunities Found",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(arbitragex_arbitrage_opportunities_executed_total[$__rate_interval]))",
+            "legendFormat": "Opportunities Executed", 
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "barAlignment": 0,
+              "lineWidth": 2,
+              "fillOpacity": 20
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Top Profitable Token Pairs",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "topk(10, sum by (pair) (increase(arbitragex_arbitrage_profit_usd[24h])))",
+            "format": "table",
+            "instant": true,
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 80}
+              ]
+            },
+            "custom": {
+              "align": "auto",
+              "displayMode": "auto"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "pair"},
+              "properties": [
+                {"id": "displayName", "value": "Token Pair"},
+                {"id": "width", "value": 150}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Value"},
+              "properties": [
+                {"id": "displayName", "value": "Profit (24h)"},
+                {"id": "unit", "value": "currencyUSD"},
+                {"id": "custom.displayMode", "value": "color-background"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 9,
+        "title": "User Engagement Metrics",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "arbitragex_active_users_5min",
+            "legendFormat": "Active Users (5min)",
+            "refId": "A"
+          },
+          {
+            "expr": "arbitragex_new_user_registrations",
+            "legendFormat": "New Registrations",
+            "refId": "B"
+          },
+          {
+            "expr": "arbitragex_wallet_connections_active",
+            "legendFormat": "Connected Wallets",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Blockchain Network Distribution",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+        "targets": [
+          {
+            "expr": "sum by (network) (increase(arbitragex_blockchain_transactions_total[24h]))",
+            "legendFormat": "{{network}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "short"
+          }
+        },
+        "options": {
+          "pieType": "donut",
+          "displayLabels": ["name", "value"],
+          "legend": {"displayMode": "visible", "placement": "bottom"}
+        }
+      },
+      {
+        "id": 11,
+        "title": "Gas Usage & Costs",
+        "type": "timeseries", 
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+        "targets": [
+          {
+            "expr": "sum by (network) (rate(arbitragex_gas_used_total[$__rate_interval]))",
+            "legendFormat": "{{network}} Gas/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(arbitragex_gas_costs_usd[$__rate_interval]) * 3600)",
+            "legendFormat": "Gas Costs USD/hour",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "axisPlacement": "auto",
+              "axisLabel": "",
+              "axisColorMode": "text",
+              "scaleDistribution": {"type": "linear"}
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byRegex", "options": ".*Gas Costs.*"},
+              "properties": [
+                {"id": "unit", "value": "currencyUSD"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            },
+            {
+              "matcher": {"id": "byRegex", "options": ".*Gas/sec"},
+              "properties": [
+                {"id": "unit", "value": "short"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 12,
+        "title": "Portfolio Performance",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "sum(arbitragex_portfolio_total_value_usd)",
+            "legendFormat": "Total Portfolio Value",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(arbitragex_portfolio_pnl_24h_usd)",
+            "legendFormat": "24h P&L",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(arbitragex_portfolio_unrealized_pnl_usd)",
+            "legendFormat": "Unrealized P&L",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD"
+          }
+        }
+      },
+      {
+        "id": 13,
+        "title": "System Health & Business Impact",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "label_replace(up{job=\"arbitragex-app\"}, \"status\", \"$1\", \"__name__\", \"(.+)\")",
+            "format": "table",
+            "instant": true,
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(arbitragex_http_request_duration_seconds_bucket[5m]))",
+            "format": "table", 
+            "instant": true,
+            "refId": "B"
+          },
+          {
+            "expr": "sum(rate(arbitragex_revenue_usd_total[5m]) * 3600)",
+            "format": "table",
+            "instant": true, 
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "auto",
+              "displayMode": "auto"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "instance"},
+              "properties": [
+                {"id": "displayName", "value": "Service"},
+                {"id": "width", "value": 200}
+              ]
+            },
+            {
+              "matcher": {"id": "byRegex", "options": ".*up.*"},
+              "properties": [
+                {"id": "displayName", "value": "Status"},
+                {"id": "custom.displayMode", "value": "color-background"},
+                {"id": "thresholds", "value": {
+                  "steps": [
+                    {"color": "red", "value": 0},
+                    {"color": "green", "value": 1}
+                  ]
+                }}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 14,
+        "title": "MEV Protection Stats",
+        "type": "stat",
+        "gridPos": {"h": 6, "w": 8, "x": 0, "y": 40},
+        "targets": [
+          {
+            "expr": "sum(increase(arbitragex_mev_protection_triggered_total[24h]))",
+            "legendFormat": "MEV Blocks (24h)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10},
+                {"color": "red", "value": 50}
+              ]
+            },
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 15,
+        "title": "Slippage Analysis",
+        "type": "histogram",
+        "gridPos": {"h": 6, "w": 8, "x": 8, "y": 40},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(arbitragex_trade_slippage_percentage_bucket[1h]))",
+            "legendFormat": "P50 Slippage",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(arbitragex_trade_slippage_percentage_bucket[1h]))",
+            "legendFormat": "P95 Slippage",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "percent"
+          }
+        }
+      },
+      {
+        "id": 16,
+        "title": "Liquidity Metrics",
+        "type": "timeseries",
+        "gridPos": {"h": 6, "w": 8, "x": 16, "y": 40},
+        "targets": [
+          {
+            "expr": "sum by (exchange) (arbitragex_liquidity_available_usd)",
+            "legendFormat": "{{exchange}} Liquidity",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "unit": "currencyUSD"
+          }
+        }
+      }
+    ]
+  }
+}

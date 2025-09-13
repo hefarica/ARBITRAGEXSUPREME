@@ -1,0 +1,13 @@
+# Network request_batching optimization
+# Method: multi_rpc_calls
+# Expected improvement: 18ms
+
+[network]
+optimization_type = "request_batching"
+method = "multi_rpc_calls"
+enabled = true
+
+[performance]
+expected_improvement_ms = 18
+connection_timeout_ms = 5000
+read_timeout_ms = 10000

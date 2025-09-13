@@ -1,0 +1,14 @@
+# mempool_scanner lock_free_structures optimization
+# Expected savings: 12ms
+
+[optimization]
+type = "lock_free_structures"
+component = "mempool_scanner"
+expected_savings_ms = 12
+enabled = true
+priority = "high"
+
+[parameters]
+# Component-specific optimization parameters
+# Generated automatically by production tuning optimizer
+timestamp = "2025-09-10T13:38:39Z"
