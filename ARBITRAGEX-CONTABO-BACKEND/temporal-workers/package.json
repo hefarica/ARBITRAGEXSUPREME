@@ -1,0 +1,62 @@
+{
+  "name": "arbitragex-temporal-workers",
+  "version": "1.0.0",
+  "description": "ArbitrageX Supreme V3.0 - Temporal.io Workers for Multiagent Autonomous System",
+  "main": "dist/src/worker.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/src/worker.js",
+    "dev": "ts-node src/worker.ts",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "worker:arbitrage": "ts-node src/workers/arbitrage-worker.ts",
+    "worker:risk": "ts-node src/workers/risk-worker.ts", 
+    "worker:strategy": "ts-node src/workers/strategy-worker.ts",
+    "deploy": "npm run build && pm2 start ecosystem.config.js"
+  },
+  "dependencies": {
+    "@temporalio/worker": "^1.9.1",
+    "@temporalio/workflow": "^1.9.1",
+    "@temporalio/activity": "^1.9.1",
+    "@temporalio/client": "^1.9.1",
+    "@temporalio/common": "^1.9.1",
+    "ethers": "^6.7.1",
+    "web3": "^4.11.1",
+    "axios": "^1.5.0",
+    "redis": "^4.6.8",
+    "pg": "^8.11.3",
+    "winston": "^3.10.0",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.0",
+    "joi": "^17.9.2",
+    "prometheus-api-metrics": "^3.2.2",
+    "node-cron": "^3.0.2",
+    "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.5.0",
+    "@types/uuid": "^9.0.2",
+    "@types/ws": "^8.5.5",
+    "@types/pg": "^8.10.2",
+    "@typescript-eslint/eslint-plugin": "^6.4.0",
+    "@typescript-eslint/parser": "^6.4.0",
+    "eslint": "^8.47.0",
+    "jest": "^29.6.2",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
+  },
+  "keywords": [
+    "arbitrage",
+    "temporal",
+    "multiagent",
+    "autonomous",
+    "mev",
+    "defi",
+    "ethereum",
+    "rust",
+    "typescript"
+  ],
+  "author": "ArbitrageX Supreme Engineering Team - Ingenio Pichichi S.A.",
+  "license": "PROPRIETARY"
+}
