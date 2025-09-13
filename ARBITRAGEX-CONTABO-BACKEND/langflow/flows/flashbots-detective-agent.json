@@ -1,0 +1,85 @@
+{
+  "name": "Flashbots Detective Agent",
+  "description": "AI Agent especializado en detectar oportunidades de arbitraje en mempool y feeds de precio - ArbitrageX Supreme V3.0",
+  "version": "3.0.0",
+  "methodology": "Ingenio Pichichi S.A. - Disciplinado, Organizado, Metodológico",
+  "flow": {
+    "nodes": [
+      {
+        "id": "mempool_input",
+        "type": "WebhookInput",
+        "position": { "x": 100, "y": 100 },
+        "data": {
+          "name": "Mempool Data Input",
+          "webhook_url": "/api/langflow/mempool-webhook",
+          "expected_fields": [
+            "transaction_hash",
+            "from_address",
+            "to_address", 
+            "value",
+            "gas_price",
+            "gas_limit",
+            "input_data",
+            "timestamp"
+          ]
+        }
+      },
+      
+      {
+        "id": "price_feed_input",
+        "type": "WebhookInput", 
+        "position": { "x": 100, "y": 300 },
+        "data": {
+          "name": "Price Feed Input",
+          "webhook_url": "/api/langflow/price-feed-webhook",
+          "expected_fields": [
+            "token_a",
+            "token_b",
+            "price_a_b",
+            "dex_name",
+            "chain",
+            "liquidity",
+            "timestamp"
+          ]
+        }
+      },
+      
+      {
+        "id": "data_preprocessor",
+        "type": "PythonFunction",
+        "position": { "x": 300, "y": 200 },
+        "data": {
+          "name": "Data Preprocessor",
+          "code": "def preprocess_arbitrage_data(mempool_data, price_data):\n    \"\"\"\n    Preprocesa datos de mempool y precios para detección de arbitraje\n    \n    Metodología Ingenio Pichichi S.A.:\n    - Disciplinado: Validación estricta de datos\n    - Organizado: Normalización consistente\n    - Metodológico: Filtrado sistemático\n    \"\"\"\n    import json\n    from datetime import datetime, timedelta\n    \n    # Validar y normalizar datos del mempool\n    valid_mempool = []\n    for tx in mempool_data:\n        if (\n            tx.get('gas_price') and \n            float(tx['gas_price']) > 0 and\n            tx.get('value') and\n            float(tx['value']) > 0.001  # Minimum 0.001 ETH\n        ):\n            valid_mempool.append({\n                'hash': tx['transaction_hash'],\n                'gas_price_gwei': float(tx['gas_price']) / 1e9,\n                'value_eth': float(tx['value']) / 1e18,\n                'timestamp': tx['timestamp']\n            })\n    \n    # Filtrar precios recientes (últimos 30 segundos)\n    current_time = datetime.now()\n    recent_prices = []\n    \n    for price in price_data:\n        price_time = datetime.fromisoformat(price['timestamp'])\n        if (current_time - price_time).total_seconds() <= 30:\n            recent_prices.append({\n                'token_pair': f\"{price['token_a']}/{price['token_b']}\",\n                'price': float(price['price_a_b']),\n                'dex': price['dex_name'],\n                'chain': price['chain'],\n                'liquidity_eth': float(price['liquidity']) / 1e18,\n                'timestamp': price['timestamp']\n            })\n    \n    return {\n        'valid_transactions': valid_mempool,\n        'recent_prices': recent_prices,\n        'processed_at': datetime.now().isoformat()\n    }"
+        }
+      },
+      
+      {
+        "id": "llm_opportunity_detector",
+        "type": "ChatOpenAI",
+        "position": { "x": 500, "y": 200 },
+        "data": {
+          "name": "Opportunity Detector LLM",
+          "model_name": "gpt-4o-mini",
+          "temperature": 0.1,
+          "max_tokens": 2000,
+          "system_message": "Eres un experto en arbitraje DeFi del equipo ArbitrageX Supreme V3.0, siguiendo la metodología disciplinada del Ingenio Pichichi S.A.\n\nTu objetivo es analizar datos de mempool y precios para detectar oportunidades de arbitraje rentables.\n\nCRITERIOS DE EVALUACIÓN:\n1. Diferencia de precios mínima: 0.5% entre DEXs\n2. Liquidez suficiente: >$10,000 USD\n3. Gas efficiency: Profit > 3x gas cost\n4. Riesgo de frontrun: Evaluar y mitigar\n5. Slippage esperado: <2%\n\nRESPONDE SIEMPRE en formato JSON:\n{\n  \"opportunity_detected\": boolean,\n  \"opportunity_id\": string,\n  \"confidence\": number (0-1),\n  \"tokens\": {\n    \"token_a\": {\"symbol\": string, \"address\": string},\n    \"token_b\": {\"symbol\": string, \"address\": string}\n  },\n  \"price_difference\": {\n    \"percentage\": number,\n    \"absolute_eth\": string\n  },\n  \"dexs\": [\n    {\n      \"name\": string,\n      \"price\": string,\n      \"liquidity_eth\": string\n    }\n  ],\n  \"expected_profit_eth\": string,\n  \"expected_profit_usd\": string,\n  \"gas_estimate\": number,\n  \"risk_factors\": {\n    \"frontrun_risk\": number (0-1),\n    \"slippage_risk\": number (0-1),\n    \"liquidity_risk\": number (0-1)\n  },\n  \"recommended_strategy\": string,\n  \"reasoning\": string[]\n}"
+        }
+      },
+      
+      {
+        "id": "validation_filter",
+        "type": "PythonFunction",
+        "position": { "x": 700, "y": 200 },
+        "data": {
+          "name": "Opportunity Validator",
+          "code": "def validate_opportunity(llm_response):\n    \"\"\"\n    Valida la respuesta del LLM y aplica filtros adicionales\n    \n    Metodología Ingenio Pichichi S.A.:\n    - Disciplinado: Validación técnica estricta\n    - Organizado: Filtros sistemáticos\n    - Metodológico: Logging completo\n    \"\"\"\n    import json\n    from datetime import datetime\n    \n    try:\n        opportunity = json.loads(llm_response)\n        \n        # Validación básica de estructura\n        required_fields = [\n            'opportunity_detected', 'confidence', 'expected_profit_eth',\n            'gas_estimate', 'risk_factors'\n        ]\n        \n        for field in required_fields:\n            if field not in opportunity:\n                return {\n                    'valid': False,\n                    'reason': f'Missing required field: {field}'\n                }\n        \n        # Si no hay oportunidad detectada\n        if not opportunity['opportunity_detected']:\n            return {\n                'valid': False,\n                'reason': 'No opportunity detected by LLM'\n            }\n        \n        # Validación de rentabilidad mínima\n        expected_profit = float(opportunity['expected_profit_eth'])\n        if expected_profit < 0.001:  # Minimum 0.001 ETH\n            return {\n                'valid': False,\n                'reason': f'Profit below minimum threshold: {expected_profit} ETH'\n            }\n        \n        # Validación de confianza\n        confidence = float(opportunity['confidence'])\n        if confidence < 0.7:  # Minimum 70% confidence\n            return {\n                'valid': False,\n                'reason': f'Confidence too low: {confidence}'\n            }\n        \n        # Validación de riesgo general\n        risk_factors = opportunity['risk_factors']\n        avg_risk = (risk_factors['frontrun_risk'] + \n                   risk_factors['slippage_risk'] + \n                   risk_factors['liquidity_risk']) / 3\n        \n        if avg_risk > 0.6:  # Max 60% average risk\n            return {\n                'valid': False,\n                'reason': f'Risk too high: {avg_risk:.2%}'\n            }\n        \n        # Gas efficiency check\n        gas_cost_eth = float(opportunity['gas_estimate']) * 50e-9  # Assuming 50 Gwei\n        profit_to_gas_ratio = expected_profit / gas_cost_eth\n        \n        if profit_to_gas_ratio < 3:  # Profit should be at least 3x gas cost\n            return {\n                'valid': False,\n                'reason': f'Poor gas efficiency: {profit_to_gas_ratio:.2f}x'\n            }\n        \n        # Agregar metadata de validación\n        opportunity['validation'] = {\n            'validated_at': datetime.now().isoformat(),\n            'profit_to_gas_ratio': profit_to_gas_ratio,\n            'average_risk_score': avg_risk,\n            'validator_version': '3.0.0'\n        }\n        \n        return {\n            'valid': True,\n            'opportunity': opportunity,\n            'metadata': {\n                'processing_time_ms': 50,  # Estimated\n                'validation_passed': True\n            }\n        }\n        \n    except Exception as e:\n        return {\n            'valid': False,\n            'reason': f'Validation error: {str(e)}'\n        }"
+        }
+      },
+      
+      {
+        "id": "webhook_output_success",
+        "type": "WebhookOutput",
+        "position": { "x": 900, "y": 150 },
+        "data": {
+          "name": "Valid Opportunity Output",\n          \"webhook_url\": \"/api/temporal/trigger-opportunity\",\n          \"method\": \"POST\",\n          \"headers\": {\n            \"Content-Type\": \"application/json\",\n            \"X-Agent-Source\": \"flashbots-detective\",\n            \"X-Agent-Version\": \"3.0.0\"\n          }\n        }\n      },\n      \n      {\n        \"id\": \"webhook_output_rejected\",\n        \"type\": \"WebhookOutput\",\n        \"position\": { \"x\": 900, \"y\": 250 },\n        \"data\": {\n          \"name\": \"Rejected Opportunity Output\",\n          \"webhook_url\": \"/api/monitoring/rejected-opportunity\",\n          \"method\": \"POST\",\n          \"headers\": {\n            \"Content-Type\": \"application/json\",\n            \"X-Agent-Source\": \"flashbots-detective\",\n            \"X-Rejection-Reason\": \"validation-failed\"\n          }\n        }\n      },\n      \n      {\n        \"id\": \"metrics_collector\",\n        \"type\": \"PythonFunction\",\n        \"position\": { \"x\": 700, \"y\": 350 },\n        \"data\": {\n          \"name\": \"Agent Metrics Collector\",\n          \"code\": \"def collect_agent_metrics(validation_result, processing_start_time):\\n    \\\"\\\"\\\"\\n    Recopila métricas de performance del agente\\n    \\\"\\\"\\\"\\n    import time\\n    from datetime import datetime\\n    \\n    processing_time = time.time() - processing_start_time\\n    \\n    metrics = {\\n        'agent_id': 'flashbots-detective',\\n        'timestamp': datetime.now().isoformat(),\\n        'processing_time_ms': int(processing_time * 1000),\\n        'opportunity_detected': validation_result.get('valid', False),\\n        'confidence': validation_result.get('opportunity', {}).get('confidence', 0),\\n        'rejection_reason': validation_result.get('reason') if not validation_result.get('valid') else None,\\n        'performance': {\\n            'target_latency_ms': 10000,  # 10s target\\n            'actual_latency_ms': int(processing_time * 1000),\\n            'within_target': processing_time < 10.0\\n        }\\n    }\\n    \\n    return metrics\"\n        }\n      }\n    ],\n    \n    \"edges\": [\n      {\n        \"source\": \"mempool_input\",\n        \"target\": \"data_preprocessor\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"mempool_data\"\n      },\n      {\n        \"source\": \"price_feed_input\",\n        \"target\": \"data_preprocessor\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"price_data\"\n      },\n      {\n        \"source\": \"data_preprocessor\",\n        \"target\": \"llm_opportunity_detector\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"input\"\n      },\n      {\n        \"source\": \"llm_opportunity_detector\",\n        \"target\": \"validation_filter\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"llm_response\"\n      },\n      {\n        \"source\": \"validation_filter\",\n        \"target\": \"webhook_output_success\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"input\",\n        \"condition\": \"valid == True\"\n      },\n      {\n        \"source\": \"validation_filter\",\n        \"target\": \"webhook_output_rejected\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"input\",\n        \"condition\": \"valid == False\"\n      },\n      {\n        \"source\": \"validation_filter\",\n        \"target\": \"metrics_collector\",\n        \"source_handle\": \"output\",\n        \"target_handle\": \"validation_result\"\n      }\n    ]\n  },\n  \n  \"configuration\": {\n    \"environment_variables\": {\n      \"OPENAI_API_KEY\": \"${OPENAI_API_KEY}\",\n      \"TEMPORAL_SERVER_URL\": \"temporal-server:7233\",\n      \"MONITORING_WEBHOOK_URL\": \"http://api-gateway:3007/api/monitoring\",\n      \"AGENT_VERSION\": \"3.0.0\",\n      \"AGENT_NAME\": \"flashbots-detective\"\n    },\n    \n    \"performance_targets\": {\n      \"max_processing_time_ms\": 10000,\n      \"min_confidence_threshold\": 0.7,\n      \"min_profit_threshold_eth\": 0.001,\n      \"max_gas_cost_multiplier\": 3,\n      \"max_average_risk\": 0.6\n    },\n    \n    \"monitoring\": {\n      \"metrics_enabled\": true,\n      \"logging_level\": \"INFO\",\n      \"prometheus_metrics\": true,\n      \"webhook_notifications\": true\n    }\n  },\n  \n  \"deployment\": {\n    \"docker_image\": \"langflowai/langflow:1.0.14\",\n    \"resources\": {\n      \"cpu_limit\": \"1000m\",\n      \"memory_limit\": \"2Gi\",\n      \"cpu_request\": \"500m\",\n      \"memory_request\": \"1Gi\"\n    },\n    \"scaling\": {\n      \"min_replicas\": 1,\n      \"max_replicas\": 3,\n      \"target_cpu_utilization\": 70\n    }\n  }\n}"

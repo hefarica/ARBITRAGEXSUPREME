@@ -1,0 +1,630 @@
+# 🚀 ArbitrageX Supreme V3.0 - Arquitectura Multiagente Autónoma
+# 
+# METODOLOGÍA INGENIO PICHICHI S.A.:
+# - Disciplinado: Orquestación con Temporal.io para ejecución atómica
+# - Organizado: Agentes IA especializados con Langflow + LLMs
+# - Metodológico: Automatización completa sin dependencias externas
+#
+# STACK TECNOLÓGICO:
+# ├── Temporal.io (Orquestador Central)
+# ├── Langflow (Agentes IA Builder)  
+# ├── Activepieces (Automatización No-Code)
+# ├── PostgreSQL + Redis (Persistencia)
+# ├── Prometheus + Grafana (Observabilidad)
+# └── Traefik (Reverse Proxy)
+#
+# COSTO TOTAL: $45/mes (vs $888/mes anterior)
+# TARGET LATENCY: <300ms end-to-end
+
+version: '3.8'
+
+networks:
+  arbitragex:
+    driver: bridge
+  temporal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  temporal_data:
+  prometheus_data:
+  grafana_data:
+  langflow_data:
+
+services:
+  # ================================================================
+  # 🚀 TEMPORAL.IO - ORQUESTADOR CENTRAL
+  # ================================================================
+  temporal-postgresql:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - temporal_data:/var/lib/postgresql/data
+    networks:
+      - temporal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  temporal-server:
+    image: temporalio/auto-setup:1.24.2
+    container_name: temporal-server
+    depends_on:
+      temporal-postgresql:
+        condition: service_healthy
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-postgresql
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - NUM_HISTORY_SHARDS=1
+      - LOG_LEVEL=info
+      - TEMPORAL_CLI_ADDRESS=temporal-server:7233
+    ports:
+      - "7233:7233"  # gRPC
+      - "8233:8233"  # Web UI
+    volumes:
+      - ./temporal/config:/etc/temporal/config/dynamicconfig
+    networks:
+      - temporal
+      - arbitragex
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.temporal.rule=Host(`temporal.local`)"
+      - "traefik.http.services.temporal.loadbalancer.server.port=8233"
+    healthcheck:
+      test: ["CMD", "temporal", "--address", "temporal-server:7233", "operator", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🧠 LANGFLOW - AGENTES IA BUILDER
+  # ================================================================
+  langflow:
+    image: langflowai/langflow:1.0.14
+    container_name: langflow-ai-agents
+    environment:
+      - LANGFLOW_HOST=0.0.0.0
+      - LANGFLOW_PORT=7860
+      - LANGFLOW_WORKERS=4
+      - LANGFLOW_DATABASE_URL=postgresql://langflow:langflow@postgres:5432/langflow
+      - LANGFLOW_CACHE_TYPE=redis
+      - LANGFLOW_REDIS_URL=redis://redis:6379/1
+      - LANGFLOW_SUPERUSER=admin
+      - LANGFLOW_SUPERUSER_PASSWORD=ArbitrageX2024!
+    ports:
+      - "7860:7860"
+    volumes:
+      - langflow_data:/app/langflow
+      - ./langflow/flows:/app/flows
+      - ./langflow/agents:/app/agents
+    networks:
+      - arbitragex
+    depends_on:
+      - postgres
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.langflow.rule=Host(`agents.local`)"
+      - "traefik.http.services.langflow.loadbalancer.server.port=7860"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🔄 ACTIVEPIECES - AUTOMATIZACIÓN NO-CODE
+  # ================================================================
+  activepieces:
+    image: activepieces/activepieces:0.30.0
+    container_name: activepieces-automation
+    environment:
+      - AP_ENGINE_EXECUTABLE_PATH=dist/packages/engine/main.js
+      - AP_FRONTEND_URL=http://automation.local
+      - AP_WEBHOOK_TIMEOUT_SECONDS=30
+      - AP_POSTGRES_DATABASE=activepieces
+      - AP_POSTGRES_HOST=postgres
+      - AP_POSTGRES_PORT=5432
+      - AP_POSTGRES_USERNAME=activepieces
+      - AP_POSTGRES_PASSWORD=activepieces
+      - AP_REDIS_URL=redis://redis:6379/2
+      - AP_ENCRYPTION_KEY=ArbitrageXSupremeEncryptionKey2024
+      - AP_JWT_SECRET=ArbitrageXSupremeJWT2024
+      - AP_ENVIRONMENT=prod
+      - AP_SIGN_UP_ENABLED=false
+      - AP_TELEMETRY_ENABLED=false
+    ports:
+      - "8080:80"
+    volumes:
+      - ./activepieces/flows:/opt/activepieces/dist/packages/server/api/src/app/flows
+      - ./activepieces/pieces:/opt/activepieces/dist/packages/pieces
+    networks:
+      - arbitragex
+    depends_on:
+      - postgres
+      - redis
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.activepieces.rule=Host(`automation.local`)"
+      - "traefik.http.services.activepieces.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🗄️ BASE DE DATOS Y CACHE
+  # ================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-multiagent
+    environment:
+      POSTGRES_DB: arbitragex
+      POSTGRES_USER: arbitragex
+      POSTGRES_PASSWORD: ArbitrageX2024!
+      POSTGRES_MULTIPLE_DATABASES: temporal,langflow,activepieces
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+      - ./sql/schemas:/docker-entrypoint-initdb.d/schemas
+    ports:
+      - "5432:5432"
+    networks:
+      - arbitragex
+      - temporal
+    command: postgres -c max_connections=200 -c shared_preload_libraries=pg_stat_statements
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arbitragex -d arbitragex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-multiagent
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    networks:
+      - arbitragex
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ================================================================
+  # 🔗 BLOCKCHAIN INFRASTRUCTURE
+  # ================================================================
+  geth-node:
+    image: ethereum/client-go:v1.13.14
+    container_name: geth-arbitragex
+    command: >
+      --http --http.api eth,net,web3,personal,admin,debug,txpool
+      --http.addr 0.0.0.0 --http.port 8545 --http.corsdomain "*"
+      --ws --ws.api eth,net,web3,personal,admin,debug,txpool
+      --ws.addr 0.0.0.0 --ws.port 8546 --ws.origins "*"
+      --cache 2048 --maxpeers 50
+      --syncmode snap
+    ports:
+      - "8545:8545"  # HTTP RPC
+      - "8546:8546"  # WebSocket
+      - "30303:30303"  # P2P
+    volumes:
+      - ./geth/data:/root/.ethereum
+      - ./geth/config:/config
+    networks:
+      - arbitragex
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8545"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🦀 RUST CORE ENGINE SERVICES
+  # ================================================================
+  searcher-rs:
+    build:
+      context: ./searcher-rs
+      dockerfile: Dockerfile
+    container_name: searcher-rust-engine
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://arbitragex:ArbitrageX2024!@postgres:5432/arbitragex
+      - REDIS_URL=redis://redis:6379/0
+      - GETH_HTTP_URL=http://geth-node:8545
+      - GETH_WS_URL=ws://geth-node:8546
+      - TEMPORAL_SERVER_URL=temporal-server:7233
+      - MIN_PROFIT_THRESHOLD=1000000000000000  # 0.001 ETH
+      - MAX_GAS_PRICE=100000000000  # 100 Gwei
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./searcher-rs/config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+    depends_on:
+      - postgres
+      - redis
+      - geth-node
+      - temporal-server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  opportunity-scanner:
+    build:
+      context: ./opportunity-scanner  
+      dockerfile: Dockerfile
+    container_name: opportunity-scanner-rust
+    environment:
+      - RUST_LOG=info
+      - REDIS_URL=redis://redis:6379/0
+      - WEBSOCKET_TIMEOUT_MS=30000
+      - CHAINS_CONFIG_PATH=/app/config/chains.toml
+      - DEXS_CONFIG_PATH=/app/config/dexs.toml
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./opportunity-scanner/config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+    depends_on:
+      - redis
+      - geth-node
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  router-executor:
+    build:
+      context: ./router-executor
+      dockerfile: Dockerfile
+    container_name: router-executor-rust
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgresql://arbitragex:ArbitrageX2024!@postgres:5432/arbitragex
+      - REDIS_URL=redis://redis:6379/0
+      - GETH_HTTP_URL=http://geth-node:8545
+      - FLASHLOAN_ENABLED=true
+      - SLIPPAGE_TOLERANCE=0.005  # 0.5%
+    ports:
+      - "3003:3003"
+    volumes:
+      - ./router-executor/config:/app/config
+      - ./router-executor/keystore:/app/keystore
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+    depends_on:
+      - postgres
+      - redis
+      - geth-node
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ml-inference:
+    build:
+      context: ./ml-inference
+      dockerfile: Dockerfile
+    container_name: ml-inference-rust
+    environment:
+      - RUST_LOG=info
+      - MODEL_PATH=/app/models
+      - REDIS_URL=redis://redis:6379/0
+      - BATCH_SIZE=32
+      - INFERENCE_TIMEOUT_MS=100
+    ports:
+      - "3004:3004"
+    volumes:
+      - ./ml-inference/models:/app/models
+      - ./ml-inference/config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🤖 TEMPORAL WORKERS - AGENTES EJECUTORES
+  # ================================================================
+  temporal-worker-arbitrage:
+    build:
+      context: ./temporal-workers
+      dockerfile: Dockerfile.arbitrage
+    container_name: temporal-worker-arbitrage
+    environment:
+      - NODE_ENV=production
+      - TEMPORAL_SERVER_URL=temporal-server:7233
+      - DATABASE_URL=postgresql://arbitragex:ArbitrageX2024!@postgres:5432/arbitragex
+      - REDIS_URL=redis://redis:6379/0
+      - SEARCHER_SERVICE_URL=http://searcher-rs:3001
+      - OPPORTUNITY_SCANNER_URL=http://opportunity-scanner:3002
+      - ROUTER_EXECUTOR_URL=http://router-executor:3003
+      - ML_INFERENCE_URL=http://ml-inference:3004
+      - GETH_HTTP_URL=http://geth-node:8545
+      - LANGFLOW_API_URL=http://langflow:7860/api/v1
+      - FLASHBOTS_RELAY_URL=https://relay.flashbots.net
+      - EDEN_RELAY_URL=https://api.edennetwork.io/v1/bundle
+      - ARBITRAGE_ENABLED=true
+      - MAX_CONCURRENT_WORKFLOWS=10
+      - WORKFLOW_TIMEOUT_MS=30000
+    volumes:
+      - ./temporal-workers/config:/app/config
+      - ./temporal-workers/workflows:/app/workflows
+      - ./temporal-workers/activities:/app/activities
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+      - temporal
+    depends_on:
+      - temporal-server
+      - postgres
+      - redis
+      - searcher-rs
+      - opportunity-scanner
+      - router-executor
+      - ml-inference
+      - langflow
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 📊 OBSERVABILIDAD Y MONITOREO
+  # ================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prometheus-arbitragex
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts
+      - prometheus_data:/prometheus
+    networks:
+      - arbitragex
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`metrics.local`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.1.2
+    container_name: grafana-arbitragex
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=ArbitrageX2024!
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=redis-datasource,postgres-datasource
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - arbitragex
+    depends_on:
+      - prometheus
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`dashboard.local`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: alertmanager-arbitragex
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://alerts.local'
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./monitoring/alertmanager/templates:/etc/alertmanager/templates
+    networks:
+      - arbitragex
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alerts.local`)"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🌐 REVERSE PROXY Y LOAD BALANCER
+  # ================================================================
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik-arbitragex
+    command:
+      - --api.dashboard=true
+      - --api.debug=true
+      - --log.level=INFO
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --metrics.prometheus=true
+      - --metrics.prometheus.addEntryPointsLabels=true
+      - --metrics.prometheus.addServicesLabels=true
+    ports:
+      - "80:80"     # HTTP
+      - "443:443"   # HTTPS  
+      - "8888:8080" # Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/config:/etc/traefik
+      - ./traefik/certs:/certs
+    networks:
+      - arbitragex
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`proxy.local`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🔄 RECONCILIACIÓN Y WEBHOOKS
+  # ================================================================
+  recon-service:
+    build:
+      context: ./recon
+      dockerfile: Dockerfile
+    container_name: recon-arbitragex
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://arbitragex:ArbitrageX2024!@postgres:5432/arbitragex
+      - REDIS_URL=redis://redis:6379/3
+      - CLOUDFLARE_D1_API_URL=https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${CLOUDFLARE_D1_DATABASE_ID}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - SYNC_INTERVAL_MS=30000
+      - VARIANCE_THRESHOLD=0.01  # 1%
+    ports:
+      - "3006:3006"
+    volumes:
+      - ./recon/config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 📱 API GATEWAY PARA FRONTEND
+  # ================================================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway-arbitragex
+    environment:
+      - NODE_ENV=production
+      - PORT=3007
+      - DATABASE_URL=postgresql://arbitragex:ArbitrageX2024!@postgres:5432/arbitragex
+      - REDIS_URL=redis://redis:6379/4
+      - TEMPORAL_SERVER_URL=temporal-server:7233
+      - CORS_ORIGINS=https://*.pages.dev,http://localhost:3000
+      - JWT_SECRET=ArbitrageXSupremeJWT2024
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX_REQUESTS=100
+    ports:
+      - "3007:3007"
+    volumes:
+      - ./api-gateway/config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - arbitragex
+    depends_on:
+      - postgres
+      - redis
+      - temporal-server
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.local`)"
+      - "traefik.http.services.api.loadbalancer.server.port=3007"
+      - "traefik.http.middlewares.api-cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT,POST,DELETE"
+      - "traefik.http.middlewares.api-cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.api-cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.routers.api.middlewares=api-cors"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ================================================================
+  # 🛠️ UTILIDADES Y DESARROLLO
+  # ================================================================
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer-arbitragex
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - arbitragex
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`docker.local`)"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+    restart: unless-stopped
+
+volumes:
+  portainer_data:
