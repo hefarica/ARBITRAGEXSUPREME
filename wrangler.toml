@@ -1,0 +1,168 @@
+# ArbitrageX Supreme V3.0 - Cloudflare Edge Configuration
+# Configuración completa para Workers, D1, KV y R2
+
+name = "arbitragex-supreme-edge"
+main = "src/index.tsx"
+compatibility_date = "2024-01-15" 
+compatibility_flags = ["nodejs_compat"]
+
+# Directorio de build para Pages
+pages_build_output_dir = "./dist"
+
+# Variables de entorno para producción
+[env.production]
+name = "arbitragex-supreme-edge"
+
+# Variables de entorno para desarrollo
+[env.development]
+name = "arbitragex-supreme-edge-dev"
+
+# Base de datos D1 para almacenamiento edge
+[[d1_databases]]
+binding = "DB"
+database_name = "arbitragex-edge-production"
+database_id = "" # Se configurará después de crear la base de datos
+migrations_dir = "./migrations"
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "arbitragex-edge-development"
+database_id = "" # Se configurará para desarrollo
+
+# KV Namespaces para caché distribuido
+[[kv_namespaces]]
+binding = "KV"
+id = "" # Se configurará después de crear el namespace
+preview_id = "" # Para development
+
+# R2 Buckets para almacenamiento de archivos
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "arbitragex-edge-storage"
+
+# Variables de entorno seguras
+[vars]
+# URLs públicas (pueden ser visibles)
+FRONTEND_DASHBOARD_URL = "https://show-my-github-gems.lovableproject.com"
+EDGE_API_BASE_URL = "https://arbitragex-supreme-edge.pages.dev"
+
+# Configuración de CORS
+CORS_ALLOWED_ORIGINS = "https://show-my-github-gems.lovableproject.com,http://localhost:3000,http://localhost:5173"
+
+# Configuración de cache
+CACHE_TTL_SECONDS = "300"
+METRICS_CACHE_TTL = "60"  
+SYSTEM_HEALTH_CACHE_TTL = "30"
+
+# Configuración de performance
+MAX_CONCURRENT_WORKFLOWS = "10"
+AGENT_TIMEOUT_MS = "30000"
+EDGE_REQUEST_TIMEOUT_MS = "15000"
+
+# Configuración de arbitraje
+MIN_PROFIT_THRESHOLD_USD = "25"
+MAX_GAS_PRICE_GWEI = "150"
+DEFAULT_RISK_TOLERANCE = "medium"
+
+# Configuración de monitoreo
+METRICS_RETENTION_DAYS = "30"
+LOG_LEVEL = "info"
+ENABLE_AUDIT_LOGS = "true"
+
+# Configuración de SSE
+SSE_HEARTBEAT_INTERVAL_MS = "30000"
+SSE_UPDATE_INTERVAL_MS = "2000"
+MAX_SSE_CONNECTIONS = "100"
+
+# Variables secretas (configurar con wrangler secret put)
+# CONTABO_VPS_URL - URL del backend VPS CONTABO
+# CONTABO_API_KEY - API key para comunicación con CONTABO
+# OPENAI_API_KEY - API key para LLM fallback
+# WEBHOOK_SECRET - Secret para webhooks entrantes
+# JWT_SECRET - Secret para tokens JWT
+# ENCRYPTION_KEY - Clave para encriptar datos sensibles
+
+# Configuración de Workers
+[build]
+command = "npm run build"
+cwd = "."
+
+[build.upload]
+format = "modules"
+
+# Límites y configuración de Workers
+[limits]
+cpu_ms = 30000  # 30 segundos para plan paid (10ms para free)
+memory_mb = 128 # Memoria máxima
+
+# Configuración para desarrollo local
+[dev]
+ip = "0.0.0.0"
+port = 8787
+local_protocol = "https"
+upstream_protocol = "https"
+
+# Triggers para deployment automático
+[[triggers]]
+globs = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+action = "build"
+
+# Configuración de routes para Pages
+[[routes]]
+pattern = "/api/*"
+custom_domain = false
+
+# Analytics y observabilidad
+[observability]
+enabled = true
+
+# Configuración de Durable Objects (si se necesita en el futuro)
+# [[durable_objects.bindings]]
+# name = "MULTIAGENT_STATE"
+# class_name = "MultiAgentState"
+
+# Configuración de cron triggers para tareas periódicas
+[[triggers.crons]]
+cron = "*/5 * * * *"  # Cada 5 minutos
+action = "health_check"
+
+[[triggers.crons]]  
+cron = "0 */1 * * *"  # Cada hora
+action = "metrics_aggregation"
+
+[[triggers.crons]]
+cron = "0 2 * * *"    # Diario a las 2 AM
+action = "cleanup_old_data"
+
+# Configuración de compatibilidad
+[compatibility_flags]
+nodejs_compat = true
+streams_enable_constructors = true
+
+# Configuración para TypeScript
+[typescript]
+enabled = true
+strict = true
+
+# Configuración de minificación para producción
+[minify]
+enabled = true
+html = true
+css = true
+js = true
+
+# Assets estáticos
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Configuración de site (si se usa Pages)
+[site]
+bucket = "./dist"
+
+# Rules para diferentes entornos
+[env.production.site]
+bucket = "./dist"
+
+[env.development.site] 
+bucket = "./dist"
