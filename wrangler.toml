@@ -88,7 +88,7 @@ database_id = "arbitragex-edge-db-id"
 # R2 Bucket bindings for reports storage
 [[r2_buckets]]
 binding = "REPORTS_BUCKET"
-bucket_name = "reports-bucket"
+bucket_name = "arbitragex-reports"
 
 # Routes configuration
 [routes]

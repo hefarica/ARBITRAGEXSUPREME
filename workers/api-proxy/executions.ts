@@ -1,53 +1,31 @@
-/**
- * ArbitrageX Supreme V3.0 - Executions API Proxy
- * Cloudflare Worker for proxying execution data from backend
- */
-
-import { Request as CFRequest, Response as CFResponse } from '@cloudflare/workers-types';
-import { validateRequest, createErrorResponse, createSuccessResponse, validatePagination, validateTimeRange } from '../utils/validation';
-import { logRequest, logError, logPerformance } from '../utils/logger';
-import { authenticateRequest, rateLimitCheck } from '../utils/auth_helper';
-
-interface Env {
-  BACKEND_API_URL: string;
-  BACKEND_API_KEY: string;
-  RATE_LIMIT_KV: KVNamespace;
-  EXECUTIONS_CACHE: KVNamespace;
-  ANALYTICS_KV: KVNamespace;
-}
-
-interface ExecutionQuery {
-  chain_id?: string;
-  strategy_type?: string;
-  status?: string;
-  start_time?: string;
-  end_time?: string;
-  limit?: string;
-  offset?: string;
-}
-
-interface Execution {
-  id: string;
-  opportunity_id: string;
-  chain_id: number;
-  strategy_type: string;
-  status: 'pending' | 'submitted' | 'confirmed' | 'failed';
-  transaction_hash?: string;
-  block_number?: number;
-  gas_used?: string;
-  gas_price: string;
-  actual_profit?: string;
-  expected_profit: string;
-  execution_time: number;
-  created_at: string;
-  updated_at: string;
-  metadata: Record<string, any>;
-}
+// workers/api-proxy/executions.ts
+import { requireAuth } from '../middleware/auth';
 
 export default {
-  async fetch(request: CFRequest, env: Env, ctx: ExecutionContext): Promise<CFResponse> {
-    const startTime = Date.now();
-    const url = new URL(request.url);
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // Autenticación JWT básica
+    const authError = requireAuth(request, env);
+    if (authError) return authError;
+
+    try {
+      const backendResponse = await fetch(`${env.BACKEND_URL}/executions`);
+      const data = await backendResponse.json();
+      
+      return new Response(JSON.stringify(data), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Failed to fetch executions' }), {
+        status: 500
+      });
+    }
+  }
+};
+
+interface Env {
+  BACKEND_URL: string;
+  JWT_SECRET: string;
+}
     const method = request.method;
     
     // Log incoming request
