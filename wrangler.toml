@@ -68,11 +68,27 @@ binding = "METRICS_KV"
 id = "arbitragex_metrics"
 preview_id = "arbitragex_metrics_preview"
 
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id = ""
+preview_id = ""
+
 # D1 Database bindings for edge data storage
+[[d1_databases]]
+binding = "OPPORTUNITIES_DB"
+database_name = "opportunities-db"
+preview_database_id = ""
+database_id = ""
+
 [[d1_databases]]
 binding = "ARBITRAGEX_DB"
 database_name = "arbitragex-edge-db"
 database_id = "arbitragex-edge-db-id"
+
+# R2 Bucket bindings for reports storage
+[[r2_buckets]]
+binding = "REPORTS_BUCKET"
+bucket_name = "reports-bucket"
 
 # Routes configuration
 [routes]
