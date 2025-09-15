@@ -1,21 +1,60 @@
+// ArbitrageX Supreme V3.0 WebSocket Handler
+// Real-time streaming for ultra-fast opportunity updates
+
+interface Env {
+  OPPORTUNITIES_KV: KVNamespace;
+  BACKEND_URL: string;
+  WEBSOCKET_AUTH_SECRET: string;
+}
+
+interface WebSocketMessage {
+  type: string;
+  payload: any;
+  timestamp: string;
+  id: string;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair);
+    // Upgrade to WebSocket
+    if (request.headers.get('Upgrade') !== 'websocket') {
+      return new Response('Expected Upgrade: websocket', { status: 426 });
+    }
+
+    const [client, server] = Object.values(new WebSocketPair());
     
+    // Accept the WebSocket connection
     server.accept();
     
-    // Simular eventos en producción esto vendría del backend
-    const interval = setInterval(() => {
+    // Initialize connection
+    const connectionId = crypto.randomUUID();
+    console.log(`WebSocket connection established: ${connectionId}`);
+    
+    // Send welcome message
+    server.send(JSON.stringify({
+      type: 'connection:established',
+      payload: {
+        connectionId,
+        timestamp: new Date().toISOString(),
+        version: '3.0',
+        features: ['real-time-opportunities', 'execution-updates', 'system-health']
+      },
+      timestamp: new Date().toISOString(),
+      id: crypto.randomUUID()
+    }));
+
+    // Handle incoming messages
+    server.addEventListener('message', async (event) => {
       try {
+        const message = JSON.parse(event.data as string);
+        await handleWebSocketMessage(server, message, env, connectionId);
+      } catch (error) {
+        console.error('Error handling WebSocket message:', error);
         server.send(JSON.stringify({
-          type: 'opportunity:new',
-          payload: {
-            chain: 'ethereum',
-            tokens: ['WETH', 'USDC'],
-            profit: Math.random() * 100 + 50,
-            timestamp: Date.now()
-          }
+          type: 'error',
+          payload: { message: 'Invalid message format' },
+          timestamp: new Date().toISOString(),
+          id: crypto.randomUUID()
         }));
       } catch (e) {
         clearInterval(interval);

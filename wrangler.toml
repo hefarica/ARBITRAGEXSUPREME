@@ -1,22 +1,23 @@
 # ArbitrageX Supreme V3.0 - Cloudflare Workers Configuration
-name = "arbitragex-supreme-edge"
-main = "workers/index.ts"
+# Complete production-ready configuration with all required bindings
+
+name = "arbitragex-supreme"
+main = "workers/api-proxy/opportunities.ts"
 compatibility_date = "2024-01-15"
 compatibility_flags = ["nodejs_compat"]
 
 # Environment variables
-[env.production.vars]
-ENVIRONMENT = "production"
+[vars]
+ENVIRONMENT = "development"
+BACKEND_URL = "https://api.arbitragex.dev"
+API_VERSION = "v3.0"
+MAX_REQUEST_SIZE = "10MB"
+RATE_LIMIT_PER_MINUTE = "1000"
+CACHE_TTL_SECONDS = "30"
+WEBSOCKET_TIMEOUT_MS = "300000"
 LOG_LEVEL = "info"
 
-[env.staging.vars]
-ENVIRONMENT = "staging"
-LOG_LEVEL = "debug"
-
-[env.development.vars]
-ENVIRONMENT = "development"
-LOG_LEVEL = "debug"
-
+# KV Namespaces for caching and configuration
 # KV Namespaces for caching and storage
 [[kv_namespaces]]
 binding = "OPPORTUNITIES_CACHE"

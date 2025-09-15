@@ -129,19 +129,3 @@ export function logWarn(message: string, metadata?: Record<string, any>): void {
     timestamp: new Date().toISOString(),
     level: 'WARN',
     message,
-    metadata,
-  };
-  
-  console.warn(JSON.stringify(logEntry));
-}
-
-export function logDebug(message: string, metadata?: Record<string, any>): void {
-  const logEntry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level: 'DEBUG',
-    message,
-    metadata,
-  };
-  
-  console.debug(JSON.stringify(logEntry));
-}

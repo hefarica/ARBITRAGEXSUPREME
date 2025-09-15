@@ -5,14 +5,14 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "types": [
-      "@cloudflare/workers-types"
+      "@cloudflare/workers-types",
+      "node"
     ],
     "strict": true,
-    "declaration": true,
-    "declarationMap": true,
+    "declaration": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "./",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
@@ -22,15 +22,19 @@
     "checkJs": false,
     "jsx": "react-jsx",
     "isolatedModules": true,
-    "noEmit": false,
+    "noEmit": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./workers/*"]
     }
   },
   "include": [
+    "workers/**/*",
+    "d1/**/*",
+    "*.ts",
+    "*.js",
     "src/global.d.ts",
     "src/index.tsx",
     "src/services/**/*",
