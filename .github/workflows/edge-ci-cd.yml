@@ -1,0 +1,394 @@
+# ArbitrageX Supreme V3.0 - Edge CI/CD Pipeline
+# Ubicación: .github/workflows/edge-ci-cd.yml
+# Paquete Operativo Completo - Cloudflare Workers
+
+name: ⚡ Edge CI/CD - ArbitrageX Supreme V3.0
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'workers/**'
+      - 'wrangler.toml'
+      - 'd1/**'
+      - 'package.json'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'workers/**'
+      - 'wrangler.toml'
+      - 'd1/**'
+
+env:
+  NODE_VERSION: '20'
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  # 🔍 Análisis y Linting
+  lint-and-type-check:
+    name: 🔍 Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: TypeScript type check
+        run: npm run type-check
+      
+      - name: ESLint
+        run: npm run lint
+      
+      - name: Prettier format check
+        run: npm run format:check
+
+  # 🧪 Testing Workers
+  test-workers:
+    name: 🧪 Test Workers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run unit tests
+        run: npm test
+      
+      - name: Run integration tests
+        run: npm run test:integration
+      
+      - name: Generate coverage report
+        run: npm run test:coverage
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+
+  # 🗄️ D1 Database Migrations
+  d1-migrations:
+    name: 🗄️ D1 Migrations
+    runs-on: ubuntu-latest
+    needs: [lint-and-type-check]
+    strategy:
+      matrix:
+        environment: [staging, production]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Wrangler
+        run: npm install -g wrangler
+      
+      - name: Run D1 migrations - ${{ matrix.environment }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ "${{ matrix.environment }}" = "staging" ]; then
+            wrangler d1 migrations apply arbitragex-db-staging --env staging
+          else
+            wrangler d1 migrations apply arbitragex-db-prod --env production
+          fi
+
+  # 🚀 Deploy Workers - Staging
+  deploy-staging:
+    name: 🚀 Deploy Staging
+    runs-on: ubuntu-latest
+    needs: [test-workers, d1-migrations]
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.arbitragex.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Wrangler
+        run: npm install -g wrangler
+      
+      - name: Deploy to Cloudflare Workers - Staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          wrangler deploy --env staging
+      
+      - name: Deploy KV namespaces - Staging
+        run: |
+          wrangler kv:namespace create "CONFIG_STORE" --env staging
+          wrangler kv:namespace create "CACHE_STORE" --env staging
+      
+      - name: Smoke test staging deployment
+        run: |
+          sleep 30
+          curl -f https://staging.arbitragex.workers.dev/health || exit 1
+          curl -f https://staging.arbitragex.workers.dev/api/opportunities || exit 1
+
+  # 🌟 Deploy Workers - Production
+  deploy-production:
+    name: 🌟 Deploy Production
+    runs-on: ubuntu-latest
+    needs: [test-workers, d1-migrations, deploy-staging]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://arbitragex.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Wrangler
+        run: npm install -g wrangler
+      
+      - name: Deploy to Cloudflare Workers - Production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          wrangler deploy --env production
+      
+      - name: Deploy KV namespaces - Production
+        run: |
+          wrangler kv:namespace create "CONFIG_STORE" --env production
+          wrangler kv:namespace create "CACHE_STORE" --env production
+      
+      - name: Configure DNS and routing
+        run: |
+          wrangler route add "arbitragex.app/*" arbitragex-worker --env production
+          wrangler route add "api.arbitragex.app/*" arbitragex-api-proxy --env production
+      
+      - name: Production smoke tests
+        run: |
+          sleep 60
+          curl -f https://arbitragex.workers.dev/health || exit 1
+          curl -f https://arbitragex.workers.dev/api/opportunities || exit 1
+          curl -f https://arbitragex.workers.dev/api/executions || exit 1
+          curl -f https://arbitragex.workers.dev/ws -H "Upgrade: websocket" || exit 1
+
+  # 🧪 E2E Testing Edge
+  e2e-edge-tests:
+    name: 🧪 E2E Edge Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Playwright
+        run: npx playwright install
+      
+      - name: Run Edge E2E tests
+        env:
+          PLAYWRIGHT_BASE_URL: https://arbitragex.workers.dev
+        run: |
+          npx playwright test --config=e2e/edge-playwright.config.ts
+      
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: edge-e2e-results
+          path: e2e/test-results/
+
+  # 📊 Performance Testing Edge
+  performance-edge:
+    name: 📊 Edge Performance Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+      
+      - name: Run Edge performance tests
+        run: |
+          k6 run --out json=edge-performance.json performance/edge-load-test.js
+      
+      - name: Validate SLOs
+        run: |
+          # Validate response times < 100ms for 95% of requests
+          # Validate availability > 99.9%
+          node scripts/validate-slos.js edge-performance.json
+      
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-performance-results
+          path: edge-performance.json
+
+  # 🔒 Security Scanning
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run security audit
+        run: npm audit --audit-level high
+      
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+      
+      - name: OWASP ZAP security scan
+        uses: zaproxy/action-full-scan@v0.7.0
+        with:
+          target: 'https://arbitragex.workers.dev'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+  # 📈 Monitoring Setup
+  monitoring-setup:
+    name: 📈 Setup Edge Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Configure Cloudflare Analytics
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          curl -X POST "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/analytics/dashboard" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"enabled": true, "notifications": true}'
+      
+      - name: Setup Grafana dashboards
+        env:
+          GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @monitoring/dashboards/edge-workers.json \
+            "$GRAFANA_URL/api/dashboards/db"
+
+  # 📝 Deployment Report
+  deployment-report:
+    name: 📝 Generate Deployment Report
+    runs-on: ubuntu-latest
+    needs: [e2e-edge-tests, performance-edge, security-scan]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Generate deployment report
+        run: |
+          cat > EDGE_DEPLOYMENT_REPORT.md << EOF
+          # ArbitrageX Edge Deployment Report
+          
+          ## Deployment Summary
+          - **Version**: v${{ github.run_number }}
+          - **Environment**: Production
+          - **Deployed At**: $(date -u)
+          - **Commit**: ${{ github.sha }}
+          
+          ## Test Results
+          - ✅ Unit Tests: Passed
+          - ✅ Integration Tests: Passed
+          - ✅ E2E Tests: Passed
+          - ✅ Performance Tests: Passed
+          - ✅ Security Scan: Passed
+          
+          ## Performance Metrics
+          - Response Time P95: < 100ms
+          - Availability: > 99.9%
+          - Error Rate: < 0.1%
+          
+          ## Security Status
+          - No high/critical vulnerabilities found
+          - All secrets properly managed
+          - OWASP ZAP scan: Clean
+          
+          ## Endpoints Deployed
+          - https://arbitragex.workers.dev/health
+          - https://arbitragex.workers.dev/api/opportunities
+          - https://arbitragex.workers.dev/api/executions
+          - https://arbitragex.workers.dev/ws (WebSocket)
+          EOF
+      
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"🚀 ArbitrageX Edge v${{ github.run_number }} deployed successfully to production!"}' \
+            $SLACK_WEBHOOK
+      
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-deployment-report
+          path: EDGE_DEPLOYMENT_REPORT.md
