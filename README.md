@@ -202,4 +202,4 @@ docker-compose -f docker-compose.production.yml ps
 
 ---
 
-## 🎯 **Este repositorio contiene SOLAMENTE la infraestructura backend. Para frontend ver [show-my-github-gems](https://github.com/hefarica/show-my-github-gems), para edge computing ver [ARBITRAGEXSUPREME](https://github.com/hefarica/ARBITRAGEXSUPREME).**
+## 🎯 **Este repositorio contiene SOLAMENTE la infraestructura backend. Para frontend ver [show-my-github-gems](https://github.com/hefarica/show-my-github-gems), para edge computing ver [ARBITRAGEXSUPREME V3.2](https://github.com/hefarica/ARBITRAGEXSUPREME).**
