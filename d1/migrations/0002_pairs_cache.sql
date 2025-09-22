@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS pairs_cache (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
